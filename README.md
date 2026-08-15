@@ -59,9 +59,9 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.youndie:petich-core:0.1.0")
-    implementation("io.github.youndie:petich-ktor:0.1.0")
-    implementation("io.github.youndie:petich-postgres:0.1.0")
+    implementation("io.github.youndie:petich-core:0.1.0.2")
+    implementation("io.github.youndie:petich-ktor:0.1.0.2")
+    implementation("io.github.youndie:petich-postgres:0.1.0.2")
 }
 ```
 
