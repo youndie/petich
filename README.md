@@ -1,9 +1,9 @@
 # petich
 
 [![kotlin](https://img.shields.io/badge/Kotlin-2.4.10-blue?logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![petich-core](https://reposilite.kotlin.website/api/badge/latest/snapshots/ru/workinprogress/petich-core?name=snapshots&color=40c14a&prefix=v)](https://reposilite.kotlin.website/#/snapshots/ru/workinprogress/petich-core)
-[![petich-ktor](https://reposilite.kotlin.website/api/badge/latest/snapshots/ru/workinprogress/petich-ktor?name=snapshots&color=40c14a&prefix=v)](https://reposilite.kotlin.website/#/snapshots/ru/workinprogress/petich-ktor)
-[![petich-postgres](https://reposilite.kotlin.website/api/badge/latest/snapshots/ru/workinprogress/petich-postgres?name=snapshots&color=40c14a&prefix=v)](https://reposilite.kotlin.website/#/snapshots/ru/workinprogress/petich-postgres)
+[![petich-core](https://reposilite.kotlin.website/api/badge/latest/snapshots/io/github/youndie/petich-core?name=snapshots&color=40c14a&prefix=v)](https://reposilite.kotlin.website/#/snapshots/io/github/youndie/petich-core)
+[![petich-ktor](https://reposilite.kotlin.website/api/badge/latest/snapshots/io/github/youndie/petich-ktor?name=snapshots&color=40c14a&prefix=v)](https://reposilite.kotlin.website/#/snapshots/io/github/youndie/petich-ktor)
+[![petich-postgres](https://reposilite.kotlin.website/api/badge/latest/snapshots/io/github/youndie/petich-postgres?name=snapshots&color=40c14a&prefix=v)](https://reposilite.kotlin.website/#/snapshots/io/github/youndie/petich-postgres)
 
 **a distributed saga engine for Kotlin** — a multi-step operation is described as a chain of
 interceptors; the engine walks it through phases and, when any step fails, undoes exactly what had
@@ -59,9 +59,9 @@ repositories {
 }
 
 dependencies {
-    implementation("ru.workinprogress:petich-core:0.1.0")
-    implementation("ru.workinprogress:petich-ktor:0.1.0")
-    implementation("ru.workinprogress:petich-postgres:0.1.0")
+    implementation("io.github.youndie:petich-core:0.1.0")
+    implementation("io.github.youndie:petich-ktor:0.1.0")
+    implementation("io.github.youndie:petich-postgres:0.1.0")
 }
 ```
 

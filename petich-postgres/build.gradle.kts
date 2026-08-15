@@ -4,7 +4,7 @@ plugins {
     id("petich.publishing")
 }
 
-group = "ru.workinprogress"
+group = "io.github.youndie"
 
 repositories {
     mavenCentral()
