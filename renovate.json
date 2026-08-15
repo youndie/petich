@@ -1,0 +1,41 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard"
+  ],
+  "schedule": ["before 9am on monday"],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    {
+      "description": "Kotlin and the serialization plugin must move together: the plugin is built against a specific compiler version, and a mismatched pair fails the build rather than reporting a version problem.",
+      "groupName": "kotlin toolchain",
+      "matchPackageNames": [
+        "org.jetbrains.kotlin:{/,}**",
+        "org.jetbrains.kotlin.jvm",
+        "org.jetbrains.kotlin.multiplatform",
+        "org.jetbrains.kotlin.plugin.serialization"
+      ]
+    },
+    {
+      "description": "Ktor server modules share one version.",
+      "groupName": "ktor",
+      "matchPackageNames": ["io.ktor:{/,}**"]
+    },
+    {
+      "description": "Exposed core/jdbc/json go in as a single version.",
+      "groupName": "exposed",
+      "matchPackageNames": ["org.jetbrains.exposed:{/,}**"]
+    },
+    {
+      "description": "kotlinx libraries move independently of each other but are noisy one PR at a time.",
+      "groupName": "kotlinx",
+      "matchPackageNames": ["org.jetbrains.kotlinx:{/,}**"]
+    },
+    {
+      "description": "Major updates get their own PR: they cannot be merged without looking.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+name: Publish petich snapshots
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v5
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      # The run number goes on the tail of the version: two publishes in a row must not produce
+      # the same artifact, or a consumer cannot tell them apart and keeps the cached older one.
+      - name: Determine version
+        id: ver
+        run: |
+          VERSION=$(grep petich.version gradle.properties | cut -d'=' -f2).${{ github.run_number }}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build and publish
+        run: ./gradlew build publishAllPublicationsToWipRepository --no-daemon
+        env:
+          ORG_GRADLE_PROJECT_REPOSILITE_USER: ${{ secrets.REPOSILITE_USER }}
+          ORG_GRADLE_PROJECT_REPOSILITE_SECRET: ${{ secrets.REPOSILITE_SECRET }}
+          ORG_GRADLE_PROJECT_VERSION: ${{ steps.ver.outputs.version }}
