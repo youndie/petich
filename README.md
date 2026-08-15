@@ -30,9 +30,10 @@ The engine takes on exactly that:
 - **a deadline on that wait** — a suspended saga nobody came back to is rolled back by a background
   sweeper instead of living forever while holding resources it already claimed;
 - **resistance to races** — optimistic locking by version plus a per-saga mutex inside the process;
-- **reliable notifications** — the intent to emit an event is written in the SAME transaction as the
-  state change, which makes "the work happened but the notification never went out" structurally
-  impossible.
+- **reliable notifications** — with an outbox-aware repository (`petich-postgres` is one) the intent
+  to emit an event is written in the SAME transaction as the state change, which makes "the work
+  happened but the notification never went out" structurally impossible. A repository without that
+  support still works; the engine quietly falls back to a plain update and drops the events.
 
 ### 📦 Modules
 
@@ -40,7 +41,7 @@ The engine takes on exactly that:
 | --- | --- | --- |
 | `petich-core` | the engine: sagas, interceptors, phases, compensation, suspend/resume, TTL | — |
 | `petich-ktor` | REST endpoints for creating and resuming a saga | `petich-core` |
-| `petich-postgres` | storage on Exposed | all the others |
+| `petich-postgres` | storage on Exposed | core, outbox, idempotency, scheduler |
 | `petich-outbox-core` | at-least-once event delivery with backoff and dead lettering | — |
 | `petich-idempotency` | protection against a key reused with a DIFFERENT request | — |
 | `petich-scheduler` | a saga on a schedule, starting with no HTTP initiator | — |
@@ -111,9 +112,10 @@ scales, and the step knows that, not the engine.
 - **it does not store a result for idempotency** — replaying a terminal saga under the same id is
   short-circuited by the engine itself, while `petich-idempotency` catches a different case: the same
   key with different request parameters;
-- **it does not scale a hot row** — sagas over ONE entity serialise on that row regardless of how
-  many instances run. That is a property of the data model, not of the engine, and it is cured
-  there: by splitting the counter into sub-rows, or by an append-only ledger with a computed total.
+- **it does not serialise sagas for you** — the per-saga mutex is keyed by saga id and the
+  optimistic lock sits on the saga's own row, so two sagas touching the same business entity do not
+  contend at the engine level. If they contend, the source is the application's own writes to a
+  shared row, and the cure lives in the data model rather than here.
 
 ### 💰 Cost
 
@@ -132,8 +134,12 @@ retries, compensations, waits on the client. A no-op by default, costing nothing
 
 They exist for a question that cannot be answered from outside: **why** did throughput drop. From
 outside you see only latency, while a slowdown that looks identical has at least three distinct
-causes, each cured differently. The "saga passes per operation" figure is a direct sign of
-contention: one means there is none.
+causes, each cured differently.
+
+Read the counters in the right order. Optimistic retries are the contention signal — zero of them
+means sagas are not fighting over rows, whatever else is slow. Saga passes per operation is NOT
+that signal: a saga that suspends for a confirmation goes through the engine at least twice with no
+contention at all, so the figure sits comfortably above one in a workload where nothing collides.
 
 ### 🛠️ Building
 
