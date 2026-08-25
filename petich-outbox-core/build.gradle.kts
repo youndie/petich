@@ -15,7 +15,9 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                implementation(libs.kotlinx.coroutines.core)
+                // api: OutboxRelayWorker.start takes a CoroutineScope and returns a Job, so a
+                // consumer needs to be able to name both to start the relay at all.
+                api(libs.kotlinx.coroutines.core)
             }
         }
         commonTest {
