@@ -30,7 +30,10 @@ jobs:
       #
       # What neither covers is a public signature handing out a third-party type from an
       # `implementation` dependency: telling that from a correct `implementation` needs a build that
-      # compiles against the publication, which is proba's job in publish-snapshot.yaml.
+      # compiles against the publication. That was proba's job in publish-snapshot.yaml, and since
+      # the JVM floor is advertised as 25 proba's consumer build — pinned to Java 21 — can no longer
+      # resolve petich, so the check reports UNDETERMINED for every coordinate and nothing covers
+      # that case here at all. See #11; the job stays green either way, which is the point of it.
       - name: Published artifacts are named right and stay within the JVM floor
         run: |
           ./gradlew publishToMavenLocal -PVERSION=ci-${{ github.run_number }} --no-daemon
