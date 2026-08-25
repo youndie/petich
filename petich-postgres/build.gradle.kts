@@ -34,4 +34,8 @@ dependencies {
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
+
+    // The module had no tests at all, which is how a class with no package and an index described
+    // only in a comment both shipped: neither is visible from inside the module's own package.
+    testImplementation(libs.kotlin.testJunit)
 }
