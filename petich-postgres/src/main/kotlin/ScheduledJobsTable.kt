@@ -16,11 +16,17 @@ class ScheduledJobsTable : Table("scheduled_jobs") {
     val recurrence = varchar("recurrence", 16)
 
     // The due-jobs query filters on this column, so a real database wants an index on
-    // (active, next_run_at).
+    // (active, next_run_at) — declared below rather than described here.
     val nextRunAt = long("next_run_at")
     val lastRunAt = long("last_run_at").nullable()
     val active = bool("active").default(true)
     val consecutiveFailures = integer("consecutive_failures").default(0)
 
     override val primaryKey = PrimaryKey(id)
+
+    // See PetichTable: a described-but-undeclared index is one the migration generator proposes
+    // dropping. This is the scheduler's polling table, read on every tick.
+    init {
+        index("idx_scheduled_jobs_active_next_run_at", false, active, nextRunAt)
+    }
 }
