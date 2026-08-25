@@ -162,15 +162,15 @@ contention at all, so the figure sits comfortably above one in a workload where 
 ./gradlew build
 ```
 
-Java 25 for every module at once — not tidiness but a Gradle requirement: a module built on 21
-cannot depend on one advertising 25, so it is all of them or none. The floor lives in
-`buildSrc/src/main/kotlin/JvmFloor.kt`.
+One JVM floor for every module at once — not tidiness but a Gradle requirement: a module built
+below the floor cannot depend on one advertising it, so it is all of them or none. The number lives
+in `buildSrc/src/main/kotlin/JvmFloor.kt` and nowhere else.
 
-**Java 25 is a consumer's floor too.** Every published variant declares it as
+**Java 21 is a consumer's floor too.** Every published variant declares it as
 `org.gradle.jvm.version`, so a project on anything older is refused at resolution, by name, before
-it compiles. That refusal is the point: the modules used to publish Java 25 bytecode without
-declaring it, and an older consumer resolved them, compiled against them, and met
-`UnsupportedClassVersionError` at class loading instead.
+it compiles rather than at class loading. It was briefly 25 — not because anything here needs 25,
+but because that was the JDK the build ran on, which is the accident a named floor exists to
+prevent.
 
 ### 📄 License
 

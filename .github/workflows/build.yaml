@@ -9,10 +9,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # Both, not one: Gradle itself runs on the newer JDK, while the toolchain compiles against
+      # the floor (JvmFloor.kt) and needs that JDK present to do it. Relying on whatever the runner
+      # image happens to preinstall is how a floor silently becomes "whatever the machine had".
       - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
-          java-version: 25
+          java-version: |
+            21
+            25
       - uses: gradle/actions/setup-gradle@v5
       - run: ./gradlew build --no-daemon
 
@@ -30,10 +35,9 @@ jobs:
       #
       # What neither covers is a public signature handing out a third-party type from an
       # `implementation` dependency: telling that from a correct `implementation` needs a build that
-      # compiles against the publication. That was proba's job in publish-snapshot.yaml, and since
-      # the JVM floor is advertised as 25 proba's consumer build — pinned to Java 21 — can no longer
-      # resolve petich, so the check reports UNDETERMINED for every coordinate and nothing covers
-      # that case here at all. See #11; the job stays green either way, which is the point of it.
+      # compiles against the publication, which is proba's job in publish-snapshot.yaml. That check
+      # only works while petich's floor is one proba's consumer build can resolve — it pins Java 21,
+      # and a floor above that turns the answer into UNDETERMINED rather than red (#11).
       - name: Published artifacts are named right and stay within the JVM floor
         run: |
           ./gradlew publishToMavenLocal -PVERSION=ci-${{ github.run_number }} --no-daemon

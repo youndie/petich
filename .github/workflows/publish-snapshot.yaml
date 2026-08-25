@@ -14,11 +14,14 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v5
 
+      # Both, not one: see the same step in build.yaml.
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
-          java-version: 25
+          java-version: |
+            21
+            25
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
