@@ -44,5 +44,27 @@ interface PetichEngineMetrics {
      */
     fun onSuspend(type: String) = Unit
 
+    /**
+     * Outbox events were produced and thrown away, because the configured repository is not an
+     * [OutboxAwarePetichRepository]. [count] is how many were lost in that one write.
+     *
+     * The odd one out among these counters: the rest answer "why did throughput drop", this one
+     * answers a question nobody thinks to ask. The degradation is deliberate and documented — an
+     * application that wants no events should not have to configure their absence — but it is
+     * shaped like the worst kind of failure, in that the work happened and nobody was told. The
+     * saga completes, its state is correct, and every assertion anyone naturally writes about it
+     * passes; only the consumer on the far end of the event never runs. Nothing else in the system
+     * is different, which is why a counter is the only thing that can say it happened.
+     *
+     * It is also reached by accident rather than by decision: :petich-postgres is outbox-aware,
+     * while a test double or a hand-rolled repository is not. A flat non-zero line here is that
+     * mistake, in production, and [PetichEngineConfig.requireOutbox] is the same mistake refused
+     * at construction instead.
+     */
+    fun onDroppedEvents(
+        type: String,
+        count: Int,
+    ) = Unit
+
     object NoOp : PetichEngineMetrics
 }
