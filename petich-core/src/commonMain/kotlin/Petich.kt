@@ -129,6 +129,17 @@ data class PetichEngineConfig(
     // change the behaviour of existing code. It is switched on deliberately, either by the
     // application or by a specific interceptor through Suspend(ttl = ...).
     val defaultSuspendTtl: Duration? = null,
+    // Refuse to build an engine whose repository cannot store outbox events. false by default,
+    // because the quiet degradation is the documented behaviour and an application that wants no
+    // events must not have to configure their absence.
+    //
+    // Worth switching on by anything that wires the outbox to a message broker, and worth it at
+    // construction rather than at the drop: by the time the first event is dropped the process is
+    // in production, and the drop is invisible there. The mistake it refuses is not a typo — it is
+    // a plain PetichRepository reaching a place that needed an outbox-aware one, which is easy
+    // because :petich-postgres is outbox-aware while a test double or a hand-rolled repository is
+    // not. Its counterpart in flight is PetichEngineMetrics.onDroppedEvents.
+    val requireOutbox: Boolean = false,
 ) {
     init {
         require(maxProcessAttempts > 0) { "maxProcessAttempts must be positive" }
@@ -313,6 +324,18 @@ class PetichEngine(
     // PetichEngineMetrics on why they exist at all).
     private val metrics: PetichEngineMetrics = PetichEngineMetrics.NoOp,
 ) {
+    init {
+        // Deliberately a construction failure and not a warning. A warning about events that will
+        // be dropped is read, if at all, in the logs of a process that is already serving traffic,
+        // and it competes with everything else printed at startup; the whole difficulty with this
+        // mistake is that nothing downstream of it looks wrong.
+        require(!config.requireOutbox || repository is OutboxAwarePetichRepository) {
+            "requireOutbox is set, but ${repository::class.simpleName} is not an " +
+                "OutboxAwarePetichRepository: outbox events produced by interceptors would be " +
+                "dropped and the sagas would still report success"
+        }
+    }
+
     // The per-petich lock is needed only while processing. We count references, because dropping
     // it "when done" is not enough: while one call holds the mutex, a second may already have
     // taken it from the map and be waiting on it, and removing the entry at that moment would hand
@@ -332,14 +355,22 @@ class PetichEngine(
     // The single persistence point that outbox events pass through. Degrades quietly to
     // repository.update(petich) when there are no events, or when the repository is not an
     // OutboxAwarePetichRepository (see the comment on the interface itself).
+    //
+    // The two ways of reaching the plain update are NOT the same event and are deliberately not
+    // written as one condition. No events is nothing happening. Events with a repository that
+    // cannot store them is a loss, and the only trace it leaves anywhere, since the write succeeds
+    // and the saga completes exactly as it would have.
     private suspend fun updatePetich(
         petich: Petich,
         outboxEvents: List<OutboxEvent> = emptyList(),
     ): Boolean =
-        if (outboxEvents.isNotEmpty() && repository is OutboxAwarePetichRepository) {
-            repository.update(petich, outboxEvents)
-        } else {
-            repository.update(petich)
+        when {
+            outboxEvents.isEmpty() -> repository.update(petich)
+            repository is OutboxAwarePetichRepository -> repository.update(petich, outboxEvents)
+            else -> {
+                metrics.onDroppedEvents(petich.type, outboxEvents.size)
+                repository.update(petich)
+            }
         }
 
     private suspend fun triggerCompensation(

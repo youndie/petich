@@ -33,7 +33,12 @@ The engine takes on exactly that:
 - **reliable notifications** — with an outbox-aware repository (`petich-postgres` is one) the intent
   to emit an event is written in the SAME transaction as the state change, which makes "the work
   happened but the notification never went out" structurally impossible. A repository without that
-  support still works; the engine quietly falls back to a plain update and drops the events.
+  support still works; the engine falls back to a plain update and drops the events. That fallback
+  is now countable and refusable: `PetichEngineMetrics.onDroppedEvents` fires on every event lost
+  this way, and `PetichEngineConfig(requireOutbox = true)` refuses to build an engine whose
+  repository cannot store them at all. Both are off by default, so a deliberately outbox-free
+  application changes nothing; anything wiring the outbox to a broker wants the second one, because
+  the drop is otherwise invisible — the saga completes and its state is correct.
 
 ### 📦 Modules
 
@@ -130,11 +135,19 @@ process dying between steps never leaves a saga in an unknown position.
 ### 📊 Observability
 
 `PetichEngineMetrics` provides optional counters: saga passes, version conflicts, state-write
-retries, compensations, waits on the client. A no-op by default, costing nothing.
+retries, compensations, waits on the client, and outbox events dropped. A no-op by default, costing
+nothing.
 
-They exist for a question that cannot be answered from outside: **why** did throughput drop. From
+Most exist for a question that cannot be answered from outside: **why** did throughput drop. From
 outside you see only latency, while a slowdown that looks identical has at least three distinct
 causes, each cured differently.
+
+`onDroppedEvents` is the exception, and answers a question nobody thinks to ask. When the repository
+is not outbox-aware the events are thrown away, the saga completes, and its state is correct — every
+assertion anyone naturally writes about that run passes, and only the consumer at the far end of the
+event never runs. Nothing else in the system is different, which is why a counter is the only thing
+that can say it happened. A flat non-zero line here is a plain `PetichRepository` that reached a
+place needing an outbox-aware one; `requireOutbox` refuses that at construction instead.
 
 Read the counters in the right order. Optimistic retries are the contention signal — zero of them
 means sagas are not fighting over rows, whatever else is slow. Saga passes per operation is NOT
