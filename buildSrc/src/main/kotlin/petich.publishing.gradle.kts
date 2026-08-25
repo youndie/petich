@@ -3,9 +3,15 @@ plugins {
 }
 
 // The default version comes from gradle.properties so that a local build and publishToMavenLocal
-// work without extra parameters. CI overrides it through -PVERSION (see afterEvaluate below),
-// appending the run number.
-version = findProperty("petich.version")?.toString() ?: "0.1.0"
+// work without extra parameters. CI overrides it through -PVERSION, appending the run number.
+//
+// -PVERSION has to land on the *project* version, not on the publication alone: the archive tasks
+// take their file names from the project version, so setting only the publication produces a jar
+// named after the fallback — a version that was never released — while the coordinate carries the
+// real one. Nothing in the build can notice; the file is merely misnamed on arrival.
+version = findProperty("VERSION")?.toString()
+    ?: findProperty("petich.version")?.toString()
+    ?: "0.1.0"
 
 plugins.withId("java") {
     extensions.configure<JavaPluginExtension> {
@@ -36,14 +42,6 @@ publishing {
                 username = findProperty("REPOSILITE_USER")?.toString()
                 password = findProperty("REPOSILITE_SECRET")?.toString()
             }
-        }
-    }
-}
-
-afterEvaluate {
-    findProperty("VERSION")?.toString()?.let { publishVersion ->
-        publishing.publications.withType<MavenPublication>().configureEach {
-            version = publishVersion
         }
     }
 }
