@@ -73,7 +73,9 @@ dependencies {
 
 `petich-postgres` deliberately ships no driver and no connection pool: it works with an Exposed
 `Database` handed to it and does not know which DBMS sits underneath. Choosing a driver is the
-application's decision.
+application's decision. It ships no DDL either — the tables describe themselves, indexes included,
+so `MigrationUtils` and the Exposed Gradle plugin generate a schema that matches what the queries
+actually filter on.
 
 ### ✍️ What it looks like
 
@@ -160,8 +162,15 @@ contention at all, so the figure sits comfortably above one in a workload where 
 ./gradlew build
 ```
 
-Java 25 for every module at once — not tidiness but a Gradle requirement: it tags variants with the
-`org.gradle.jvm.version` attribute and refuses to build a module on 21 against a dependency on 25.
+Java 25 for every module at once — not tidiness but a Gradle requirement: a module built on 21
+cannot depend on one advertising 25, so it is all of them or none. The floor lives in
+`buildSrc/src/main/kotlin/JvmFloor.kt`.
+
+**Java 25 is a consumer's floor too.** Every published variant declares it as
+`org.gradle.jvm.version`, so a project on anything older is refused at resolution, by name, before
+it compiles. That refusal is the point: the modules used to publish Java 25 bytecode without
+declaring it, and an older consumer resolved them, compiled against them, and met
+`UnsupportedClassVersionError` at class loading instead.
 
 ### 📄 License
 

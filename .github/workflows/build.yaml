@@ -21,7 +21,18 @@ jobs:
       # and publishes green, and only a consumer finds out. An artifact whose file name is built from
       # a different version than its coordinate arrives under a name no release ever had, and two
       # releases then put identically-named files on a classpath.
-      - name: Published artifacts are named with the version they were released as
+      # Both audits exist because the defect they look for is invisible to the build itself:
+      # everything compiles, tests and publishes green, and only a consumer finds out. Names, because
+      # an artifact built from a different version than its coordinate arrives under a name no
+      # release ever had. The floor, because bytecode newer than a consumer's JVM resolves and
+      # compiles before failing in their runtime — and every machine this is built on is too new to
+      # see it.
+      #
+      # What neither covers is a public signature handing out a third-party type from an
+      # `implementation` dependency: telling that from a correct `implementation` needs a build that
+      # compiles against the publication, which is proba's job in publish-snapshot.yaml.
+      - name: Published artifacts are named right and stay within the JVM floor
         run: |
           ./gradlew publishToMavenLocal -PVERSION=ci-${{ github.run_number }} --no-daemon
           python3 tools/artifact-name-audit.py ci-${{ github.run_number }}
+          python3 tools/jvm-floor-audit.py ci-${{ github.run_number }}
