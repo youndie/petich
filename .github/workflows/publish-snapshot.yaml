@@ -8,6 +8,8 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - name: Checkout sources
         uses: actions/checkout@v5
@@ -35,3 +37,31 @@ jobs:
           ORG_GRADLE_PROJECT_REPOSILITE_USER: ${{ secrets.REPOSILITE_USER }}
           ORG_GRADLE_PROJECT_REPOSILITE_SECRET: ${{ secrets.REPOSILITE_SECRET }}
           ORG_GRADLE_PROJECT_VERSION: ${{ steps.ver.outputs.version }}
+
+  # What a consumer receives, read from the repository after the upload rather than from a build
+  # directory before it. The audit on the PR build reads a LOCAL publication, which is the same bytes
+  # but not the same event: a file that failed to upload, a coordinate that resolves to the previous
+  # version — none of that exists until something asks the repository, and none of it fails a publish.
+  #
+  # A separate job so that a finding here cannot be mistaken for a publish that did not happen: by the
+  # time this runs the artefacts are up, and what is red is the report about them.
+  consumer:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: What a consumer gets
+        uses: youndie/proba@main
+        with:
+          # All six — petich publishes six modules, and a consumer starts from any of them. The cost
+          # is a real consumer build per coordinate, which is what makes an `implementation` that
+          # should have been `api` distinguishable from one that is correct.
+          coordinate: |
+            io.github.youndie:petich-core:${{ needs.publish.outputs.version }}
+            io.github.youndie:petich-idempotency:${{ needs.publish.outputs.version }}
+            io.github.youndie:petich-ktor:${{ needs.publish.outputs.version }}
+            io.github.youndie:petich-outbox-core:${{ needs.publish.outputs.version }}
+            io.github.youndie:petich-postgres:${{ needs.publish.outputs.version }}
+            io.github.youndie:petich-scheduler:${{ needs.publish.outputs.version }}
+          repository: https://reposilite.kotlin.website/snapshots
+          # deep, fail-on and badge-dir are left at the action's defaults: a real consumer build, a
+          # defect fails while a suspicion does not, and no badge is written.
