@@ -15,3 +15,13 @@ jobs:
           java-version: 25
       - uses: gradle/actions/setup-gradle@v5
       - run: ./gradlew build --no-daemon
+
+      # The audit reads real published metadata, which is why it publishes locally first. It exists
+      # because the defect it looks for is invisible to the build itself: everything compiles, tests
+      # and publishes green, and only a consumer finds out. An artifact whose file name is built from
+      # a different version than its coordinate arrives under a name no release ever had, and two
+      # releases then put identically-named files on a classpath.
+      - name: Published artifacts are named with the version they were released as
+        run: |
+          ./gradlew publishToMavenLocal -PVERSION=ci-${{ github.run_number }} --no-daemon
+          python3 tools/artifact-name-audit.py ci-${{ github.run_number }}
