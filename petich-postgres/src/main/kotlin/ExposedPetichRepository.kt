@@ -1,3 +1,5 @@
+package ru.workinprogress.petich.postgres
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.core.ResultRow
@@ -16,8 +18,6 @@ import ru.workinprogress.petich.OutboxAwarePetichRepository
 import ru.workinprogress.petich.OutboxEvent
 import ru.workinprogress.petich.Petich
 import ru.workinprogress.petich.PetichStatus
-import ru.workinprogress.petich.postgres.OutboxEventsTable
-import ru.workinprogress.petich.postgres.PetichTable
 
 class ExposedPetichRepository(
     private val db: Database,
