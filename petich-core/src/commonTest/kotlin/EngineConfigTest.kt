@@ -262,6 +262,9 @@ class EngineConfigTest {
             // to tell which interceptor had lied.
             val details = result.details
             assertTrue(details.contains("supports()"), "the diagnostic does not mention supports(): $details")
-            assertTrue(details.contains("TestPayload"), "the diagnostic does not mention the payload received: $details")
+            assertTrue(
+                details.contains("TestPayload"),
+                "the diagnostic does not mention the payload received: $details",
+            )
         }
 }

@@ -3,7 +3,7 @@ package ru.workinprogress.petich
 import kotlinx.coroutines.runBlocking
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.util.*
+import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -74,7 +74,11 @@ class FakeGrantService {
     val activations = mutableMapOf<String, BigDecimal>()
     val operationLog = mutableListOf<String>()
 
-    fun reserveQuota(applicantId: String, quantity: BigDecimal, reservationId: String) {
+    fun reserveQuota(
+        applicantId: String,
+        quantity: BigDecimal,
+        reservationId: String,
+    ) {
         quotas[applicantId] = (quotas[applicantId] ?: BigDecimal.ZERO) + quantity
         reservations[reservationId] = applicantId to quantity
         operationLog.add("RESERVE_LIMIT: $applicantId $quantity $reservationId")
@@ -87,12 +91,18 @@ class FakeGrantService {
         operationLog.add("CANCEL_LIMIT: $reservationId")
     }
 
-    fun disburse(applicantId: String, quantity: BigDecimal) {
+    fun disburse(
+        applicantId: String,
+        quantity: BigDecimal,
+    ) {
         activations[applicantId] = (activations[applicantId] ?: BigDecimal.ZERO) + quantity
         operationLog.add("DISBURSE: $applicantId $quantity")
     }
 
-    fun reverseActivation(applicantId: String, quantity: BigDecimal) {
+    fun reverseActivation(
+        applicantId: String,
+        quantity: BigDecimal,
+    ) {
         activations[applicantId] = (activations[applicantId] ?: BigDecimal.ZERO) - quantity
         operationLog.add("REVERSE_DISBURSE: $applicantId $quantity")
     }
@@ -103,7 +113,10 @@ class FakeGrantService {
 abstract class AccessScoringInterceptor : PetichInterceptor<AccessScoringPayload> {
     override fun supports(payload: PetichPayload) = payload is AccessScoringPayload
 
-    override suspend fun compensate(petich: Petich, payload: AccessScoringPayload) {}
+    override suspend fun compensate(
+        petich: Petich,
+        payload: AccessScoringPayload,
+    ) {}
 }
 
 class HistoryLookupInterceptor(
@@ -133,26 +146,29 @@ class ScoringCalculationInterceptor : AccessScoringInterceptor() {
         payload: AccessScoringPayload,
     ): InterceptorResult {
         val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
-        val baseRate = when {
-            enriched.accessScore >= 750 -> BigDecimal("12.5")
-            enriched.accessScore >= 600 -> BigDecimal("18.9")
-            enriched.accessScore >= 400 -> BigDecimal("24.5")
-            else -> BigDecimal("35.0")
-        }
-        val employmentMultiplier = when (payload.employmentType) {
-            ApplicantCategory.FULL_TIME -> BigDecimal("1.0")
-            ApplicantCategory.PART_TIME -> BigDecimal("1.15")
-            ApplicantCategory.SELF_EMPLOYED -> BigDecimal("1.25")
-            ApplicantCategory.UNEMPLOYED -> BigDecimal("2.0")
-        }
+        val baseRate =
+            when {
+                enriched.accessScore >= 750 -> BigDecimal("12.5")
+                enriched.accessScore >= 600 -> BigDecimal("18.9")
+                enriched.accessScore >= 400 -> BigDecimal("24.5")
+                else -> BigDecimal("35.0")
+            }
+        val employmentMultiplier =
+            when (payload.employmentType) {
+                ApplicantCategory.FULL_TIME -> BigDecimal("1.0")
+                ApplicantCategory.PART_TIME -> BigDecimal("1.15")
+                ApplicantCategory.SELF_EMPLOYED -> BigDecimal("1.25")
+                ApplicantCategory.UNEMPLOYED -> BigDecimal("2.0")
+            }
         val interestRate = baseRate.multiply(employmentMultiplier).setScale(2, RoundingMode.HALF_UP)
         val monthlyRate = interestRate.divide(BigDecimal("1200"), 10, RoundingMode.HALF_UP)
         val onePlusR = BigDecimal.ONE + monthlyRate
         val powN = onePlusR.pow(payload.termMonths)
-        val monthlyCost = payload.requestedQuantity
-            .multiply(monthlyRate)
-            .multiply(powN)
-            .divide(powN - BigDecimal.ONE, 2, RoundingMode.HALF_UP)
+        val monthlyCost =
+            payload.requestedQuantity
+                .multiply(monthlyRate)
+                .multiply(powN)
+                .divide(powN - BigDecimal.ONE, 2, RoundingMode.HALF_UP)
 
         val dtiRatio = monthlyCost.divide(payload.monthlyScore, 4, RoundingMode.HALF_UP)
 
@@ -243,7 +259,13 @@ class AccessApprovalInterceptor : AccessScoringInterceptor() {
         val providedCode = (petich.resumePayload as? ConfirmResumePayload)?.code
         if (providedCode == enriched.confirmCodeCode) return InterceptorResult.Proceed()
 
-        return InterceptorResult.Resuspend("SMS_CONFIRM_CODE", AccessScoringEnrichedPayload(confirmCodeAttempts = enriched.confirmCodeAttempts + 1))
+        return InterceptorResult.Resuspend(
+            "SMS_CONFIRM_CODE",
+            AccessScoringEnrichedPayload(
+                confirmCodeAttempts =
+                    enriched.confirmCodeAttempts + 1,
+            ),
+        )
     }
 }
 
@@ -263,7 +285,10 @@ class QuotaReservationInterceptor(
         return InterceptorResult.Proceed(AccessScoringEnrichedPayload(reservationId = reservationId))
     }
 
-    override suspend fun compensate(petich: Petich, payload: AccessScoringPayload) {
+    override suspend fun compensate(
+        petich: Petich,
+        payload: AccessScoringPayload,
+    ) {
         val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
         if (enriched.reservationId != null) {
             grantService.cancelReservation(enriched.reservationId)
@@ -288,7 +313,10 @@ class ActivationInterceptor(
         return InterceptorResult.Proceed()
     }
 
-    override suspend fun compensate(petich: Petich, payload: AccessScoringPayload) {
+    override suspend fun compensate(
+        petich: Petich,
+        payload: AccessScoringPayload,
+    ) {
         val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
         grantService.reverseActivation(payload.applicantId, enriched.approvedQuantity)
     }
@@ -305,7 +333,9 @@ class AccessNotificationInterceptor(
         payload: AccessScoringPayload,
     ): InterceptorResult {
         val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
-        notificationLog.add("APPROVED: ${payload.applicantId} ${enriched.approvedQuantity} at ${enriched.interestRate}%")
+        notificationLog.add(
+            "APPROVED: ${payload.applicantId} ${enriched.approvedQuantity} at ${enriched.interestRate}%",
+        )
         notificationLog.add("MONTHLY_COST: ${payload.applicantId} ${enriched.monthlyCost}")
         return InterceptorResult.Proceed()
     }
@@ -323,18 +353,19 @@ class AccessScoringPetichEngineTest {
         failActivation: Boolean = false,
     ): Pair<PetichEngine, FakePetichRepository> {
         val repo = FakePetichRepository()
-        val interceptors = listOf(
-            HistoryLookupInterceptor(bureauService),
-            ScoringCalculationInterceptor(),
-            EligibilityCheckInterceptor(),
-            DenyListCheckInterceptor(denyListService),
-            ScoreThresholdInterceptor(),
-            AccessConfirmCodeInterceptor(notifierService),
-            AccessApprovalInterceptor(),
-            QuotaReservationInterceptor(grantService),
-            ActivationInterceptor(grantService, failActivation),
-            AccessNotificationInterceptor(notificationLog),
-        )
+        val interceptors =
+            listOf(
+                HistoryLookupInterceptor(bureauService),
+                ScoringCalculationInterceptor(),
+                EligibilityCheckInterceptor(),
+                DenyListCheckInterceptor(denyListService),
+                ScoreThresholdInterceptor(),
+                AccessConfirmCodeInterceptor(notifierService),
+                AccessApprovalInterceptor(),
+                QuotaReservationInterceptor(grantService),
+                ActivationInterceptor(grantService, failActivation),
+                AccessNotificationInterceptor(notificationLog),
+            )
         return PetichEngine(interceptors, repo) to repo
     }
 
@@ -359,366 +390,470 @@ class AccessScoringPetichEngineTest {
     )
 
     @Test
-    fun testHappyPathAccessApproval() = runBlocking {
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 750
-        bureauService.applicantGrades["applicant1"] = "A"
-        val denyListService = FakeDenyListService()
-        val grantService = FakeGrantService()
-        val notifierService = FakeNotifierService()
-        val notificationLog = mutableListOf<String>()
+    fun testHappyPathAccessApproval() =
+        runBlocking {
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 750
+            bureauService.applicantGrades["applicant1"] = "A"
+            val denyListService = FakeDenyListService()
+            val grantService = FakeGrantService()
+            val notifierService = FakeNotifierService()
+            val notificationLog = mutableListOf<String>()
 
-        val (engine, _) = createEngine(
-            bureauService, denyListService, grantService, notifierService, notificationLog,
-        )
+            val (engine, _) =
+                createEngine(
+                    bureauService,
+                    denyListService,
+                    grantService,
+                    notifierService,
+                    notificationLog,
+                )
 
-        val petich = defaultPetich("cs-happy")
+            val petich = defaultPetich("cs-happy")
 
-        val result1 = engine.process(petich)
-        assertTrue(result1 is PetichResult.ActionRequired, "Expected ActionRequired, but got $result1")
-        assertEquals("SMS_CONFIRM_CODE", result1.actionType)
+            val result1 = engine.process(petich)
+            assertTrue(result1 is PetichResult.ActionRequired, "Expected ActionRequired, but got $result1")
+            assertEquals("SMS_CONFIRM_CODE", result1.actionType)
 
-        val result2 = engine.process(result1.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)))
-        assertTrue(result2 is PetichResult.Success, "Expected Success, but got $result2")
-        assertEquals(PetichStatus.COMPLETED, result2.petich.status)
+            val result2 =
+                engine.process(
+                    result1.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)),
+                )
+            assertTrue(result2 is PetichResult.Success, "Expected Success, but got $result2")
+            assertEquals(PetichStatus.COMPLETED, result2.petich.status)
 
-        val enriched = result2.petich.enrichedPayload as AccessScoringEnrichedPayload
-        assertEquals(750, enriched.accessScore)
-        assertEquals("A", enriched.historyGrade)
-        assertEquals(BigDecimal("12.50"), enriched.interestRate)
-        assertTrue(enriched.monthlyCost > BigDecimal.ZERO, "Monthly cost should be calculated")
-        assertEquals(BigDecimal("500000"), enriched.approvedQuantity)
+            val enriched = result2.petich.enrichedPayload as AccessScoringEnrichedPayload
+            assertEquals(750, enriched.accessScore)
+            assertEquals("A", enriched.historyGrade)
+            assertEquals(BigDecimal("12.50"), enriched.interestRate)
+            assertTrue(enriched.monthlyCost > BigDecimal.ZERO, "Monthly cost should be calculated")
+            assertEquals(BigDecimal("500000"), enriched.approvedQuantity)
 
-        assertEquals(BigDecimal("500000"), grantService.activations["applicant1"])
-        assertTrue(grantService.operationLog.any { it.contains("RESERVE_LIMIT") })
-        assertTrue(grantService.operationLog.any { it.contains("DISBURSE") })
-        assertTrue(notificationLog.any { it.contains("APPROVED: applicant1") })
-        assertTrue(notificationLog.any { it.contains("MONTHLY_COST: applicant1") })
-    }
-
-    @Test
-    fun testDenyListBlockTriggersCompensation() = runBlocking {
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 750
-        bureauService.applicantGrades["applicant1"] = "A"
-        val denyListService = FakeDenyListService()
-        denyListService.denyListed.add("applicant1")
-        val grantService = FakeGrantService()
-        val notifierService = FakeNotifierService()
-        val notificationLog = mutableListOf<String>()
-
-        val (engine, _) = createEngine(bureauService, denyListService, grantService, notifierService, notificationLog)
-
-        val petich = defaultPetich("cs-denyList")
-
-        val result = engine.process(petich)
-        assertTrue(result is PetichResult.Error, "Expected Error, got $result")
-        assertEquals("Applicant is denyListed", result.reason)
-    }
-
-    @Test
-    fun testActivationFailureTriggersCompensation() = runBlocking {
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 750
-        bureauService.applicantGrades["applicant1"] = "A"
-        val denyListService = FakeDenyListService()
-        val grantService = FakeGrantService()
-        val notifierService = FakeNotifierService()
-        val notificationLog = mutableListOf<String>()
-
-        val (engine, _) = createEngine(
-            bureauService, denyListService, grantService, notifierService, notificationLog,
-            failActivation = true,
-        )
-
-        val petich = defaultPetich("cs-disburse-fail")
-
-        val result1 = engine.process(petich)
-        assertTrue(result1 is PetichResult.ActionRequired, "Expected ActionRequired, got $result1")
-
-        val result2 = engine.process(result1.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)))
-        assertTrue(result2 is PetichResult.SystemFailure, "Expected SystemFailure, got $result2")
-
-        assertTrue(grantService.reservations.isEmpty(), "Access limit reservation should be cancelled")
-        assertTrue(
-            grantService.operationLog.any { it.contains("CANCEL_LIMIT") },
-            "Log should contain CANCEL_LIMIT: ${grantService.operationLog}",
-        )
-    }
-
-    @Test
-    fun testAccessScoreTooLow() = runBlocking {
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 200
-        bureauService.applicantGrades["applicant1"] = "D"
-        val denyListService = FakeDenyListService()
-        val grantService = FakeGrantService()
-        val notifierService = FakeNotifierService()
-        val notificationLog = mutableListOf<String>()
-
-        val (engine, _) = createEngine(bureauService, denyListService, grantService, notifierService, notificationLog)
-
-        val petich = defaultPetich("cs-low-score")
-
-        val result = engine.process(petich)
-        assertTrue(result is PetichResult.Error, "Expected Reject, got $result")
-        assertEquals("Access score too low", result.reason)
-    }
-
-    @Test
-    fun testDebtToScoreRatioTooHigh() = runBlocking {
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 600
-        bureauService.applicantGrades["applicant1"] = "B"
-        val denyListService = FakeDenyListService()
-        val grantService = FakeGrantService()
-        val notifierService = FakeNotifierService()
-        val notificationLog = mutableListOf<String>()
-
-        val (engine, _) = createEngine(bureauService, denyListService, grantService, notifierService, notificationLog)
-
-        val payload = defaultPayload(
-            quantity = BigDecimal("2000000"),
-            termMonths = 12,
-            monthlyScore = BigDecimal("80000"),
-        )
-        val petich = defaultPetich("cs-high-dti", payload)
-
-        val result = engine.process(petich)
-        assertTrue(result is PetichResult.Error, "Expected Reject, got $result")
-        assertEquals("Debt-to-score ratio too high", result.reason)
-    }
-
-    @Test
-    fun testAgeTooYoung() = runBlocking {
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 750
-        bureauService.applicantGrades["applicant1"] = "A"
-        val denyListService = FakeDenyListService()
-        val grantService = FakeGrantService()
-        val notifierService = FakeNotifierService()
-        val notificationLog = mutableListOf<String>()
-
-        val (engine, _) = createEngine(bureauService, denyListService, grantService, notifierService, notificationLog)
-
-        val payload = defaultPayload(age = 18)
-        val petich = defaultPetich("cs-young", payload)
-
-        val result = engine.process(petich)
-        assertTrue(result is PetichResult.Error, "Expected Reject, got $result")
-        assertEquals("Minimum age is 21", result.reason)
-    }
-
-    @Test
-    fun testAgeTooOld() = runBlocking {
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 750
-        bureauService.applicantGrades["applicant1"] = "A"
-        val denyListService = FakeDenyListService()
-        val grantService = FakeGrantService()
-        val notifierService = FakeNotifierService()
-        val notificationLog = mutableListOf<String>()
-
-        val (engine, _) = createEngine(bureauService, denyListService, grantService, notifierService, notificationLog)
-
-        val payload = defaultPayload(age = 70)
-        val petich = defaultPetich("cs-old", payload)
-
-        val result = engine.process(petich)
-        assertTrue(result is PetichResult.Error, "Expected Reject, got $result")
-        assertEquals("Maximum age is 65", result.reason)
-    }
-
-    @Test
-    fun testWrongConfirmCodeThenCorrectConfirmCode() = runBlocking {
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 750
-        bureauService.applicantGrades["applicant1"] = "A"
-        val denyListService = FakeDenyListService()
-        val grantService = FakeGrantService()
-        val notifierService = FakeNotifierService()
-        val notificationLog = mutableListOf<String>()
-
-        val (engine, _) = createEngine(
-            bureauService, denyListService, grantService, notifierService, notificationLog,
-        )
-
-        val petich = defaultPetich("cs-confirmCode-retry")
-
-        val r1 = engine.process(petich)
-        assertTrue(r1 is PetichResult.ActionRequired, "Expected Suspend, got $r1")
-        assertEquals("SMS_CONFIRM_CODE", r1.actionType)
-
-        val r2 = engine.process(r1.petich.copy(resumePayload = ConfirmResumePayload("wrong_code")))
-        assertTrue(r2 is PetichResult.ActionRequired, "Expected Resuspend, got $r2")
-
-        val r3 = engine.process(r2.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)))
-        assertTrue(r3 is PetichResult.Success, "Expected Success, got $r3")
-        assertEquals(PetichStatus.COMPLETED, r3.petich.status)
-    }
-
-    @Test
-    fun testMaxConfirmCodeAttemptsExceeded() = runBlocking {
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 750
-        bureauService.applicantGrades["applicant1"] = "A"
-        val denyListService = FakeDenyListService()
-        val grantService = FakeGrantService()
-        val notifierService = FakeNotifierService()
-        val notificationLog = mutableListOf<String>()
-
-        val (engine, _) = createEngine(
-            bureauService, denyListService, grantService, notifierService, notificationLog,
-        )
-
-        val petich = defaultPetich("cs-confirmCode-max")
-
-        val r1 = engine.process(petich)
-        assertTrue(r1 is PetichResult.ActionRequired)
-        var current = r1.petich
-
-        for (i in 1..3) {
-            val r = engine.process(current.copy(resumePayload = ConfirmResumePayload("wrong_code")))
-            assertTrue(r is PetichResult.ActionRequired, "Attempt $i: expected Resuspend, got $r")
-            current = r.petich
+            assertEquals(BigDecimal("500000"), grantService.activations["applicant1"])
+            assertTrue(grantService.operationLog.any { it.contains("RESERVE_LIMIT") })
+            assertTrue(grantService.operationLog.any { it.contains("DISBURSE") })
+            assertTrue(notificationLog.any { it.contains("APPROVED: applicant1") })
+            assertTrue(notificationLog.any { it.contains("MONTHLY_COST: applicant1") })
         }
 
-        val rFinal = engine.process(current.copy(resumePayload = ConfirmResumePayload("wrong_code")))
-        assertTrue(rFinal is PetichResult.Error, "Expected Reject after max attempts, got $rFinal")
-        assertEquals("Too many CONFIRM_CODE attempts", rFinal.reason)
-    }
-
     @Test
-    fun testCrossPhaseCompensationRollsBackAllPhases() = runBlocking {
-        val compensationLog = mutableListOf<String>()
+    fun testDenyListBlockTriggersCompensation() =
+        runBlocking {
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 750
+            bureauService.applicantGrades["applicant1"] = "A"
+            val denyListService = FakeDenyListService()
+            denyListService.denyListed.add("applicant1")
+            val grantService = FakeGrantService()
+            val notifierService = FakeNotifierService()
+            val notificationLog = mutableListOf<String>()
 
-        class TrackedEnrichmentInterceptor : AccessScoringInterceptor() {
-            override val phase = PetichPhase.ENRICHMENT
-            override val priority = 1
+            val (engine, _) =
+                createEngine(
+                    bureauService,
+                    denyListService,
+                    grantService,
+                    notifierService,
+                    notificationLog,
+                )
 
-            override suspend fun intercept(
-                petich: Petich,
-                payload: AccessScoringPayload,
-            ): InterceptorResult {
-                compensationLog.add("ENRICHMENT_EXECUTED")
-                return InterceptorResult.Proceed()
-            }
+            val petich = defaultPetich("cs-denyList")
 
-            override suspend fun compensate(petich: Petich, payload: AccessScoringPayload) {
-                compensationLog.add("ENRICHMENT_COMPENSATED")
-            }
+            val result = engine.process(petich)
+            assertTrue(result is PetichResult.Error, "Expected Error, got $result")
+            assertEquals("Applicant is denyListed", result.reason)
         }
 
-        class TrackedValidationInterceptor : AccessScoringInterceptor() {
-            override val phase = PetichPhase.VALIDATION
-            override val priority = 10
+    @Test
+    fun testActivationFailureTriggersCompensation() =
+        runBlocking {
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 750
+            bureauService.applicantGrades["applicant1"] = "A"
+            val denyListService = FakeDenyListService()
+            val grantService = FakeGrantService()
+            val notifierService = FakeNotifierService()
+            val notificationLog = mutableListOf<String>()
 
-            override suspend fun intercept(
-                petich: Petich,
-                payload: AccessScoringPayload,
-            ): InterceptorResult {
-                compensationLog.add("VALIDATION_EXECUTED")
-                return InterceptorResult.Proceed()
-            }
+            val (engine, _) =
+                createEngine(
+                    bureauService,
+                    denyListService,
+                    grantService,
+                    notifierService,
+                    notificationLog,
+                    failActivation = true,
+                )
 
-            override suspend fun compensate(petich: Petich, payload: AccessScoringPayload) {
-                compensationLog.add("VALIDATION_COMPENSATED")
-            }
+            val petich = defaultPetich("cs-disburse-fail")
+
+            val result1 = engine.process(petich)
+            assertTrue(result1 is PetichResult.ActionRequired, "Expected ActionRequired, got $result1")
+
+            val result2 =
+                engine.process(
+                    result1.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)),
+                )
+            assertTrue(result2 is PetichResult.SystemFailure, "Expected SystemFailure, got $result2")
+
+            assertTrue(grantService.reservations.isEmpty(), "Access limit reservation should be cancelled")
+            assertTrue(
+                grantService.operationLog.any { it.contains("CANCEL_LIMIT") },
+                "Log should contain CANCEL_LIMIT: ${grantService.operationLog}",
+            )
         }
 
-        class FailingExecutionInterceptor : AccessScoringInterceptor() {
-            override val phase = PetichPhase.EXECUTION
-            override val priority = 10
+    @Test
+    fun testAccessScoreTooLow() =
+        runBlocking {
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 200
+            bureauService.applicantGrades["applicant1"] = "D"
+            val denyListService = FakeDenyListService()
+            val grantService = FakeGrantService()
+            val notifierService = FakeNotifierService()
+            val notificationLog = mutableListOf<String>()
 
-            override suspend fun intercept(
-                petich: Petich,
-                payload: AccessScoringPayload,
-            ): InterceptorResult = throw RuntimeException("Execution failure")
+            val (engine, _) =
+                createEngine(
+                    bureauService,
+                    denyListService,
+                    grantService,
+                    notifierService,
+                    notificationLog,
+                )
+
+            val petich = defaultPetich("cs-low-score")
+
+            val result = engine.process(petich)
+            assertTrue(result is PetichResult.Error, "Expected Reject, got $result")
+            assertEquals("Access score too low", result.reason)
         }
 
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 750
-        bureauService.applicantGrades["applicant1"] = "A"
-        val repo = FakePetichRepository()
-        val interceptors = listOf(
-            HistoryLookupInterceptor(bureauService),
-            ScoringCalculationInterceptor(),
-            TrackedEnrichmentInterceptor(),
-            TrackedValidationInterceptor(),
-            FailingExecutionInterceptor(),
-        )
-        val engine = PetichEngine(interceptors, repo)
+    @Test
+    fun testDebtToScoreRatioTooHigh() =
+        runBlocking {
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 600
+            bureauService.applicantGrades["applicant1"] = "B"
+            val denyListService = FakeDenyListService()
+            val grantService = FakeGrantService()
+            val notifierService = FakeNotifierService()
+            val notificationLog = mutableListOf<String>()
 
-        val petich = defaultPetich("cs-cross-phase")
+            val (engine, _) =
+                createEngine(
+                    bureauService,
+                    denyListService,
+                    grantService,
+                    notifierService,
+                    notificationLog,
+                )
 
-        val result = engine.process(petich)
-        assertTrue(result is PetichResult.SystemFailure, "Expected SystemFailure, got $result")
+            val payload =
+                defaultPayload(
+                    quantity = BigDecimal("2000000"),
+                    termMonths = 12,
+                    monthlyScore = BigDecimal("80000"),
+                )
+            val petich = defaultPetich("cs-high-dti", payload)
 
-        assertTrue(compensationLog.contains("ENRICHMENT_EXECUTED"), "Enrichment should have executed")
-        assertTrue(compensationLog.contains("VALIDATION_EXECUTED"), "Validation should have executed")
-        assertTrue(
-            compensationLog.contains("ENRICHMENT_COMPENSATED"),
-            "Cross-phase: ENRICHMENT should be compensated on EXECUTION failure. Log: $compensationLog",
-        )
-        assertTrue(
-            compensationLog.contains("VALIDATION_COMPENSATED"),
-            "Cross-phase: VALIDATION should be compensated on EXECUTION failure. Log: $compensationLog",
-        )
-    }
+            val result = engine.process(petich)
+            assertTrue(result is PetichResult.Error, "Expected Reject, got $result")
+            assertEquals("Debt-to-score ratio too high", result.reason)
+        }
 
     @Test
-    fun testReprocessCompletedPetichIsIdempotent() = runBlocking {
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 750
-        bureauService.applicantGrades["applicant1"] = "A"
-        val denyListService = FakeDenyListService()
-        val grantService = FakeGrantService()
-        val notifierService = FakeNotifierService()
-        val notificationLog = mutableListOf<String>()
+    fun testAgeTooYoung() =
+        runBlocking {
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 750
+            bureauService.applicantGrades["applicant1"] = "A"
+            val denyListService = FakeDenyListService()
+            val grantService = FakeGrantService()
+            val notifierService = FakeNotifierService()
+            val notificationLog = mutableListOf<String>()
 
-        val (engine, _) = createEngine(
-            bureauService, denyListService, grantService, notifierService, notificationLog,
-        )
+            val (engine, _) =
+                createEngine(
+                    bureauService,
+                    denyListService,
+                    grantService,
+                    notifierService,
+                    notificationLog,
+                )
 
-        val petich = defaultPetich("cs-idempotent")
+            val payload = defaultPayload(age = 18)
+            val petich = defaultPetich("cs-young", payload)
 
-        val r1 = engine.process(petich)
-        val r2 = engine.process((r1 as PetichResult.ActionRequired).petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)))
-        assertTrue(r2 is PetichResult.Success)
-
-        val disbursedAfterFirst = grantService.activations["applicant1"]
-
-        val r3 = engine.process(r2.petich)
-        assertTrue(r3 is PetichResult.Success, "Reprocess should return Success, got $r3")
-        assertEquals(
-            disbursedAfterFirst,
-            grantService.activations["applicant1"],
-            "Activation should not change on reprocess",
-        )
-    }
+            val result = engine.process(petich)
+            assertTrue(result is PetichResult.Error, "Expected Reject, got $result")
+            assertEquals("Minimum age is 21", result.reason)
+        }
 
     @Test
-    fun testSelfEmployedHigherInterestRate() = runBlocking {
-        val bureauService = FakeReputationService()
-        bureauService.applicantScores["applicant1"] = 750
-        bureauService.applicantGrades["applicant1"] = "A"
-        val denyListService = FakeDenyListService()
-        val grantService = FakeGrantService()
-        val notifierService = FakeNotifierService()
-        val notificationLog = mutableListOf<String>()
+    fun testAgeTooOld() =
+        runBlocking {
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 750
+            bureauService.applicantGrades["applicant1"] = "A"
+            val denyListService = FakeDenyListService()
+            val grantService = FakeGrantService()
+            val notifierService = FakeNotifierService()
+            val notificationLog = mutableListOf<String>()
 
-        val (engine, _) = createEngine(
-            bureauService, denyListService, grantService, notifierService, notificationLog,
-        )
+            val (engine, _) =
+                createEngine(
+                    bureauService,
+                    denyListService,
+                    grantService,
+                    notifierService,
+                    notificationLog,
+                )
 
-        val payload = defaultPayload(employmentType = ApplicantCategory.SELF_EMPLOYED)
-        val petich = defaultPetich("cs-self-employed", payload)
+            val payload = defaultPayload(age = 70)
+            val petich = defaultPetich("cs-old", payload)
 
-        val r1 = engine.process(petich)
-        val r2 = engine.process((r1 as PetichResult.ActionRequired).petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)))
-        assertTrue(r2 is PetichResult.Success, "Expected Success, got $r2")
+            val result = engine.process(petich)
+            assertTrue(result is PetichResult.Error, "Expected Reject, got $result")
+            assertEquals("Maximum age is 65", result.reason)
+        }
 
-        val enriched = r2.petich.enrichedPayload as AccessScoringEnrichedPayload
-        assertEquals(BigDecimal("15.63"), enriched.interestRate)
-    }
+    @Test
+    fun testWrongConfirmCodeThenCorrectConfirmCode() =
+        runBlocking {
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 750
+            bureauService.applicantGrades["applicant1"] = "A"
+            val denyListService = FakeDenyListService()
+            val grantService = FakeGrantService()
+            val notifierService = FakeNotifierService()
+            val notificationLog = mutableListOf<String>()
+
+            val (engine, _) =
+                createEngine(
+                    bureauService,
+                    denyListService,
+                    grantService,
+                    notifierService,
+                    notificationLog,
+                )
+
+            val petich = defaultPetich("cs-confirmCode-retry")
+
+            val r1 = engine.process(petich)
+            assertTrue(r1 is PetichResult.ActionRequired, "Expected Suspend, got $r1")
+            assertEquals("SMS_CONFIRM_CODE", r1.actionType)
+
+            val r2 = engine.process(r1.petich.copy(resumePayload = ConfirmResumePayload("wrong_code")))
+            assertTrue(r2 is PetichResult.ActionRequired, "Expected Resuspend, got $r2")
+
+            val r3 =
+                engine.process(
+                    r2.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)),
+                )
+            assertTrue(r3 is PetichResult.Success, "Expected Success, got $r3")
+            assertEquals(PetichStatus.COMPLETED, r3.petich.status)
+        }
+
+    @Test
+    fun testMaxConfirmCodeAttemptsExceeded() =
+        runBlocking {
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 750
+            bureauService.applicantGrades["applicant1"] = "A"
+            val denyListService = FakeDenyListService()
+            val grantService = FakeGrantService()
+            val notifierService = FakeNotifierService()
+            val notificationLog = mutableListOf<String>()
+
+            val (engine, _) =
+                createEngine(
+                    bureauService,
+                    denyListService,
+                    grantService,
+                    notifierService,
+                    notificationLog,
+                )
+
+            val petich = defaultPetich("cs-confirmCode-max")
+
+            val r1 = engine.process(petich)
+            assertTrue(r1 is PetichResult.ActionRequired)
+            var current = r1.petich
+
+            for (i in 1..3) {
+                val r = engine.process(current.copy(resumePayload = ConfirmResumePayload("wrong_code")))
+                assertTrue(r is PetichResult.ActionRequired, "Attempt $i: expected Resuspend, got $r")
+                current = r.petich
+            }
+
+            val rFinal = engine.process(current.copy(resumePayload = ConfirmResumePayload("wrong_code")))
+            assertTrue(rFinal is PetichResult.Error, "Expected Reject after max attempts, got $rFinal")
+            assertEquals("Too many CONFIRM_CODE attempts", rFinal.reason)
+        }
+
+    @Test
+    fun testCrossPhaseCompensationRollsBackAllPhases() =
+        runBlocking {
+            val compensationLog = mutableListOf<String>()
+
+            class TrackedEnrichmentInterceptor : AccessScoringInterceptor() {
+                override val phase = PetichPhase.ENRICHMENT
+                override val priority = 1
+
+                override suspend fun intercept(
+                    petich: Petich,
+                    payload: AccessScoringPayload,
+                ): InterceptorResult {
+                    compensationLog.add("ENRICHMENT_EXECUTED")
+                    return InterceptorResult.Proceed()
+                }
+
+                override suspend fun compensate(
+                    petich: Petich,
+                    payload: AccessScoringPayload,
+                ) {
+                    compensationLog.add("ENRICHMENT_COMPENSATED")
+                }
+            }
+
+            class TrackedValidationInterceptor : AccessScoringInterceptor() {
+                override val phase = PetichPhase.VALIDATION
+                override val priority = 10
+
+                override suspend fun intercept(
+                    petich: Petich,
+                    payload: AccessScoringPayload,
+                ): InterceptorResult {
+                    compensationLog.add("VALIDATION_EXECUTED")
+                    return InterceptorResult.Proceed()
+                }
+
+                override suspend fun compensate(
+                    petich: Petich,
+                    payload: AccessScoringPayload,
+                ) {
+                    compensationLog.add("VALIDATION_COMPENSATED")
+                }
+            }
+
+            class FailingExecutionInterceptor : AccessScoringInterceptor() {
+                override val phase = PetichPhase.EXECUTION
+                override val priority = 10
+
+                override suspend fun intercept(
+                    petich: Petich,
+                    payload: AccessScoringPayload,
+                ): InterceptorResult = throw RuntimeException("Execution failure")
+            }
+
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 750
+            bureauService.applicantGrades["applicant1"] = "A"
+            val repo = FakePetichRepository()
+            val interceptors =
+                listOf(
+                    HistoryLookupInterceptor(bureauService),
+                    ScoringCalculationInterceptor(),
+                    TrackedEnrichmentInterceptor(),
+                    TrackedValidationInterceptor(),
+                    FailingExecutionInterceptor(),
+                )
+            val engine = PetichEngine(interceptors, repo)
+
+            val petich = defaultPetich("cs-cross-phase")
+
+            val result = engine.process(petich)
+            assertTrue(result is PetichResult.SystemFailure, "Expected SystemFailure, got $result")
+
+            assertTrue(compensationLog.contains("ENRICHMENT_EXECUTED"), "Enrichment should have executed")
+            assertTrue(compensationLog.contains("VALIDATION_EXECUTED"), "Validation should have executed")
+            assertTrue(
+                compensationLog.contains("ENRICHMENT_COMPENSATED"),
+                "Cross-phase: ENRICHMENT should be compensated on EXECUTION failure. Log: $compensationLog",
+            )
+            assertTrue(
+                compensationLog.contains("VALIDATION_COMPENSATED"),
+                "Cross-phase: VALIDATION should be compensated on EXECUTION failure. Log: $compensationLog",
+            )
+        }
+
+    @Test
+    fun testReprocessCompletedPetichIsIdempotent() =
+        runBlocking {
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 750
+            bureauService.applicantGrades["applicant1"] = "A"
+            val denyListService = FakeDenyListService()
+            val grantService = FakeGrantService()
+            val notifierService = FakeNotifierService()
+            val notificationLog = mutableListOf<String>()
+
+            val (engine, _) =
+                createEngine(
+                    bureauService,
+                    denyListService,
+                    grantService,
+                    notifierService,
+                    notificationLog,
+                )
+
+            val petich = defaultPetich("cs-idempotent")
+
+            val r1 = engine.process(petich)
+            val r2 =
+                engine.process(
+                    (r1 as PetichResult.ActionRequired).petich.copy(
+                        resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!),
+                    ),
+                )
+            assertTrue(r2 is PetichResult.Success)
+
+            val disbursedAfterFirst = grantService.activations["applicant1"]
+
+            val r3 = engine.process(r2.petich)
+            assertTrue(r3 is PetichResult.Success, "Reprocess should return Success, got $r3")
+            assertEquals(
+                disbursedAfterFirst,
+                grantService.activations["applicant1"],
+                "Activation should not change on reprocess",
+            )
+        }
+
+    @Test
+    fun testSelfEmployedHigherInterestRate() =
+        runBlocking {
+            val bureauService = FakeReputationService()
+            bureauService.applicantScores["applicant1"] = 750
+            bureauService.applicantGrades["applicant1"] = "A"
+            val denyListService = FakeDenyListService()
+            val grantService = FakeGrantService()
+            val notifierService = FakeNotifierService()
+            val notificationLog = mutableListOf<String>()
+
+            val (engine, _) =
+                createEngine(
+                    bureauService,
+                    denyListService,
+                    grantService,
+                    notifierService,
+                    notificationLog,
+                )
+
+            val payload = defaultPayload(employmentType = ApplicantCategory.SELF_EMPLOYED)
+            val petich = defaultPetich("cs-self-employed", payload)
+
+            val r1 = engine.process(petich)
+            val r2 =
+                engine.process(
+                    (r1 as PetichResult.ActionRequired).petich.copy(
+                        resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!),
+                    ),
+                )
+            assertTrue(r2 is PetichResult.Success, "Expected Success, got $r2")
+
+            val enriched = r2.petich.enrichedPayload as AccessScoringEnrichedPayload
+            assertEquals(BigDecimal("15.63"), enriched.interestRate)
+        }
 }

@@ -1,10 +1,11 @@
 package ru.workinprogress.petich.ktor
 
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.plugins.statuspages.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.createApplicationPlugin
+import io.ktor.server.application.install
+import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.response.respond
+import io.ktor.server.routing.routing
 import ru.workinprogress.petich.OptimisticLockException
 import ru.workinprogress.petich.PetichEngine
 import ru.workinprogress.petich.PetichRepository

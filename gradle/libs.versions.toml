@@ -28,6 +28,7 @@ exposed-json = { group = "org.jetbrains.exposed", name = "exposed-json", version
 
 [plugins]
 sborkaKmp = { id = "ru.workinprogress.sborka.kmp", version.ref = "sborka" }
+sborkaLint = { id = "ru.workinprogress.sborka.lint", version.ref = "sborka" }
 sborkaJvm = { id = "ru.workinprogress.sborka.jvm", version.ref = "sborka" }
 sborkaPublish = { id = "ru.workinprogress.sborka.publish", version.ref = "sborka" }
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

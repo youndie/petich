@@ -76,7 +76,10 @@ class TerminalReplayTest {
             val engine = PetichEngine(listOf(work, fault), repository)
 
             val first = engine.process(petich("rolled-back"))
-            assertTrue(first is PetichResult.Error, "a rolled-back saga is a business outcome; expected Error, got $first")
+            assertTrue(
+                first is PetichResult.Error,
+                "a rolled-back saga is a business outcome; expected Error, got $first",
+            )
             assertEquals(PetichStatus.FAILED, repository.petich?.status)
             assertEquals(1, work.compensations)
 

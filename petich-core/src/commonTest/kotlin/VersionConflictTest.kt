@@ -87,7 +87,9 @@ class VersionConflictTest {
             println("[DEBUG_LOG] Result: $result")
             // Re-fetch from repository to check if it was updated
             val saved = repo.savedPetich
-            println("[DEBUG_LOG] Final petich status: ${saved?.status}, version: ${saved?.version}, attempts: ${repo.attempt}")
+            println(
+                "[DEBUG_LOG] Final petich status: ${saved?.status}, version: ${saved?.version}, attempts: ${repo.attempt}",
+            )
 
             assertTrue(result is PetichResult.Success, "Should succeed on second attempt, result: $result")
         }

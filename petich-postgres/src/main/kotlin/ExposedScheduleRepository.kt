@@ -26,11 +26,17 @@ class ExposedScheduleRepository(
     // dispatcher called it — for routes, that means directly on the Ktor engine threads. JDBC is
     // blocking, and an engine thread stuck in it cannot accept connections, so under load this
     // produced ConnectTimeout on the clients rather than merely slow responses.
-    private suspend fun <T> dbQuery(block: suspend () -> T): T = withContext(Dispatchers.IO) { suspendTransaction(db = db) { block() } }
+    private suspend fun <T> dbQuery(block: suspend () -> T): T =
+        withContext(Dispatchers.IO) { suspendTransaction(db = db) { block() } }
 
     override suspend fun save(job: ScheduledJob): ScheduledJob =
         dbQuery {
-            val exists = table.selectAll().where { table.id eq job.id }.empty().not()
+            val exists =
+                table
+                    .selectAll()
+                    .where { table.id eq job.id }
+                    .empty()
+                    .not()
             if (exists) {
                 table.update({ table.id eq job.id }) {
                     it[nextRunAt] = job.nextRunAtEpochMs
@@ -58,7 +64,11 @@ class ExposedScheduleRepository(
 
     override suspend fun findById(id: String): ScheduledJob? =
         dbQuery {
-            table.selectAll().where { table.id eq id }.singleOrNull()?.toDomain()
+            table
+                .selectAll()
+                .where { table.id eq id }
+                .singleOrNull()
+                ?.toDomain()
         }
 
     // Filtering in SQL: the point of this query is to avoid loading the entire schedule just to

@@ -365,8 +365,14 @@ class PetichEngine(
         outboxEvents: List<OutboxEvent> = emptyList(),
     ): Boolean =
         when {
-            outboxEvents.isEmpty() -> repository.update(petich)
-            repository is OutboxAwarePetichRepository -> repository.update(petich, outboxEvents)
+            outboxEvents.isEmpty() -> {
+                repository.update(petich)
+            }
+
+            repository is OutboxAwarePetichRepository -> {
+                repository.update(petich, outboxEvents)
+            }
+
             else -> {
                 metrics.onDroppedEvents(petich.type, outboxEvents.size)
                 repository.update(petich)
@@ -492,10 +498,16 @@ class PetichEngine(
                 val petich = repository.findById(petichId) ?: return@withLock ExpireResult.NotFound
                 val deadline = petich.suspendedUntilEpochMs
                 when {
-                    petich.status != PetichStatus.PENDING_SIGNATURE -> ExpireResult.NotSuspended(petich.status)
+                    petich.status != PetichStatus.PENDING_SIGNATURE -> {
+                        ExpireResult.NotSuspended(petich.status)
+                    }
+
                     // The client answered in time and the petich went round again with a new
                     // deadline.
-                    deadline == null || clock.nowEpochMs() < deadline -> ExpireResult.NotExpiredYet
+                    deadline == null || clock.nowEpochMs() < deadline -> {
+                        ExpireResult.NotExpiredYet
+                    }
+
                     else -> {
                         triggerCompensation(petich.copy(suspendedUntilEpochMs = null), EXPIRED_REASON)
                         ExpireResult.Expired(petichId)
@@ -573,7 +585,11 @@ class PetichEngine(
                         // stale deadline into a terminal status. additionalUpdates is applied
                         // afterwards and so remains the way to set a new deadline (see the Suspend
                         // and Resuspend branches).
-                        suspendedUntilEpochMs = latest.suspendedUntilEpochMs.takeIf { status == PetichStatus.PENDING_SIGNATURE },
+                        suspendedUntilEpochMs =
+                            latest.suspendedUntilEpochMs.takeIf {
+                                status ==
+                                    PetichStatus.PENDING_SIGNATURE
+                            },
                     ),
                 )
             if (updatePetich(updated, outboxEvents)) return updated
@@ -612,7 +628,9 @@ class PetichEngine(
         if (currentPetich.status.isTerminal()) {
             return when (currentPetich.status) {
                 PetichStatus.COMPLETED -> PetichResult.Success(currentPetich)
+
                 PetichStatus.REJECTED -> PetichResult.Error("Petich was already rejected")
+
                 // FAILED is as finished an outcome as REJECTED, and a repeat under the same id
                 // must return what the pass that failed it returned. A saga rolled back through
                 // Compensate returned Error, while its repeat returned SystemFailure — the same

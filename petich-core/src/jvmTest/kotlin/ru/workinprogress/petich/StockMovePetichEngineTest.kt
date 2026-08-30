@@ -2,7 +2,7 @@ package ru.workinprogress.petich
 
 import kotlinx.coroutines.runBlocking
 import java.math.BigDecimal
-import java.util.*
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -208,7 +208,13 @@ class ApprovalInterceptor : MoveInterceptor() {
         val provided = (petich.resumePayload as? ConfirmResumePayload)?.code
         if (provided == enriched.confirmCode) return InterceptorResult.Proceed()
 
-        return InterceptorResult.Resuspend("CONFIRM_CODE", StockMoveEnrichedPayload(confirmAttempts = enriched.confirmAttempts + 1))
+        return InterceptorResult.Resuspend(
+            "CONFIRM_CODE",
+            StockMoveEnrichedPayload(
+                confirmAttempts =
+                    enriched.confirmAttempts + 1,
+            ),
+        )
     }
 }
 
@@ -362,9 +368,12 @@ class StockMovePetichEngineTest {
             val petichAfterActionRequired = result1.petich
 
             // 2. Process again -> Expect Success
-            val result2 = engine.process(
-                petichAfterActionRequired.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)),
-            )
+            val result2 =
+                engine.process(
+                    petichAfterActionRequired.copy(
+                        resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!),
+                    ),
+                )
             assertTrue(result2 is PetichResult.Success, "Expected Success, but got: $result2")
             assertEquals(PetichStatus.COMPLETED, result2.petich.status)
 
@@ -440,9 +449,12 @@ class StockMovePetichEngineTest {
             val petichAfterActionRequired = result1.petich
 
             // 2. Process again -> Fail in Execution phase
-            val result2 = engine.process(
-                petichAfterActionRequired.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)),
-            )
+            val result2 =
+                engine.process(
+                    petichAfterActionRequired.copy(
+                        resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!),
+                    ),
+                )
 
             assertTrue(result2 is PetichResult.SystemFailure, "Expected SystemFailure, but got: $result2")
 
@@ -487,11 +499,12 @@ class StockMovePetichEngineTest {
             assertTrue(r2 is PetichResult.ActionRequired, "Expected Resuspend, got $r2")
 
             // 3. Resume with correct code → Success
-            val r3 = engine.process(
-                r2.petich.copy(
-                    resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!),
-                ),
-            )
+            val r3 =
+                engine.process(
+                    r2.petich.copy(
+                        resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!),
+                    ),
+                )
             assertTrue(r3 is PetichResult.Success, "Expected Success, got $r3")
             assertEquals(PetichStatus.COMPLETED, r3.petich.status)
         }
@@ -706,11 +719,12 @@ class StockMovePetichEngineTest {
                 )
 
             val r1 = engine.process(petich)
-            val r2 = engine.process(
-                (r1 as PetichResult.ActionRequired).petich.copy(
-                    resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!),
-                ),
-            )
+            val r2 =
+                engine.process(
+                    (r1 as PetichResult.ActionRequired).petich.copy(
+                        resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!),
+                    ),
+                )
             assertTrue(r2 is PetichResult.Success)
 
             val quantityAfterFirst = inventoryService.quantities["from1"]

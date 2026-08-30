@@ -181,7 +181,8 @@ class EngineDefectsTest {
                 object : PetichInterceptor<TestPayload> {
                     override val phase = PetichPhase.ENRICHMENT
 
-                    override fun supports(payload: PetichPayload): Boolean = throw IllegalStateException("supports failed")
+                    override fun supports(payload: PetichPayload): Boolean =
+                        throw IllegalStateException("supports failed")
 
                     override suspend fun intercept(
                         petich: Petich,

@@ -1,11 +1,19 @@
 package ru.workinprogress.petich.ktor
 
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
-import ru.workinprogress.petich.*
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import io.ktor.server.routing.route
+import ru.workinprogress.petich.Petich
+import ru.workinprogress.petich.PetichEngine
+import ru.workinprogress.petich.PetichRepository
+import ru.workinprogress.petich.PetichResult
+import ru.workinprogress.petich.PetichStatus
+import ru.workinprogress.petich.isTerminal
 
 fun Route.petichRouting(
     engine: PetichEngine,

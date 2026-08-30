@@ -2,10 +2,9 @@ plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
     alias(libs.plugins.sborkaJvm)
+    alias(libs.plugins.sborkaLint)
     alias(libs.plugins.sborkaPublish)
 }
-
-
 
 dependencies {
     // api, not implementation: the classes here IMPLEMENT interfaces from the modules listed

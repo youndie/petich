@@ -69,15 +69,27 @@ class PublishedSurfaceTest {
     fun `each index covers the columns its query filters on`() {
         assertEquals(
             listOf("status", "suspended_until"),
-            PetichTable(Json).indices.single().columns.map { it.name },
+            PetichTable(Json)
+                .indices
+                .single()
+                .columns
+                .map { it.name },
         )
         assertEquals(
             listOf("active", "next_run_at"),
-            ScheduledJobsTable().indices.single().columns.map { it.name },
+            ScheduledJobsTable()
+                .indices
+                .single()
+                .columns
+                .map { it.name },
         )
         assertEquals(
             listOf("status", "created_at"),
-            OutboxEventsTable().indices.single().columns.map { it.name },
+            OutboxEventsTable()
+                .indices
+                .single()
+                .columns
+                .map { it.name },
         )
     }
 
