@@ -9,7 +9,8 @@ Two things have to hold, and the build notices neither:
 * the floor must be stated in the metadata as org.gradle.jvm.version. A plain kotlin("jvm") module
   gets that attribute from its toolchain; a Kotlin Multiplatform module publishes its jvm variants
   without it, so Gradle has no grounds to refuse a consumer who is too old, and the failure happens
-  later and elsewhere.
+  later and elsewhere. `ru.workinprogress.sborka.publish` sets the attribute; this checks that it
+  arrived, which is a different statement from "the convention was applied".
 
 Run against a local publication:
 
@@ -18,9 +19,14 @@ Run against a local publication:
 """
 import glob, json, os, re, struct, sys, zipfile
 
-FLOOR = int(re.search(r"JVM_FLOOR\s*=\s*(\d+)", open(
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "buildSrc/src/main/kotlin/JvmFloor.kt")
-).read()).group(1))
+# Read from gradle.properties, which is where the number lives now: `sborka.jvmFloor` is what the
+# shared publish convention stamps into org.gradle.jvm.version, so this audit and the build read the
+# same line. It used to be JVM_FLOOR in buildSrc, and buildSrc is gone.
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_MATCH = re.search(r"^sborka\.jvmFloor\s*=\s*(\d+)", open(os.path.join(_ROOT, "gradle.properties")).read(), re.M)
+if not _MATCH:
+    sys.exit("sborka.jvmFloor is not set in gradle.properties — the audit has nothing to compare against")
+FLOOR = int(_MATCH.group(1))
 # Java 17 is class file 61, and every release since is one more.
 CLASS_FILE = FLOOR + 44
 

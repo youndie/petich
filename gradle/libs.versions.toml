@@ -1,4 +1,6 @@
 [versions]
+# The shared build conventions. One number: every sborka plugin below takes its version from here.
+sborka = "0.1.0.4"
 kotlin = "2.4.10"
 ktor = "3.5.2"
 exposed = "1.4.0"
@@ -8,7 +10,6 @@ kotlinxSerializationJson = "1.11.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
-kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
@@ -26,6 +27,9 @@ exposed-jdbc = { group = "org.jetbrains.exposed", name = "exposed-jdbc", version
 exposed-json = { group = "org.jetbrains.exposed", name = "exposed-json", version.ref = "exposed" }
 
 [plugins]
+sborkaKmp = { id = "ru.workinprogress.sborka.kmp", version.ref = "sborka" }
+sborkaJvm = { id = "ru.workinprogress.sborka.jvm", version.ref = "sborka" }
+sborkaPublish = { id = "ru.workinprogress.sborka.publish", version.ref = "sborka" }
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
