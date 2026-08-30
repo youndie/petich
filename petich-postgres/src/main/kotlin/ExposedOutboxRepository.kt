@@ -18,7 +18,8 @@ class ExposedOutboxRepository(
     // dispatcher called it — for routes, that means directly on the Ktor engine threads. JDBC is
     // blocking, and an engine thread stuck in it cannot accept connections, so under load this
     // produced ConnectTimeout on the clients rather than merely slow responses.
-    private suspend fun <T> dbQuery(block: suspend () -> T): T = withContext(Dispatchers.IO) { suspendTransaction(db = db) { block() } }
+    private suspend fun <T> dbQuery(block: suspend () -> T): T =
+        withContext(Dispatchers.IO) { suspendTransaction(db = db) { block() } }
 
     override suspend fun fetchPending(limit: Int): List<OutboxRecord> =
         dbQuery {
@@ -47,7 +48,12 @@ class ExposedOutboxRepository(
 
     override suspend fun markFailed(id: String) {
         dbQuery {
-            val currentRetryCount = table.selectAll().where { table.id eq id }.singleOrNull()?.get(table.retryCount) ?: 0
+            val currentRetryCount =
+                table
+                    .selectAll()
+                    .where { table.id eq id }
+                    .singleOrNull()
+                    ?.get(table.retryCount) ?: 0
             table.update({ table.id eq id }) {
                 it[retryCount] = currentRetryCount + 1
             }

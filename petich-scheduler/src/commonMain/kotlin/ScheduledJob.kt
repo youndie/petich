@@ -1,12 +1,12 @@
 package ru.workinprogress.petich.scheduler
 
-import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atTime
 import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 // Recurrence. Deliberately NOT cron: a cron expression needs a parser, does incomparably more
 // than a recurring job requires, and "0 0 3 * *" cannot be explained to an end user. The list
@@ -60,10 +60,13 @@ fun Recurrence.nextRunAfter(
     val next =
         when (this) {
             Recurrence.DAILY -> local.date.plus(1, DateTimeUnit.DAY)
+
             Recurrence.WEEKLY -> local.date.plus(1, DateTimeUnit.WEEK)
+
             // 31 January plus a month is 28/29 February: kotlinx-datetime clamps the day to the
             // month's length by itself, which is exactly what "run on the 31st" should mean.
             Recurrence.MONTHLY -> local.date.plus(1, DateTimeUnit.MONTH)
+
             Recurrence.ONCE -> return null
         }
     return next.atTime(local.time).toInstant(timeZone).toEpochMilliseconds()

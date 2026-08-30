@@ -1,7 +1,7 @@
 package ru.workinprogress.petich
 
 import kotlinx.coroutines.runBlocking
-import java.util.*
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -103,7 +103,9 @@ class FakeCredentialService {
         operationLog.add("ISSUE_BADGE: $recordId -> $badgeId key=$idempotencyKey")
 
         if (callCount == failAfterCreationOnAttempt) {
-            operationLog.add("ISSUE_BADGE_NETWORK_FAIL: attempt $callCount key=$idempotencyKey (badge $badgeId created server-side)")
+            operationLog.add(
+                "ISSUE_BADGE_NETWORK_FAIL: attempt $callCount key=$idempotencyKey (badge $badgeId created server-side)",
+            )
             throw RuntimeException("Network timeout after badge creation")
         }
 
@@ -380,7 +382,9 @@ class BadgeIssuanceNotificationInterceptor(
     ): InterceptorResult {
         val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
         notificationLog.add(
-            "BADGE_ISSUED: holder=${payload.holderId} pan=****${enriched.pan?.takeLast(4)} tracking=${enriched.deliveryTrackingId}",
+            "BADGE_ISSUED: holder=${payload.holderId} pan=****${enriched.pan?.takeLast(
+                4,
+            )} tracking=${enriched.deliveryTrackingId}",
         )
         return InterceptorResult.Proceed()
     }
@@ -463,7 +467,10 @@ class BadgeIssuancePetichEngineTest {
             assertEquals("SMS_CONFIRM_CODE", r1.actionType)
 
             // 2. Confirm CONFIRM_CODE -> the whole Execution chain -> Success
-            val r2 = engine.process(r1.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)))
+            val r2 =
+                engine.process(
+                    r1.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)),
+                )
             assertTrue(r2 is PetichResult.Success, "Expected Success, got $r2")
             assertEquals(PetichStatus.COMPLETED, r2.petich.status)
 
@@ -524,7 +531,10 @@ class BadgeIssuancePetichEngineTest {
 
             // 2. First attempt — the processor created the badge but the network failed on the
             //    response -> SystemFailure
-            val r2 = engine.process(r1.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)))
+            val r2 =
+                engine.process(
+                    r1.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)),
+                )
             assertTrue(r2 is PetichResult.SystemFailure, "Expected SystemFailure on first attempt, got $r2")
 
             // The badge exists on the processor's side, but the customer does not know that
@@ -532,7 +542,11 @@ class BadgeIssuancePetichEngineTest {
                 credentialService.operationLog.any { it.contains("ISSUE_BADGE_NETWORK_FAIL") },
                 "Should have logged network failure after badge creation",
             )
-            assertEquals(1, credentialService.issuedBadges.size, "Badge was created server-side despite network failure")
+            assertEquals(
+                1,
+                credentialService.issuedBadges.size,
+                "Badge was created server-side despite network failure",
+            )
 
             // Compensation closed the record, since the engine does not know a badge was created
             assertTrue(directoryService.operationLog.any { it.contains("CLOSE_RECORD") })
@@ -597,7 +611,10 @@ class BadgeIssuancePetichEngineTest {
 
             // 2. Execution: record opened (step 1), badge issued (step 2), printing failed
             //    (step 3) -> compensation
-            val r2 = engine.process(r1.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)))
+            val r2 =
+                engine.process(
+                    r1.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)),
+                )
             assertTrue(r2 is PetichResult.SystemFailure, "Expected SystemFailure, got $r2")
 
             // Step 3 failed
@@ -680,7 +697,10 @@ class BadgeIssuancePetichEngineTest {
             assertTrue(r2 is PetichResult.ActionRequired, "Expected Resuspend, got $r2")
 
             // Correct code -> Success
-            val r3 = engine.process(r2.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)))
+            val r3 =
+                engine.process(
+                    r2.petich.copy(resumePayload = ConfirmResumePayload(notifierService.lastSentCode!!)),
+                )
             assertTrue(r3 is PetichResult.Success, "Expected Success, got $r3")
             assertEquals(PetichStatus.COMPLETED, r3.petich.status)
         }

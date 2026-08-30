@@ -2,10 +2,9 @@ plugins {
     kotlin("multiplatform")
     kotlin("plugin.serialization")
     alias(libs.plugins.sborkaKmp)
+    alias(libs.plugins.sborkaLint)
     alias(libs.plugins.sborkaPublish)
 }
-
-
 
 kotlin {
     jvm()

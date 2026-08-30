@@ -180,6 +180,9 @@ class OutboxRelayWorkerTest {
 
             assertEquals(3, attempts, "should stop attempting exactly at maxAttempts")
             assertEquals(listOf("evt-dead"), repository.deadLettered)
-            assertTrue(!repository.pending.containsKey("evt-dead"), "dead-lettered event must no longer be returned by fetchPending")
+            assertTrue(
+                !repository.pending.containsKey("evt-dead"),
+                "dead-lettered event must no longer be returned by fetchPending",
+            )
         }
 }

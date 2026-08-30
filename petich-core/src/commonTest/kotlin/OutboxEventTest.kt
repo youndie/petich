@@ -153,7 +153,8 @@ class OutboxEventTest {
                     override suspend fun intercept(
                         petich: Petich,
                         payload: TestPayload,
-                    ): InterceptorResult = InterceptorResult.Proceed(outboxEvents = listOf(FakeOutboxEvent(id = "evt-2")))
+                    ): InterceptorResult =
+                        InterceptorResult.Proceed(outboxEvents = listOf(FakeOutboxEvent(id = "evt-2")))
 
                     override suspend fun compensate(
                         petich: Petich,
@@ -274,7 +275,11 @@ class OutboxEventTest {
             val repository = FakeOutboxAwareRepository()
 
             val engine =
-                PetichEngine(listOf(proceedingInterceptor(listOf(FakeOutboxEvent(id = "evt-c")))), repository, metrics = metrics)
+                PetichEngine(
+                    listOf(proceedingInterceptor(listOf(FakeOutboxEvent(id = "evt-c")))),
+                    repository,
+                    metrics = metrics,
+                )
 
             val result = engine.process(testPetich())
 

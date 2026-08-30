@@ -1,15 +1,15 @@
 package ru.workinprogress.petich.scheduler
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
-import kotlin.time.Instant
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 private val UTC = TimeZone.UTC
 
@@ -135,7 +135,13 @@ class SchedulerWorkerTest {
 
             assertEquals(1, fired)
             assertEquals(listOf("""{"amount":100}"""), payloads)
-            assertEquals("2026-02-15T09:00", repository.jobs.getValue("job-1").nextRunAtEpochMs.asText())
+            assertEquals(
+                "2026-02-15T09:00",
+                repository.jobs
+                    .getValue("job-1")
+                    .nextRunAtEpochMs
+                    .asText(),
+            )
         }
 
     // Counted from the SCHEDULED time, not the actual one: otherwise a job due "on the 15th" that
@@ -148,7 +154,13 @@ class SchedulerWorkerTest {
 
             worker(repository, TestClock(at("2026-01-15T23:47")), {}).tick()
 
-            assertEquals("2026-02-15T09:00", repository.jobs.getValue("job-1").nextRunAtEpochMs.asText())
+            assertEquals(
+                "2026-02-15T09:00",
+                repository.jobs
+                    .getValue("job-1")
+                    .nextRunAtEpochMs
+                    .asText(),
+            )
         }
 
     // Missed periods are not caught up: for side-effecting work, three back-dated runs are more
@@ -164,7 +176,13 @@ class SchedulerWorkerTest {
             worker(repository, TestClock(at("2026-04-20T10:00")), { runs++ }).tick()
 
             assertEquals(1, runs, "missed periods must not be executed retroactively")
-            assertEquals("2026-05-15T09:00", repository.jobs.getValue("job-1").nextRunAtEpochMs.asText())
+            assertEquals(
+                "2026-05-15T09:00",
+                repository.jobs
+                    .getValue("job-1")
+                    .nextRunAtEpochMs
+                    .asText(),
+            )
         }
 
     @Test
@@ -233,7 +251,12 @@ class SchedulerWorkerTest {
             repository.save(job(nextRunAt = at("2026-01-15T09:00"), failures = 4))
             val gaveUp = mutableListOf<String>()
 
-            worker(repository, TestClock(at("2026-01-15T09:00")), { error("boom") }, onGaveUp = { gaveUp += it.id }).tick()
+            worker(
+                repository,
+                TestClock(at("2026-01-15T09:00")),
+                { error("boom") },
+                onGaveUp = { gaveUp += it.id },
+            ).tick()
 
             val stored = repository.jobs.getValue("job-1")
             assertFalse(stored.active, "a job failing repeatedly must be disabled")
