@@ -1,14 +1,11 @@
 plugins {
     kotlin("multiplatform")
     kotlin("plugin.serialization")
-    id("petich.publishing")
+    alias(libs.plugins.sborkaKmp)
+    alias(libs.plugins.sborkaPublish)
 }
 
-group = "io.github.youndie"
 
-repositories {
-    mavenCentral()
-}
 
 kotlin {
     jvm()
@@ -36,7 +33,6 @@ kotlin {
         }
         commonTest {
             dependencies {
-                implementation(kotlin("test"))
                 implementation(libs.ktor.serverTestHost)
                 implementation(libs.ktor.serverContentNegotiation)
                 implementation(libs.ktor.serializationJson)

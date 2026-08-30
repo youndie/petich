@@ -1,13 +1,10 @@
 plugins {
     kotlin("multiplatform")
-    id("petich.publishing")
+    alias(libs.plugins.sborkaKmp)
+    alias(libs.plugins.sborkaPublish)
 }
 
-group = "io.github.youndie"
 
-repositories {
-    mavenCentral()
-}
 
 kotlin {
     jvm()
@@ -22,7 +19,6 @@ kotlin {
         }
         commonTest {
             dependencies {
-                implementation(kotlin("test"))
                 implementation(libs.kotlinx.coroutines.test)
             }
         }

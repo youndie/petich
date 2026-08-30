@@ -1,14 +1,11 @@
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
-    id("petich.publishing")
+    alias(libs.plugins.sborkaJvm)
+    alias(libs.plugins.sborkaPublish)
 }
 
-group = "io.github.youndie"
 
-repositories {
-    mavenCentral()
-}
 
 dependencies {
     // api, not implementation: the classes here IMPLEMENT interfaces from the modules listed
@@ -35,7 +32,10 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
 
-    // The module had no tests at all, which is how a class with no package and an index described
-    // only in a comment both shipped: neither is visible from inside the module's own package.
-    testImplementation(libs.kotlin.testJunit)
+    // No test framework declared here any more. `sborka.jvm` puts `kotlin("test")` on the test
+    // classpath and `sborka.test` runs it on the JUnit Platform, so this module joins the other five
+    // on JUnit 5 instead of being the one left on JUnit 4 — which is what `kotlin-test-junit` was.
+    // Kept the note it carried: the module had no tests at all, which is how a class with no package
+    // and an index described only in a comment both shipped. Neither is visible from inside the
+    // module's own package.
 }
