@@ -9,16 +9,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # Both, not one: Gradle itself runs on the newer JDK, while the toolchain compiles against
-      # the floor (JvmFloor.kt) and needs that JDK present to do it. Relying on whatever the runner
-      # image happens to preinstall is how a floor silently becomes "whatever the machine had".
-      - uses: actions/setup-java@v5
-        with:
-          distribution: 'temurin'
-          java-version: |
-            21
-            25
-      - uses: gradle/actions/setup-gradle@v5
+
+      # Both JDKs, and Gradle, in one step. The action installs 21 and 25 by default, which is what
+      # this build needs: Gradle itself runs on the newer one while the toolchain compiles against
+      # the floor (sborka.jvmFloor) and needs that JDK present to do it. Relying on whatever the
+      # runner image happens to preinstall is how a floor silently becomes "whatever the machine had".
+      - uses: youndie/sborka/.github/actions/setup-kotlin@main
+
       - run: ./gradlew build --no-daemon
 
       # The audit reads real published metadata, which is why it publishes locally first. It exists
