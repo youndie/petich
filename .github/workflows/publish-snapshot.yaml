@@ -47,9 +47,13 @@ jobs:
       - name: What a consumer gets
         uses: youndie/proba@main
         with:
-          # All six — petich publishes six modules, and a consumer starts from any of them. The cost
-          # is a real consumer build per coordinate, which is what makes an `implementation` that
-          # should have been `api` distinguishable from one that is correct.
+          # ALL OF THEM, and the list is the whole weakness of this job: it is written out by
+          # hand, and nothing compares it with what the build actually publishes. `petich-chronik`
+          # was added in #18, published in 0.1.0.12 and checked by nobody — the upload was green and
+          # the one job that reads an artefact the way a consumer does never looked at it.
+          #
+          # The cost of each entry is a real consumer build, which is what makes an `implementation`
+          # that should have been `api` distinguishable from one that is correct.
           coordinate: |
             io.github.youndie:petich-core:${{ needs.publish.outputs.version }}
             io.github.youndie:petich-idempotency:${{ needs.publish.outputs.version }}
@@ -57,6 +61,7 @@ jobs:
             io.github.youndie:petich-outbox-core:${{ needs.publish.outputs.version }}
             io.github.youndie:petich-postgres:${{ needs.publish.outputs.version }}
             io.github.youndie:petich-scheduler:${{ needs.publish.outputs.version }}
+            io.github.youndie:petich-chronik:${{ needs.publish.outputs.version }}
           repository: https://reposilite.kotlin.website/snapshots
           # deep, fail-on and badge-dir are left at the action's defaults: a real consumer build, a
           # defect fails while a suspicion does not, and no badge is written.
