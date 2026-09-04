@@ -140,6 +140,10 @@ data class PetichEngineConfig(
     // because :petich-postgres is outbox-aware while a test double or a hand-rolled repository is
     // not. Its counterpart in flight is PetichEngineMetrics.onDroppedEvents.
     val requireOutbox: Boolean = false,
+    // The same refusal for side effects, and it matters more than the outbox one: an application
+    // that schedules a durable timer from a saga step and gets a repository that cannot store it
+    // has lost the timer, not a notification.
+    val requireSideEffects: Boolean = false,
 ) {
     init {
         require(maxProcessAttempts > 0) { "maxProcessAttempts must be positive" }
@@ -161,6 +165,9 @@ sealed interface InterceptorResult {
     data class Proceed(
         override val enrichedPayload: EnrichedPayload? = null,
         val outboxEvents: List<OutboxEvent> = emptyList(),
+        // Committed with the state change this result produces, or reported as dropped. See
+        // PetichSideEffect.
+        val sideEffects: List<PetichSideEffect> = emptyList(),
     ) : InterceptorResult
 
     data class Suspend(
@@ -171,12 +178,17 @@ sealed interface InterceptorResult {
         // approving a long-running request live on different time scales, and the interceptor
         // knows that, not the engine.
         val ttl: Duration? = null,
+        // A step that suspends could hand the engine nothing at all until now — not even an outbox
+        // event. A durable timer belongs here more than anywhere else: "wait until this instant" is
+        // precisely the step whose timer must not go missing while its state commits.
+        val sideEffects: List<PetichSideEffect> = emptyList(),
     ) : InterceptorResult
 
     data class Resuspend(
         val requiredAction: String,
         override val enrichedPayload: EnrichedPayload? = null,
         val ttl: Duration? = null,
+        val sideEffects: List<PetichSideEffect> = emptyList(),
     ) : InterceptorResult
 
     data class Reject(
@@ -289,6 +301,33 @@ interface OutboxAwarePetichRepository : PetichRepository {
     override suspend fun update(petich: Petich): Boolean = update(petich, emptyList())
 }
 
+// Work an interceptor needs committed TOGETHER WITH the state change it produced, and which the
+// engine deliberately cannot interpret.
+//
+// The engine carries these from the interceptor to the repository and does nothing else with them:
+// it does not know what a given one means, cannot execute it, and has no dependency on whatever
+// library defines it. A repository that understands a type writes it; one that does not is told so
+// (see PetichEngineMetrics.onDroppedSideEffects).
+//
+// WHY THIS EXISTS AT ALL. Until now an interceptor could hand the engine nothing but outbox events,
+// and only from Proceed. Anything else it wanted committed alongside the state — a durable timer,
+// most concretely — had to be written by calling its own storage from inside intercept(), which is
+// a second transaction. If the process dies between the two, the state is committed and the other
+// half is not: exactly the dual write OutboxAwarePetichRepository exists to make impossible, in a
+// different place. This closes the same hole for anything that is not an event.
+interface PetichSideEffect
+
+// The counterpart of OutboxAwarePetichRepository for side effects. Optional in the same way and for
+// the same reason: existing implementations keep working untouched, and a storage that cannot do
+// this says so in its type rather than at runtime.
+interface SideEffectAwarePetichRepository : PetichRepository {
+    suspend fun update(
+        petich: Petich,
+        outboxEvents: List<OutboxEvent>,
+        sideEffects: List<PetichSideEffect>,
+    ): Boolean
+}
+
 // What expireSuspended did. Not a Boolean: "not found", "no longer waiting" and "deadline not
 // reached yet" are three different situations, and a worker benefits from telling them apart in
 // its logs.
@@ -329,6 +368,11 @@ class PetichEngine(
         // be dropped is read, if at all, in the logs of a process that is already serving traffic,
         // and it competes with everything else printed at startup; the whole difficulty with this
         // mistake is that nothing downstream of it looks wrong.
+        require(!config.requireSideEffects || repository is SideEffectAwarePetichRepository) {
+            "requireSideEffects is set, but ${repository::class.simpleName} is not a " +
+                "SideEffectAwarePetichRepository: work an interceptor asks to have committed with " +
+                "the state change would be dropped, and the saga would complete looking correct."
+        }
         require(!config.requireOutbox || repository is OutboxAwarePetichRepository) {
             "requireOutbox is set, but ${repository::class.simpleName} is not an " +
                 "OutboxAwarePetichRepository: outbox events produced by interceptors would be " +
@@ -363,8 +407,21 @@ class PetichEngine(
     private suspend fun updatePetich(
         petich: Petich,
         outboxEvents: List<OutboxEvent> = emptyList(),
-    ): Boolean =
-        when {
+        sideEffects: List<PetichSideEffect> = emptyList(),
+    ): Boolean {
+        // SIDE EFFECTS FIRST, because a repository that can take them takes the events with them:
+        // the whole point is one transaction, and asking twice would be two.
+        if (sideEffects.isNotEmpty()) {
+            if (repository is SideEffectAwarePetichRepository) {
+                return repository.update(petich, outboxEvents, sideEffects)
+            }
+            // The same shape as a dropped event and for the same reason: the write succeeds, the
+            // saga completes, its state is correct, and only the thing nobody is waiting for right
+            // now never happens. A counter is the only trace it leaves.
+            metrics.onDroppedSideEffects(petich.type, sideEffects.size)
+        }
+
+        return when {
             outboxEvents.isEmpty() -> {
                 repository.update(petich)
             }
@@ -378,6 +435,7 @@ class PetichEngine(
                 repository.update(petich)
             }
         }
+    }
 
     private suspend fun triggerCompensation(
         petich: Petich,
@@ -565,6 +623,7 @@ class PetichEngine(
         enrichedPayload: EnrichedPayload,
         additionalUpdates: (Petich) -> Petich = { it },
         outboxEvents: List<OutboxEvent> = emptyList(),
+        sideEffects: List<PetichSideEffect> = emptyList(),
     ): Petich {
         // There is no "nothing to change" branch here, and cannot be: version is always
         // latest.version + 1 and no caller winds it back, so the former `updated == latest` check
@@ -592,7 +651,7 @@ class PetichEngine(
                             },
                     ),
                 )
-            if (updatePetich(updated, outboxEvents)) return updated
+            if (updatePetich(updated, outboxEvents, sideEffects)) return updated
         }
         throw OptimisticLockException()
     }
@@ -746,6 +805,7 @@ class PetichEngine(
                                                     suspendedUntilEpochMs = deadline,
                                                 )
                                             },
+                                            sideEffects = interceptorResult.sideEffects,
                                         )
                                     result =
                                         PetichResult.ActionRequired(
@@ -781,6 +841,7 @@ class PetichEngine(
                                                     suspendedUntilEpochMs = deadline,
                                                 )
                                             },
+                                            sideEffects = interceptorResult.sideEffects,
                                         )
                                     result =
                                         PetichResult.ActionRequired(
@@ -803,7 +864,12 @@ class PetichEngine(
                                             // motion.
                                             suspendedUntilEpochMs = null,
                                         )
-                                    if (!updatePetich(updated, interceptorResult.outboxEvents)) {
+                                    if (!updatePetich(
+                                            updated,
+                                            interceptorResult.outboxEvents,
+                                            interceptorResult.sideEffects,
+                                        )
+                                    ) {
                                         throw OptimisticLockException()
                                     }
                                     currentPetich = updated

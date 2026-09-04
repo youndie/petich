@@ -66,5 +66,22 @@ interface PetichEngineMetrics {
         count: Int,
     ) = Unit
 
+    /**
+     * Work an interceptor asked to have committed with the state change, thrown away because the
+     * repository cannot store it.
+     *
+     * The counterpart of [onDroppedEvents], and it answers a question nobody thinks to ask for the
+     * same reason: the write succeeds, the saga completes, its state is correct, and every
+     * assertion anybody naturally makes about that run passes. What does not happen is the thing
+     * nobody is waiting for right now — a timer three days out, most concretely.
+     *
+     * [PetichEngineConfig.requireSideEffects] is the same mistake refused at wiring time instead of
+     * counted at runtime.
+     */
+    fun onDroppedSideEffects(
+        petichType: String,
+        count: Int,
+    ) = Unit
+
     object NoOp : PetichEngineMetrics
 }
