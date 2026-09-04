@@ -89,6 +89,23 @@ class ExposedPetichRepository(
                 }
 
             if (updatedRows > 0 && outboxEvents.isNotEmpty()) {
+                // Suppressed rather than fixed, and the reason is that the fix is not local.
+                //
+                // The rule is right: this stamp is read from THIS instance's clock, and
+                // ExposedOutboxRepository.fetchPending orders by it. Several replicas write these,
+                // so their skew reorders the queue — two events written in causal order by
+                // different instances can be handed to the relay in the other one. Delivery order
+                // is not promised, so nothing is incorrect; what is affected is fairness, and it
+                // degrades silently with the size of the skew.
+                //
+                // The fix is a server-side default on the column, which changes the DDL — and this
+                // library deliberately ships none, so the change lands in every consumer's
+                // migrations. That is a decision with a release behind it, not a line in a build
+                // bump. Tracked in youndie/petich#20.
+                @Suppress(
+                    "ktlint:kapkan:wall-clock",
+                    "Replica skew reorders the outbox queue; the fix is a column default, see #20",
+                )
                 val now = System.currentTimeMillis()
                 outboxTable.batchInsert(outboxEvents) { event ->
                     this[outboxTable.id] = event.id

@@ -55,6 +55,17 @@ class SuspendedPetichSweeper(
     // means someone introduced a new petich type and forgot to register it here, and such petiches
     // will pile up expired forever.
     private val onUnowned: (Petich) -> Unit = {},
+    /**
+     * Something failed that is not one item's own work: the storage refused a pass, or writing an
+     * outcome back did not go through.
+     *
+     * These were swallowed with a `TODO: log this`. The worker surviving them is deliberate — the
+     * work is not going anywhere and the next pass picks it up — but surviving is not the same as
+     * being invisible: a worker whose storage has been refusing every pass for an hour looks
+     * EXACTLY like an idle one from outside, and that is the only state in which it is silently
+     * doing nothing. petich has no logger of its own; whoever wires it up has one.
+     */
+    private val onWorkerFailure: (stage: String, cause: Throwable) -> Unit = { _, _ -> },
 ) {
     fun start(scope: CoroutineScope): Job =
         scope.launch {
@@ -65,8 +76,9 @@ class SuspendedPetichSweeper(
                     throw e
                 } catch (e: Exception) {
                     // A transient storage failure is no reason to stop the worker; the next pass
-                    // will try again.
-                    // TODO: log this
+                    // will try again — and somebody is told, because a sweeper that has failed
+                    // every pass looks exactly like one with nothing to sweep.
+                    onWorkerFailure("sweep", e)
                 }
                 delay(pollInterval)
             }
@@ -93,8 +105,9 @@ class SuspendedPetichSweeper(
                 throw e
             } catch (e: Exception) {
                 // One petich failing to roll back must not deprive the rest of the batch of
-                // their sweep.
-                // TODO: log this
+                // their sweep — but a petich that can never be rolled back would otherwise fail
+                // silently on every pass for ever.
+                onWorkerFailure("expire:${petich.id}", e)
             }
         }
         return expired

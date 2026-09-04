@@ -37,6 +37,7 @@ import ru.workinprogress.petich.postgres.PetichTable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * The claim the whole change exists for: a saga's state change and its timer become visible
@@ -109,6 +110,8 @@ class OneTransactionTest {
     /** A step that waits until an instant, and asks for the timer that will wake it. */
     private class AwaitUntil(
         private val at: EpochSeconds,
+        /** Which sagas actually reached this step and asked for a timer. */
+        val asked: MutableList<String> = mutableListOf(),
     ) : PetichInterceptor<Payload> {
         override val phase = PetichPhase.EXECUTION
 
@@ -118,10 +121,11 @@ class OneTransactionTest {
             petich: Petich,
             payload: Payload,
         ): InterceptorResult =
-            InterceptorResult.Suspend(
-                requiredAction = "AWAIT_DEADLINE",
-                sideEffects = listOf(ScheduleTimer("timer-${petich.id}", at, petich.id)),
-            )
+            InterceptorResult
+                .Suspend(
+                    requiredAction = "AWAIT_DEADLINE",
+                    sideEffects = listOf(ScheduleTimer("timer-${petich.id}", at, petich.id)),
+                ).also { asked += petich.id }
 
         override suspend fun compensate(
             petich: Petich,
@@ -181,18 +185,35 @@ class OneTransactionTest {
 
                     override suspend fun update(petich: Petich): Boolean = false
                 }
+            val step = AwaitUntil(EpochSeconds(1_000))
             val engine =
                 PetichEngine(
-                    listOf(AwaitUntil(EpochSeconds(1_000))),
+                    listOf(step),
                     repository(refusingState),
                     config = PetichEngineConfig(maxStateUpdateAttempts = 1),
                 )
 
-            runCatching { engine.process(saga("s2")) }
+            @Suppress("SwallowedResult") // the refused write surfaces as a throw; that IS the case
+            val ignored = runCatching { engine.process(saga("s2")) }
+
+            // The step has to have ASKED for the timer, or its absence says nothing: a process that
+            // failed before reaching the interceptor leaves exactly the same empty table. The same
+            // shape of vacuity that the atomicity test below had, found by the lint rule that
+            // objects to a discarded Result.
+            //
+            // AT LEAST once rather than exactly once, and the first version of this line asserted
+            // exactly and failed with five. That is the engine: a refused write raises
+            // OptimisticLockException, and `maxProcessAttempts` (5 by default) retries the WHOLE
+            // pass, re-entering the interceptor each time. Worth knowing when writing a step that
+            // produces side effects — it produces them once per attempt, exactly as `Proceed` has
+            // always re-produced its outbox events. Harmless for a timer whose id is derived from
+            // the saga; not harmless for one with a generated id.
+            assertTrue(step.asked.isNotEmpty(), "the step never ran, so no timer was ever asked for")
+            assertTrue(step.asked.all { it == "s2" }, "some other saga reached the step: ${step.asked}")
 
             assertNull(
                 timerStore.findById("timer-s2"),
-                "the timer outlived a state change that never happened",
+                "a timer was written although the state change was refused",
             )
         }
 
@@ -257,36 +278,38 @@ class OneTransactionTest {
             // own, and COMMITS IT — which is exactly what the first version of this test did, and
             // the timer duly outlived a transaction that was never its own. Mixing the two is the
             // trap anybody wiring this up will fall into.
-            runCatching {
-                suspendTransaction(db = db) {
-                    run {
-                        repository.update(
-                            // version + 1, which is what the engine writes and what the optimistic
-                            // lock in the delegate compares against.
-                            saga("s3").copy(version = 1, status = PetichStatus.PENDING_SIGNATURE),
-                            emptyList(),
-                            listOf(ScheduleTimer("timer-s3", EpochSeconds(1_000), "s3")),
-                        )
-                    }
-                    // BOTH WRITES ARE VISIBLE HERE, INSIDE THE TRANSACTION, and asserting it is
-                    // what stops the test below passing vacuously: "gone afterwards" says nothing
-                    // if they were never there. Read through this transaction, which is the only
-                    // place uncommitted rows exist.
-                    timerRowsInside =
-                        exec("SELECT count(*) FROM saga_timers WHERE id = 'timer-s3'") { rs ->
-                            rs.next()
-                            rs.getInt(1)
-                        } ?: -1
-                    sagaRowsInside =
-                        exec("SELECT count(*) FROM petiches WHERE id = 's3'") { rs ->
-                            rs.next()
-                            rs.getInt(1)
-                        } ?: -1
+            @Suppress("SwallowedResult") // the throw IS the abandonment being tested
+            val ignored =
+                runCatching {
+                    suspendTransaction(db = db) {
+                        run {
+                            repository.update(
+                                // version + 1, which is what the engine writes and what the optimistic
+                                // lock in the delegate compares against.
+                                saga("s3").copy(version = 1, status = PetichStatus.PENDING_SIGNATURE),
+                                emptyList(),
+                                listOf(ScheduleTimer("timer-s3", EpochSeconds(1_000), "s3")),
+                            )
+                        }
+                        // BOTH WRITES ARE VISIBLE HERE, INSIDE THE TRANSACTION, and asserting it is
+                        // what stops the test below passing vacuously: "gone afterwards" says nothing
+                        // if they were never there. Read through this transaction, which is the only
+                        // place uncommitted rows exist.
+                        timerRowsInside =
+                            exec("SELECT count(*) FROM saga_timers WHERE id = 'timer-s3'") { rs ->
+                                rs.next()
+                                rs.getInt(1)
+                            } ?: -1
+                        sagaRowsInside =
+                            exec("SELECT count(*) FROM petiches WHERE id = 's3'") { rs ->
+                                rs.next()
+                                rs.getInt(1)
+                            } ?: -1
 
-                    // The caller's own step refuses, after both writes have gone in.
-                    error("the caller's step refused")
+                        // The caller's own step refuses, after both writes have gone in.
+                        error("the caller's step refused")
+                    }
                 }
-            }
 
             // Both were there, inside the transaction. Only now does their absence mean anything.
             assertEquals(1, timerRowsInside, "the timer was never written, so its absence proves nothing")
