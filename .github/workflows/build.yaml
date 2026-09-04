@@ -40,3 +40,8 @@ jobs:
           ./gradlew publishToMavenLocal -PVERSION=ci-${{ github.run_number }} --no-daemon
           python3 tools/artifact-name-audit.py ci-${{ github.run_number }}
           python3 tools/jvm-floor-audit.py ci-${{ github.run_number }}
+
+      # Reads two files, so it runs on a pull request rather than after a publish — this is the
+      # moment a module is added, and the moment the coordinate list is not updated with it.
+      - name: The consumer job covers every published module
+        run: python3 tools/consumer-coverage-audit.py

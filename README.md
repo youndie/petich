@@ -50,6 +50,7 @@ The engine takes on exactly that:
 | `petich-outbox-core` | at-least-once event delivery with backoff and dead lettering | — |
 | `petich-idempotency` | protection against a key reused with a DIFFERENT request | — |
 | `petich-scheduler` | a saga on a schedule, starting with no HTTP initiator | — |
+| `petich-chronik` | a fired [chronik](https://github.com/youndie/chronik) timer resumes a suspended saga | `petich-core` |
 
 Three modules deliberately do not depend on the core. `petich-outbox-core` knows only about a row —
 "id/type/payload, deliver at least once"; `petich-scheduler` only about "it is time" and "here is the
