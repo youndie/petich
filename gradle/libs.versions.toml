@@ -4,6 +4,10 @@ sborka = "0.1.0.4"
 kotlin = "2.4.10"
 ktor = "3.5.2"
 exposed = "1.4.0"
+# Test-only, and only in :petich-chronik: the claim that a timer and a saga state commit together
+# is about a real transaction, and nothing smaller can be asked about it.
+postgres-driver = "42.7.13"
+testcontainers = "2.0.5"
 kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0"
 kotlinxSerializationJson = "1.11.0"
@@ -25,6 +29,9 @@ ktor-serializationJson = { module = "io.ktor:ktor-serialization-kotlinx-json-jvm
 exposed-core = { group = "org.jetbrains.exposed", name = "exposed-core", version.ref = "exposed" }
 exposed-jdbc = { group = "org.jetbrains.exposed", name = "exposed-jdbc", version.ref = "exposed" }
 exposed-json = { group = "org.jetbrains.exposed", name = "exposed-json", version.ref = "exposed" }
+
+postgres-driver = { module = "org.postgresql:postgresql", version.ref = "postgres-driver" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
 
 [plugins]
 sborkaKmp = { id = "ru.workinprogress.sborka.kmp", version.ref = "sborka" }
