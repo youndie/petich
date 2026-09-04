@@ -94,12 +94,13 @@ class CompensationFailureTest {
                     payload = payload,
                 )
 
-            try {
-                engine.process(petich)
-            } catch (e: Exception) {
-                // expected
-            }
+            // NO try/catch AROUND THIS, and no assertFailsWith either. The empty catch that used
+            // to be here passed whether or not anything was thrown, and replacing it with
+            // assertFailsWith made both tests fail: the engine does not throw here at all, it
+            // reports the outcome in its result. The catch was decoration, and it hid that.
+            val result = engine.process(petich)
 
+            assertTrue(result !is PetichResult.Success, "the saga was not supposed to succeed: $result")
             assertTrue(handler.handled, "Handler should have been called on compensation failure")
         }
 }

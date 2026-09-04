@@ -60,6 +60,16 @@ class SchedulerWorker(
     // The job was disabled after maxFailures in a row. The application needs to know so it can
     // tell the user that the recurring item is no longer running.
     private val onGaveUp: (ScheduledJob) -> Unit = {},
+    /**
+     * Something failed that is not one job's own run: the storage refused a pass, or writing a
+     * job's new state back did not go through.
+     *
+     * These were swallowed with a `TODO: log this`. Surviving them is deliberate — the job is not
+     * going anywhere and the next poll picks it up — but surviving is not the same as being
+     * invisible: a worker whose storage has been refusing every pass for an hour looks EXACTLY like
+     * one with nothing to do. petich has no logger of its own; whoever wires it up has one.
+     */
+    private val onWorkerFailure: (stage: String, cause: Throwable) -> Unit = { _, _ -> },
 ) {
     fun start(scope: CoroutineScope): Job =
         scope.launch {
@@ -69,8 +79,9 @@ class SchedulerWorker(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    // A transient storage failure; the next poll will try again.
-                    // TODO: log this
+                    // A transient storage failure; the next poll will try again — and it is
+                    // reported, because a scheduler failing every poll runs nothing and looks idle.
+                    onWorkerFailure("poll", e)
                 }
                 delay(pollInterval)
             }
@@ -117,7 +128,9 @@ class SchedulerWorker(
                 // tries again. Running twice is safer here than silently losing the schedule —
                 // and that is exactly why the runner must be idempotent, typically by deriving a
                 // deterministic petich id from the job and its scheduled instant.
-                // TODO: log this
+                //
+                // Reported, because a duplicate run has an explanation and this is it.
+                onWorkerFailure("save:${job.id}", e)
             }
         }
         return fired

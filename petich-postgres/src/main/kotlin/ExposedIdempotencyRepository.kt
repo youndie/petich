@@ -35,6 +35,13 @@ class ExposedIdempotencyRepository(
                 table.insert {
                     it[this.key] = key
                     it[this.requestFingerprint] = requestFingerprint
+                    // Same rule, much smaller stake: this stamp is never compared across
+                    // instances and never sorted on — it exists so old keys can be swept. Skew
+                    // moves a key's expiry by the skew and nothing else reads it. See #20.
+                    @Suppress(
+                        "ktlint:kapkan:wall-clock",
+                        "Written, never compared or ordered; only key sweeping reads it, see #20",
+                    )
                     it[createdAt] = System.currentTimeMillis()
                 }
                 true

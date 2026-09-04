@@ -32,6 +32,17 @@ class OutboxRelayWorker(
     private val maxAttempts: Int = 5,
     private val baseBackoff: Duration = 1.seconds,
     private val maxBackoff: Duration = 5.minutes,
+    /**
+     * Something failed that is not one item's own work: the storage refused a pass, or writing an
+     * outcome back did not go through.
+     *
+     * These were swallowed with a `TODO: log this`. The worker surviving them is deliberate — the
+     * work is not going anywhere and the next pass picks it up — but surviving is not the same as
+     * being invisible: a worker whose storage has been refusing every pass for an hour looks
+     * EXACTLY like an idle one from outside, and that is the only state in which it is silently
+     * doing nothing. petich has no logger of its own; whoever wires it up has one.
+     */
+    private val onWorkerFailure: (stage: String, cause: Throwable) -> Unit = { _, _ -> },
     private val timeSource: TimeSource.WithComparableMarks = TimeSource.Monotonic,
 ) {
     // Event -> the instant before which no retry should be made. Cleared on success or on dead
@@ -48,8 +59,9 @@ class OutboxRelayWorker(
                     throw e
                 } catch (e: Exception) {
                     // A transient failure of the storage itself, not of any one event, is no
-                    // reason to stop the worker for good; the next poll will try again.
-                    // TODO: log this
+                    // reason to stop the worker for good; the next poll will try again — and it is
+                    // reported, because a relay failing every poll delivers nothing and looks idle.
+                    onWorkerFailure("poll", e)
                 }
                 delay(pollInterval)
             }
@@ -73,6 +85,11 @@ class OutboxRelayWorker(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    // The event's own failure is handled below — but the CAUSE was thrown away,
+                    // and it is the only thing that explains a dead letter. An operator looking at
+                    // an event that gave up after five attempts otherwise has five identical
+                    // nothings to go on.
+                    onWorkerFailure("publish:${event.id}", e)
                     val attemptsSoFar = event.retryCount + 1
                     if (attemptsSoFar >= maxAttempts) {
                         repository.markDeadLettered(event.id)
