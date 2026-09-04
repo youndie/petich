@@ -17,7 +17,7 @@ kotlin {
                 // api on both: the engine appears in the sink's constructor and chronik's types in
                 // its signature, so a consumer that only got them at runtime could not wire it up.
                 api(project(":petich-core"))
-                api("io.github.youndie:chronik-core:0.1.0")
+                api(libs.chronik.core)
             }
         }
         commonTest {
@@ -31,7 +31,7 @@ kotlin {
                 // become visible together or not at all. Nothing smaller can be asked that: a fake
                 // repository commits when the test tells it to, which is the answer being checked.
                 implementation(project(":petich-postgres"))
-                implementation("io.github.youndie:chronik-postgres:0.1.0")
+                implementation(libs.chronik.postgres)
                 implementation(libs.testcontainers.postgresql)
                 implementation(libs.postgres.driver)
             }

@@ -3,6 +3,7 @@
 sborka = "0.1.0.4"
 kotlin = "2.4.10"
 ktor = "3.5.2"
+chronik = "0.1.0.2"
 exposed = "1.4.0"
 # Test-only, and only in :petich-chronik: the claim that a timer and a saga state commit together
 # is about a real transaction, and nothing smaller can be asked about it.
@@ -29,6 +30,9 @@ ktor-serializationJson = { module = "io.ktor:ktor-serialization-kotlinx-json-jvm
 exposed-core = { group = "org.jetbrains.exposed", name = "exposed-core", version.ref = "exposed" }
 exposed-jdbc = { group = "org.jetbrains.exposed", name = "exposed-jdbc", version.ref = "exposed" }
 exposed-json = { group = "org.jetbrains.exposed", name = "exposed-json", version.ref = "exposed" }
+
+chronik-core = { module = "io.github.youndie:chronik-core", version.ref = "chronik" }
+chronik-postgres = { module = "io.github.youndie:chronik-postgres", version.ref = "chronik" }
 
 postgres-driver = { module = "org.postgresql:postgresql", version.ref = "postgres-driver" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
