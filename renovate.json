@@ -1,22 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended",
-    ":dependencyDashboard"
+  "description": [
+    "The portfolio's shared configuration, extended by name. What it replaces here: the `kotlin toolchain` and `kotlinx` groups (the preset's `kotlin` rule matches the same set — the compiler coordinates and the jvm, multiplatform and serialization plugin ids), the schedule, the limits and the labels. The batch moves from 9am to 6am on Monday with the rest of the portfolio; nothing depended on the hour.",
+    "It also brings a guard this repository did not have and is being offered right now: `kotlinx-datetime:0.8.0-0.6.x-compat` is 0.8.0 built against the OLD 0.6.x API, and it is sitting on the dependency dashboard as an update.",
+    "Automerge is a separate preset (`github>youndie/sborka:automerge-harness`) and is not extended: nothing merges itself here today. Its precondition holds — build.yaml runs on `pull_request` — so it can be added as its own change."
   ],
-  "schedule": ["before 9am on monday"],
-  "prConcurrentLimit": 5,
+  "extends": ["github>youndie/sborka"],
   "packageRules": [
-    {
-      "description": "Kotlin and the serialization plugin must move together: the plugin is built against a specific compiler version, and a mismatched pair fails the build rather than reporting a version problem.",
-      "groupName": "kotlin toolchain",
-      "matchPackageNames": [
-        "org.jetbrains.kotlin:{/,}**",
-        "org.jetbrains.kotlin.jvm",
-        "org.jetbrains.kotlin.multiplatform",
-        "org.jetbrains.kotlin.plugin.serialization"
-      ]
-    },
     {
       "description": "Ktor server modules share one version.",
       "groupName": "ktor",
@@ -28,12 +18,7 @@
       "matchPackageNames": ["org.jetbrains.exposed:{/,}**"]
     },
     {
-      "description": "kotlinx libraries move independently of each other but are noisy one PR at a time.",
-      "groupName": "kotlinx",
-      "matchPackageNames": ["org.jetbrains.kotlinx:{/,}**"]
-    },
-    {
-      "description": "Major updates get their own PR: they cannot be merged without looking.",
+      "description": "Major updates get their own PR: they cannot be merged without looking. Stricter than the preset, which labels majors and leaves them open — here they wait on the dashboard until somebody asks for the branch, which is why actions/checkout v7 is sitting there rather than in a pull request nobody reads.",
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true
     }
