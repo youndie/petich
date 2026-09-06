@@ -1,3 +1,6 @@
+# The steps this file used to spell out live in sborka now — `.github/workflows/publish-wip.yaml`,
+# called below — including the proba job, which asks the repository what a consumer would actually
+# resolve after the upload rather than trusting the build directory before it.
 name: Publish petich snapshots
 
 on:
@@ -7,61 +10,23 @@ on:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.ver.outputs.version }}
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v5
-
-      # Both JDKs and Gradle: see the same step in build.yaml.
-      - uses: youndie/sborka/.github/actions/setup-kotlin@main
-
-      # The head of the version from gradle.properties with the run number on the tail: two
-      # publishes in a row must not produce the same artifact, or a consumer cannot tell them apart
-      # and keeps the cached older one. The action reads plain `version`, which is where the head
-      # lives now — it was `petich.version`, one more name for the same thing, and the same six lines
-      # of shell were copied into three repositories.
-      - name: Determine version
-        id: ver
-        uses: youndie/sborka/.github/actions/determine-version@main
-
-      - name: Build and publish
-        run: ./gradlew build publishAllPublicationsToWipRepository --no-daemon
-        env:
-          ORG_GRADLE_PROJECT_REPOSILITE_USER: ${{ secrets.REPOSILITE_USER }}
-          ORG_GRADLE_PROJECT_REPOSILITE_SECRET: ${{ secrets.REPOSILITE_SECRET }}
-          ORG_GRADLE_PROJECT_VERSION: ${{ steps.ver.outputs.version }}
-
-  # What a consumer receives, read from the repository after the upload rather than from a build
-  # directory before it. The audit on the PR build reads a LOCAL publication, which is the same bytes
-  # but not the same event: a file that failed to upload, a coordinate that resolves to the previous
-  # version — none of that exists until something asks the repository, and none of it fails a publish.
-  #
-  # A separate job so that a finding here cannot be mistaken for a publish that did not happen: by the
-  # time this runs the artefacts are up, and what is red is the report about them.
-  consumer:
-    needs: publish
-    runs-on: ubuntu-latest
-    steps:
-      - name: What a consumer gets
-        uses: youndie/proba@main
-        with:
-          # ALL OF THEM, and the list is the whole weakness of this job: it is written out by
-          # hand, and nothing compares it with what the build actually publishes. `petich-chronik`
-          # was added in #18, published in 0.1.0.12 and checked by nobody — the upload was green and
-          # the one job that reads an artefact the way a consumer does never looked at it.
-          #
-          # The cost of each entry is a real consumer build, which is what makes an `implementation`
-          # that should have been `api` distinguishable from one that is correct.
-          coordinate: |
-            io.github.youndie:petich-core:${{ needs.publish.outputs.version }}
-            io.github.youndie:petich-idempotency:${{ needs.publish.outputs.version }}
-            io.github.youndie:petich-ktor:${{ needs.publish.outputs.version }}
-            io.github.youndie:petich-outbox-core:${{ needs.publish.outputs.version }}
-            io.github.youndie:petich-postgres:${{ needs.publish.outputs.version }}
-            io.github.youndie:petich-scheduler:${{ needs.publish.outputs.version }}
-            io.github.youndie:petich-chronik:${{ needs.publish.outputs.version }}
-          repository: https://reposilite.kotlin.website/snapshots
-          # deep, fail-on and badge-dir are left at the action's defaults: a real consumer build, a
-          # defect fails while a suspicion does not, and no badge is written.
+    uses: youndie/sborka/.github/workflows/publish-wip.yaml@main
+    with:
+      tasks: build publishAllPublicationsToWipRepository
+      # Without the version: it does not exist until the job below has run, so it is appended on
+      # the other side. Every published module belongs here — a module added without a line here is
+      # a module nobody ever resolves, which is what `consumer-coverage-audit.py` fails the build
+      # over on a pull request.
+      coordinates: |
+        io.github.youndie:petich-core
+        io.github.youndie:petich-idempotency
+        io.github.youndie:petich-ktor
+        io.github.youndie:petich-outbox-core
+        io.github.youndie:petich-postgres
+        io.github.youndie:petich-scheduler
+        io.github.youndie:petich-chronik
+    # Named one by one rather than `secrets: inherit`: this hands them to a workflow in another
+    # repository, and the two it needs are the two it gets.
+    secrets:
+      REPOSILITE_USER: ${{ secrets.REPOSILITE_USER }}
+      REPOSILITE_SECRET: ${{ secrets.REPOSILITE_SECRET }}

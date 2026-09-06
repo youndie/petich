@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Every module this build publishes must be read back by the consumer job.
 
-`publish-snapshot.yaml` ends with a job that resolves each coordinate as an outside consumer would —
-a real build against the published artefact rather than a look in a build directory before the
-upload. That job is the only thing in this repository that answers "does this coordinate work for
-somebody else", and the coordinates it checks are TYPED OUT BY HAND.
+`publish-snapshot.yaml` hands a list of coordinates to sborka's `publish-wip` workflow, which
+resolves each one as an outside consumer would — a real build against the published artefact rather
+than a look in a build directory before the upload. That job is the only thing that answers "does
+this coordinate work for somebody else", and the coordinates it checks are TYPED OUT BY HAND.
 
 So a new module publishes and is checked by nobody, and nothing about that is red: the upload
 succeeds, the consumer job passes on the six it was told about, and the seventh is simply absent
@@ -31,7 +31,10 @@ if not published:
     sys.exit("found no publishing modules at all — the audit would pass by finding nothing")
 
 workflow = (ROOT / ".github/workflows/publish-snapshot.yaml").read_text()
-checked = set(re.findall(r"io\.github\.youndie:([a-z0-9-]+):", workflow))
+# With or without a version on the tail. The coordinates lost theirs when the consumer job moved
+# to sborka — the version is appended there, because this file cannot name a version the run has
+# not produced yet — and a regex that still required one found nothing at all.
+checked = set(re.findall(r"^\s*io\.github\.youndie:([a-z0-9-]+)(?::|\s*$)", workflow, re.MULTILINE))
 if not checked:
     sys.exit("found no coordinates in the consumer job — the audit would pass by finding nothing")
 
