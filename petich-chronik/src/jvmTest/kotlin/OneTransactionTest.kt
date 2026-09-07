@@ -1,5 +1,10 @@
 package io.github.youndie.petich.chronik
 
+import io.github.youndie.chronik.EpochSeconds
+import io.github.youndie.chronik.TimerState
+import io.github.youndie.chronik.postgres.ExposedTimerStore
+import io.github.youndie.chronik.postgres.TimersTable
+import io.github.youndie.chronik.postgres.asTimerTransaction
 import io.github.youndie.petich.EnrichedPayload
 import io.github.youndie.petich.InterceptorResult
 import io.github.youndie.petich.OutboxAwarePetichRepository
@@ -29,11 +34,6 @@ import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
-import ru.workinprogress.chronik.EpochSeconds
-import ru.workinprogress.chronik.TimerState
-import ru.workinprogress.chronik.postgres.ExposedTimerStore
-import ru.workinprogress.chronik.postgres.TimersTable
-import ru.workinprogress.chronik.postgres.asTimerTransaction
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

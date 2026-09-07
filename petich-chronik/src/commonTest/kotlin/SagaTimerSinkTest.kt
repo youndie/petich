@@ -1,5 +1,7 @@
 package io.github.youndie.petich.chronik
 
+import io.github.youndie.chronik.EpochSeconds
+import io.github.youndie.chronik.FiredTimer
 import io.github.youndie.petich.InterceptorResult
 import io.github.youndie.petich.Petich
 import io.github.youndie.petich.PetichEngine
@@ -9,8 +11,6 @@ import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichRepository
 import io.github.youndie.petich.PetichStatus
 import kotlinx.coroutines.test.runTest
-import ru.workinprogress.chronik.EpochSeconds
-import ru.workinprogress.chronik.FiredTimer
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
