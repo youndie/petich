@@ -1,6 +1,6 @@
 [versions]
 # The shared build conventions. One number: every sborka plugin below takes its version from here.
-sborka = "0.2.0.29"
+sborka = "0.3.0.41"
 kotlin = "2.4.10"
 ktor = "3.5.2"
 chronik = "0.1.0.2"
@@ -38,10 +38,10 @@ postgres-driver = { module = "org.postgresql:postgresql", version.ref = "postgre
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
 
 [plugins]
-sborkaKmp = { id = "ru.workinprogress.sborka.kmp", version.ref = "sborka" }
-sborkaLint = { id = "ru.workinprogress.sborka.lint", version.ref = "sborka" }
-sborkaJvm = { id = "ru.workinprogress.sborka.jvm", version.ref = "sborka" }
-sborkaPublish = { id = "ru.workinprogress.sborka.publish", version.ref = "sborka" }
+sborkaKmp = { id = "io.github.youndie.sborka.kmp", version.ref = "sborka" }
+sborkaLint = { id = "io.github.youndie.sborka.lint", version.ref = "sborka" }
+sborkaJvm = { id = "io.github.youndie.sborka.jvm", version.ref = "sborka" }
+sborkaPublish = { id = "io.github.youndie.sborka.publish", version.ref = "sborka" }
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
