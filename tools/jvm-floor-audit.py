@@ -19,6 +19,8 @@ Run against a local publication:
 """
 import glob, json, os, re, struct, sys, zipfile
 
+import repo_facts
+
 # Read from gradle.properties, which is where the number lives now: `sborka.jvmFloor` is what the
 # shared publish convention stamps into org.gradle.jvm.version, so this audit and the build read the
 # same line. It used to be JVM_FLOOR in buildSrc, and buildSrc is gone.
@@ -31,7 +33,7 @@ FLOOR = int(_MATCH.group(1))
 CLASS_FILE = FLOOR + 44
 
 VERSION = sys.argv[1] if len(sys.argv) > 1 else sys.exit("usage: jvm-floor-audit.py <version>")
-M2 = os.path.expanduser("~/.m2/repository/io/github/youndie")
+M2 = repo_facts.m2_root()
 
 modules = sorted(glob.glob(f"{M2}/*/{VERSION}/*.module"))
 if not modules:
