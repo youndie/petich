@@ -1,5 +1,8 @@
-package ru.workinprogress.petich.postgres
+package io.github.youndie.petich.postgres
 
+import io.github.youndie.petich.scheduler.Recurrence
+import io.github.youndie.petich.scheduler.ScheduleRepository
+import io.github.youndie.petich.scheduler.ScheduledJob
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.core.ResultRow
@@ -11,9 +14,6 @@ import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 import org.jetbrains.exposed.v1.jdbc.update
-import ru.workinprogress.petich.scheduler.Recurrence
-import ru.workinprogress.petich.scheduler.ScheduleRepository
-import ru.workinprogress.petich.scheduler.ScheduledJob
 
 // Same shape as ExposedPetichRepository and ExposedOutboxRepository: Database and table through
 // the constructor, every method inside suspendTransaction. Default package, like its neighbours

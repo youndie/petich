@@ -1,4 +1,4 @@
-package ru.workinprogress.petich.postgres
+package io.github.youndie.petich.postgres
 
 import org.jetbrains.exposed.v1.core.Table
 

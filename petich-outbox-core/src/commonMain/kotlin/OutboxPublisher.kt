@@ -1,4 +1,4 @@
-package ru.workinprogress.petich.outbox
+package io.github.youndie.petich.outbox
 
 // The concrete transport — a message queue, a webhook, a log — is the application's to implement.
 // The contract lives in the library; the wire does not.

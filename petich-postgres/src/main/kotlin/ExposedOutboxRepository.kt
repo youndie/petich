@@ -1,5 +1,7 @@
-package ru.workinprogress.petich.postgres
+package io.github.youndie.petich.postgres
 
+import io.github.youndie.petich.outbox.OutboxRecord
+import io.github.youndie.petich.outbox.OutboxRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.core.eq
@@ -7,8 +9,6 @@ import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 import org.jetbrains.exposed.v1.jdbc.update
-import ru.workinprogress.petich.outbox.OutboxRecord
-import ru.workinprogress.petich.outbox.OutboxRepository
 
 class ExposedOutboxRepository(
     private val db: Database,

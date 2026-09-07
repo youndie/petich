@@ -1,4 +1,4 @@
-package ru.workinprogress.petich.outbox
+package io.github.youndie.petich.outbox
 
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test

@@ -1,14 +1,14 @@
-package ru.workinprogress.petich.ktor
+package io.github.youndie.petich.ktor
 
+import io.github.youndie.petich.OptimisticLockException
+import io.github.youndie.petich.PetichEngine
+import io.github.youndie.petich.PetichRepository
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.createApplicationPlugin
 import io.ktor.server.application.install
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
 import io.ktor.server.routing.routing
-import ru.workinprogress.petich.OptimisticLockException
-import ru.workinprogress.petich.PetichEngine
-import ru.workinprogress.petich.PetichRepository
 
 class PetichFeatureConfiguration {
     lateinit var engine: PetichEngine
