@@ -1,9 +1,9 @@
 package io.github.youndie.petich.ktor
 
-import kotlinx.serialization.Serializable
 import io.github.youndie.petich.Petich
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.ResumePayload
+import kotlinx.serialization.Serializable
 
 @Serializable
 data class CreatePetichRequest(

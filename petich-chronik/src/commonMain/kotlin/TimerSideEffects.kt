@@ -1,7 +1,7 @@
 package io.github.youndie.petich.chronik
 
-import ru.workinprogress.chronik.EpochSeconds
 import io.github.youndie.petich.PetichSideEffect
+import ru.workinprogress.chronik.EpochSeconds
 
 /**
  * "Schedule this timer, in the transaction that writes my state change."

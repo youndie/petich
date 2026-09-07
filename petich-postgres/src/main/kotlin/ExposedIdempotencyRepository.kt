@@ -1,5 +1,7 @@
 package io.github.youndie.petich.postgres
 
+import io.github.youndie.petich.idempotency.IdempotencyRecord
+import io.github.youndie.petich.idempotency.IdempotencyRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.core.eq
@@ -8,8 +10,6 @@ import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
-import io.github.youndie.petich.idempotency.IdempotencyRecord
-import io.github.youndie.petich.idempotency.IdempotencyRepository
 
 class ExposedIdempotencyRepository(
     private val db: Database,

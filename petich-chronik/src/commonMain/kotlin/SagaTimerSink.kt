@@ -1,12 +1,12 @@
 package io.github.youndie.petich.chronik
 
-import ru.workinprogress.chronik.FiredTimer
-import ru.workinprogress.chronik.TimerSink
 import io.github.youndie.petich.Petich
 import io.github.youndie.petich.PetichEngine
 import io.github.youndie.petich.PetichRepository
 import io.github.youndie.petich.PetichResult
 import io.github.youndie.petich.ResumePayload
+import ru.workinprogress.chronik.FiredTimer
+import ru.workinprogress.chronik.TimerSink
 
 /**
  * What the saga is told when a timer, rather than a person, wakes it.

@@ -1,5 +1,15 @@
 package io.github.youndie.petich.ktor
 
+import io.github.youndie.petich.EnrichedPayload
+import io.github.youndie.petich.InterceptorResult
+import io.github.youndie.petich.Petich
+import io.github.youndie.petich.PetichEngine
+import io.github.youndie.petich.PetichInterceptor
+import io.github.youndie.petich.PetichPayload
+import io.github.youndie.petich.PetichPhase
+import io.github.youndie.petich.PetichRepository
+import io.github.youndie.petich.PetichStatus
+import io.github.youndie.petich.SimpleEnrichedPayload
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -20,16 +30,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
-import io.github.youndie.petich.EnrichedPayload
-import io.github.youndie.petich.InterceptorResult
-import io.github.youndie.petich.Petich
-import io.github.youndie.petich.PetichEngine
-import io.github.youndie.petich.PetichInterceptor
-import io.github.youndie.petich.PetichPayload
-import io.github.youndie.petich.PetichPhase
-import io.github.youndie.petich.PetichRepository
-import io.github.youndie.petich.PetichStatus
-import io.github.youndie.petich.SimpleEnrichedPayload
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.test.Test
 import kotlin.test.assertEquals

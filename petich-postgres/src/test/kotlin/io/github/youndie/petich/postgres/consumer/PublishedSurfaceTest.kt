@@ -3,7 +3,6 @@
 // inside the module's package both look fine, which is why the build stayed green through them.
 package io.github.youndie.petich.postgres.consumer
 
-import kotlinx.serialization.json.Json
 import io.github.youndie.petich.postgres.ExposedIdempotencyRepository
 import io.github.youndie.petich.postgres.ExposedOutboxRepository
 import io.github.youndie.petich.postgres.ExposedPetichRepository
@@ -12,6 +11,7 @@ import io.github.youndie.petich.postgres.IdempotencyKeysTable
 import io.github.youndie.petich.postgres.OutboxEventsTable
 import io.github.youndie.petich.postgres.PetichTable
 import io.github.youndie.petich.postgres.ScheduledJobsTable
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

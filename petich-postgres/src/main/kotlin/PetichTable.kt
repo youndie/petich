@@ -1,12 +1,12 @@
 package io.github.youndie.petich.postgres
 
-import kotlinx.serialization.json.Json
-import org.jetbrains.exposed.v1.core.Table
-import org.jetbrains.exposed.v1.json.json
 import io.github.youndie.petich.EnrichedPayload
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichStatus
+import kotlinx.serialization.json.Json
+import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.json.json
 
 class PetichTable(
     jsonFormat: Json,
