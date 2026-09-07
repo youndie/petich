@@ -3,7 +3,7 @@
 sborka = "0.3.0.41"
 kotlin = "2.4.10"
 ktor = "3.5.2"
-chronik = "0.1.0.10"
+chronik = "0.1.0"
 exposed = "1.4.0"
 # Test-only, and only in :petich-chronik: the claim that a timer and a saga state commit together
 # is about a real transaction, and nothing smaller can be asked about it.

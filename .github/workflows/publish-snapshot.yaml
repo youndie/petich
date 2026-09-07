@@ -18,13 +18,13 @@ jobs:
       # a module nobody ever resolves, which is what `consumer-coverage-audit.py` fails the build
       # over on a pull request.
       coordinates: |
-        io.github.youndie:petich-core
-        io.github.youndie:petich-idempotency
-        io.github.youndie:petich-ktor
-        io.github.youndie:petich-outbox-core
-        io.github.youndie:petich-postgres
-        io.github.youndie:petich-scheduler
-        io.github.youndie:petich-chronik
+        io.github.youndie.petich:petich-core
+        io.github.youndie.petich:petich-idempotency
+        io.github.youndie.petich:petich-ktor
+        io.github.youndie.petich:petich-outbox-core
+        io.github.youndie.petich:petich-postgres
+        io.github.youndie.petich:petich-scheduler
+        io.github.youndie.petich:petich-chronik
     # Named one by one rather than `secrets: inherit`: this hands them to a workflow in another
     # repository, and the two it needs are the two it gets.
     secrets:

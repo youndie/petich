@@ -1,9 +1,8 @@
 # petich
 
 [![kotlin](https://img.shields.io/badge/Kotlin-2.4.10-blue?logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![petich-core](https://reposilite.kotlin.website/api/badge/latest/snapshots/io/github/youndie/petich-core?name=snapshots&color=40c14a&prefix=v)](https://reposilite.kotlin.website/#/snapshots/io/github/youndie/petich-core)
-[![petich-ktor](https://reposilite.kotlin.website/api/badge/latest/snapshots/io/github/youndie/petich-ktor?name=snapshots&color=40c14a&prefix=v)](https://reposilite.kotlin.website/#/snapshots/io/github/youndie/petich-ktor)
-[![petich-postgres](https://reposilite.kotlin.website/api/badge/latest/snapshots/io/github/youndie/petich-postgres?name=snapshots&color=40c14a&prefix=v)](https://reposilite.kotlin.website/#/snapshots/io/github/youndie/petich-postgres)
+[![maven central](https://img.shields.io/maven-central/v/io.github.youndie.petich/petich-core?label=maven%20central&color=40c14a)](https://central.sonatype.com/namespace/io.github.youndie.petich)
+[![snapshots](https://reposilite.kotlin.website/api/badge/latest/snapshots/io/github/youndie/petich/petich-core?name=snapshots&color=blue&prefix=v)](https://reposilite.kotlin.website/#/snapshots/io/github/youndie/petich/petich-core)
 
 **a distributed saga engine for Kotlin** — a multi-step operation is described as a chain of
 interceptors; the engine walks it through phases and, when any step fails, undoes exactly what had
@@ -62,15 +61,19 @@ into part of somebody's feature.
 
 ```kotlin
 repositories {
-    maven("https://reposilite.kotlin.website/snapshots")
+    mavenCentral()
 }
 
 dependencies {
-    implementation("io.github.youndie:petich-core:0.1.0.2")
-    implementation("io.github.youndie:petich-ktor:0.1.0.2")
-    implementation("io.github.youndie:petich-postgres:0.1.0.2")
+    implementation("io.github.youndie.petich:petich-core:0.1.0")
+    implementation("io.github.youndie.petich:petich-ktor:0.1.0")
+    implementation("io.github.youndie.petich:petich-postgres:0.1.0")
 }
 ```
+
+Releases are on Maven Central. Snapshots keep going to
+`https://reposilite.kotlin.website/snapshots` as `0.1.0.<build>` — add that repository beside
+`mavenCentral()` to take one.
 
 `petich-postgres` deliberately ships no driver and no connection pool: it works with an Exposed
 `Database` handed to it and does not know which DBMS sits underneath. Choosing a driver is the

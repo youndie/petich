@@ -55,7 +55,7 @@ InterceptorResult.Suspend(
 
 ## Зависимость
 
-`io.github.youndie:chronik-core`, версия — в каталоге (`chronik` в `libs.versions.toml`).
+`io.github.youndie.chronik:chronik-core`, версия — в каталоге (`chronik` в `libs.versions.toml`).
 Резолвится из того же Reposilite, что и остальной портфель.
 
 Ветка какое-то время резолвила chronik из локального Maven-кэша — такая сборка работает на одной
