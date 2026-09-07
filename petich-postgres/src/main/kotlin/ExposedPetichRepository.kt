@@ -1,4 +1,4 @@
-package ru.workinprogress.petich.postgres
+package io.github.youndie.petich.postgres
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,11 +13,11 @@ import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 import org.jetbrains.exposed.v1.jdbc.update
-import ru.workinprogress.petich.ExpiringPetichRepository
-import ru.workinprogress.petich.OutboxAwarePetichRepository
-import ru.workinprogress.petich.OutboxEvent
-import ru.workinprogress.petich.Petich
-import ru.workinprogress.petich.PetichStatus
+import io.github.youndie.petich.ExpiringPetichRepository
+import io.github.youndie.petich.OutboxAwarePetichRepository
+import io.github.youndie.petich.OutboxEvent
+import io.github.youndie.petich.Petich
+import io.github.youndie.petich.PetichStatus
 
 class ExposedPetichRepository(
     private val db: Database,

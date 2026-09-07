@@ -1,12 +1,12 @@
-package ru.workinprogress.petich.chronik
+package io.github.youndie.petich.chronik
 
 import ru.workinprogress.chronik.EpochSeconds
-import ru.workinprogress.petich.PetichSideEffect
+import io.github.youndie.petich.PetichSideEffect
 
 /**
  * "Schedule this timer, in the transaction that writes my state change."
  *
- * Returned from a saga step's [ru.workinprogress.petich.InterceptorResult], carried by the engine
+ * Returned from a saga step's [io.github.youndie.petich.InterceptorResult], carried by the engine
  * as an opaque value, and written by a repository that understands it. The step itself never calls
  * chronik — a step that did would be opening a second transaction, and if the process died between
  * the two the state would be committed with no timer behind it: the saga correct, the write

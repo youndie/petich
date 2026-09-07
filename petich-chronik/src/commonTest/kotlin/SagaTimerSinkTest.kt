@@ -1,16 +1,16 @@
-package ru.workinprogress.petich.chronik
+package io.github.youndie.petich.chronik
 
 import kotlinx.coroutines.test.runTest
 import ru.workinprogress.chronik.EpochSeconds
 import ru.workinprogress.chronik.FiredTimer
-import ru.workinprogress.petich.InterceptorResult
-import ru.workinprogress.petich.Petich
-import ru.workinprogress.petich.PetichEngine
-import ru.workinprogress.petich.PetichInterceptor
-import ru.workinprogress.petich.PetichPayload
-import ru.workinprogress.petich.PetichPhase
-import ru.workinprogress.petich.PetichRepository
-import ru.workinprogress.petich.PetichStatus
+import io.github.youndie.petich.InterceptorResult
+import io.github.youndie.petich.Petich
+import io.github.youndie.petich.PetichEngine
+import io.github.youndie.petich.PetichInterceptor
+import io.github.youndie.petich.PetichPayload
+import io.github.youndie.petich.PetichPhase
+import io.github.youndie.petich.PetichRepository
+import io.github.youndie.petich.PetichStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

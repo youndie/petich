@@ -1,4 +1,4 @@
-package ru.workinprogress.petich.outbox
+package io.github.youndie.petich.outbox
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope

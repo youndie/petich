@@ -1,4 +1,4 @@
-package ru.workinprogress.petich.scheduler
+package io.github.youndie.petich.scheduler
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope

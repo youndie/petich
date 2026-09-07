@@ -1,4 +1,4 @@
-package ru.workinprogress.petich
+package io.github.youndie.petich
 
 /**
  * Engine counters. They exist for one question that cannot be answered from the outside: WHY did

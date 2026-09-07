@@ -1,4 +1,4 @@
-package ru.workinprogress.petich.ktor
+package io.github.youndie.petich.ktor
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -8,12 +8,12 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
-import ru.workinprogress.petich.Petich
-import ru.workinprogress.petich.PetichEngine
-import ru.workinprogress.petich.PetichRepository
-import ru.workinprogress.petich.PetichResult
-import ru.workinprogress.petich.PetichStatus
-import ru.workinprogress.petich.isTerminal
+import io.github.youndie.petich.Petich
+import io.github.youndie.petich.PetichEngine
+import io.github.youndie.petich.PetichRepository
+import io.github.youndie.petich.PetichResult
+import io.github.youndie.petich.PetichStatus
+import io.github.youndie.petich.isTerminal
 
 fun Route.petichRouting(
     engine: PetichEngine,

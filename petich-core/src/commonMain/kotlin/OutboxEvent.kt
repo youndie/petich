@@ -1,4 +1,4 @@
-package ru.workinprogress.petich
+package io.github.youndie.petich
 
 // The INTENT to publish an event, attached to an interceptor's result (see
 // InterceptorResult.Proceed.outboxEvents). PetichEngine persists it in the same SQL transaction as

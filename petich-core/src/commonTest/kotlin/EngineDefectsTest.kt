@@ -1,4 +1,4 @@
-package ru.workinprogress.petich
+package io.github.youndie.petich
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay

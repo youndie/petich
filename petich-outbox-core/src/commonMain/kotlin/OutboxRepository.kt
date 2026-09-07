@@ -1,4 +1,4 @@
-package ru.workinprogress.petich.outbox
+package io.github.youndie.petich.outbox
 
 interface OutboxRepository {
     suspend fun fetchPending(limit: Int = 50): List<OutboxRecord>

@@ -1,4 +1,4 @@
-package ru.workinprogress.petich.scheduler
+package io.github.youndie.petich.scheduler
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDateTime
