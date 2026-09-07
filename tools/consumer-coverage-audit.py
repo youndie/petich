@@ -18,6 +18,8 @@ the publish convention, and the coordinates the workflow names.
 """
 import pathlib, re, sys
 
+import repo_facts
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # What the build publishes: a module directory whose build script applies the publish convention.
@@ -34,7 +36,12 @@ workflow = (ROOT / ".github/workflows/publish-snapshot.yaml").read_text()
 # With or without a version on the tail. The coordinates lost theirs when the consumer job moved
 # to sborka — the version is appended there, because this file cannot name a version the run has
 # not produced yet — and a regex that still required one found nothing at all.
-checked = set(re.findall(r"^\s*io\.github\.youndie:([a-z0-9-]+)(?::|\s*$)", workflow, re.MULTILINE))
+# THE GROUP IS READ, NOT SPELLED. It used to be written out here, which made this file the third
+# place naming it — after `gradle.properties` and the workflow — and the one nobody would think to
+# change. Moving to `io.github.youndie.petich` left the pattern matching nothing, and a pattern that
+# matches nothing is a guard that reports "no coordinates" instead of the answer it exists to give.
+pattern = rf"^\s*{re.escape(repo_facts.group())}:([a-z0-9-]+)(?::|\s*$)"
+checked = set(re.findall(pattern, workflow, re.MULTILINE))
 if not checked:
     sys.exit("found no coordinates in the consumer job — the audit would pass by finding nothing")
 

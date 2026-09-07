@@ -17,8 +17,10 @@ Run against a local publication:
 """
 import glob, json, os, sys
 
+import repo_facts
+
 VERSION = sys.argv[1] if len(sys.argv) > 1 else sys.exit("usage: artifact-name-audit.py <version>")
-M2 = os.path.expanduser("~/.m2/repository/io/github/youndie")
+M2 = repo_facts.m2_root()
 
 modules = sorted(glob.glob(f"{M2}/*/{VERSION}/*.module"))
 if not modules:
