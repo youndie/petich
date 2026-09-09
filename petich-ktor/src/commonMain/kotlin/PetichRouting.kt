@@ -15,7 +15,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 
-fun Route.petichRouting(
+public fun Route.petichRouting(
     engine: PetichEngine,
     readOnlyRepository: PetichRepository,
 ) {

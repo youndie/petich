@@ -5,31 +5,32 @@ import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichStatus
 import kotlinx.serialization.json.Json
+import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.json.json
 
-class PetichTable(
+public class PetichTable(
     jsonFormat: Json,
 ) : Table("petiches") {
-    val id = varchar("id", 255)
-    val type = varchar("type", 100)
+    public val id: Column<String> = varchar("id", 255)
+    public val type: Column<String> = varchar("type", 100)
 
-    val currentPhase = enumerationByName<PetichPhase>("current_phase", 50)
-    val currentInterceptorIndex = integer("current_interceptor_index")
-    val status = enumerationByName<PetichStatus>("status", 50)
+    public val currentPhase: Column<PetichPhase> = enumerationByName<PetichPhase>("current_phase", 50)
+    public val currentInterceptorIndex: Column<Int> = integer("current_interceptor_index")
+    public val status: Column<PetichStatus> = enumerationByName<PetichStatus>("status", 50)
 
-    val payload = json<PetichPayload>("payload", jsonFormat)
-    val enrichedPayload = json<EnrichedPayload>("enriched_payload", jsonFormat)
+    public val payload: Column<PetichPayload> = json<PetichPayload>("payload", jsonFormat)
+    public val enrichedPayload: Column<EnrichedPayload> = json<EnrichedPayload>("enriched_payload", jsonFormat)
 
-    val version = long("version")
+    public val version: Column<Long> = long("version")
 
     // The instant after which a suspended petich counts as expired (see
     // Petich.suspendedUntilEpochMs). Nullable: a petich with no TTL configured has no deadline.
     // The expiry query filters on this column, so a real database wants an index on
     // (status, suspended_until) — declared below rather than described here.
-    val suspendedUntil = long("suspended_until").nullable()
+    public val suspendedUntil: Column<Long?> = long("suspended_until").nullable()
 
-    override val primaryKey = PrimaryKey(id)
+    override val primaryKey: PrimaryKey = PrimaryKey(id)
 
     // Declared, not merely recommended in a comment. Exposed's tooling treats a Table as the whole
     // description of the schema, so an index that exists in the database and not here is an index

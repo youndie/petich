@@ -18,7 +18,7 @@ import org.jetbrains.exposed.v1.jdbc.update
 // Same shape as ExposedPetichRepository and ExposedOutboxRepository: Database and table through
 // the constructor, every method inside suspendTransaction. Default package, like its neighbours
 // in this module.
-class ExposedScheduleRepository(
+public class ExposedScheduleRepository(
     private val db: Database,
     private val table: ScheduledJobsTable,
 ) : ScheduleRepository {

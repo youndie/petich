@@ -25,7 +25,7 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
     // Repositories with content filters, the shared `wip` catalog, and the check that this
     // repository's `.editorconfig` is the one the rest of them use.
-    id("io.github.youndie.sborka.settings") version "0.3.0.41"
+    id("io.github.youndie.sborka.settings") version "0.4.0.43"
 }
 
 // The engine core: the saga itself, the interceptor pipeline, compensation, suspend/resume.

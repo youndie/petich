@@ -8,11 +8,11 @@ package io.github.youndie.petich.idempotency
 // would be the obvious alternative and is the wrong one — its value is not guaranteed to be stable
 // between Kotlin targets, so a fingerprint written on one platform would not match the same
 // request read on another.
-object RequestFingerprint {
+public object RequestFingerprint {
     private const val FNV_OFFSET_BASIS = 0x811C9DC5.toInt()
     private const val FNV_PRIME = 0x01000193
 
-    fun of(vararg parts: Any?): String {
+    public fun of(vararg parts: Any?): String {
         val key = parts.joinToString(" ") { it.toString() }
         var hash = FNV_OFFSET_BASIS
         for (byte in key.encodeToByteArray()) {

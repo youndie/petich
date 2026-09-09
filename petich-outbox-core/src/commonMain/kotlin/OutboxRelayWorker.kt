@@ -21,7 +21,7 @@ import kotlin.time.TimeSource
 // the repository stays the source of truth for how many attempts an event has had, so a process
 // restart at worst forgets the current timer and retries early — a redundant but harmless repeat
 // under at-least-once — instead of losing the attempt count itself.
-class OutboxRelayWorker(
+public class OutboxRelayWorker(
     private val repository: OutboxRepository,
     private val publisher: OutboxPublisher,
     private val pollInterval: Duration = 1.seconds,
@@ -50,7 +50,7 @@ class OutboxRelayWorker(
     // event this worker has not yet seen fail.
     private val nextEligibleAt = mutableMapOf<String, ComparableTimeMark>()
 
-    fun start(scope: CoroutineScope): Job =
+    public fun start(scope: CoroutineScope): Job =
         scope.launch {
             while (isActive) {
                 try {
@@ -72,7 +72,7 @@ class OutboxRelayWorker(
     // the interval. For tests this is decisive — delivery is checked by invoking a pass and
     // advancing timeSource, not by sleeping on the real clock and hoping the worker wakes the
     // required number of times. On a loaded machine that hope does not come true.
-    suspend fun tick() {
+    public suspend fun tick() {
         val now = timeSource.markNow()
         repository
             .fetchPending(batchSize)

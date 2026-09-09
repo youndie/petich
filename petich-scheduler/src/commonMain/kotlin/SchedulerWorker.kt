@@ -12,22 +12,22 @@ import kotlin.time.Duration.Companion.seconds
 
 // Wall clock as a parameter, for the same reason as PetichClock in :petich-core: commonMain
 // cannot see java.*, and a test must move time rather than sleep through it.
-fun interface SchedulerClock {
-    fun nowEpochMs(): Long
+public fun interface SchedulerClock {
+    public fun nowEpochMs(): Long
 }
 
-interface ScheduleRepository {
-    suspend fun save(job: ScheduledJob): ScheduledJob
+public interface ScheduleRepository {
+    public suspend fun save(job: ScheduledJob): ScheduledJob
 
-    suspend fun findById(id: String): ScheduledJob?
+    public suspend fun findById(id: String): ScheduledJob?
 
     // Active jobs whose run time has already arrived.
-    suspend fun findDue(
+    public suspend fun findDue(
         nowEpochMs: Long,
         limit: Int,
     ): List<ScheduledJob>
 
-    suspend fun findByOwner(ownerId: String): List<ScheduledJob>
+    public suspend fun findByOwner(ownerId: String): List<ScheduledJob>
 }
 
 // What a due job actually does is the application's decision. The scheduler knows only "it is
@@ -35,15 +35,15 @@ interface ScheduleRepository {
 // :petich-outbox-core, and precisely what lets this module stay independent of :petich-core. An
 // implementation may assemble a petich and hand it to PetichEngine, so a saga can start with no
 // HTTP initiator at all.
-fun interface ScheduledJobRunner {
+public fun interface ScheduledJobRunner {
     // An exception means the run failed: the job gets +1 on its failure counter and is
     // rescheduled, or closed if it keeps failing.
-    suspend fun run(job: ScheduledJob)
+    public suspend fun run(job: ScheduledJob)
 }
 
 // Polling the schedule: findDue -> run -> reschedule. Same shape as OutboxRelayWorker: one job
 // failing does not sink the batch, and a storage failure between polls does not sink the worker.
-class SchedulerWorker(
+public class SchedulerWorker(
     private val repository: ScheduleRepository,
     private val runner: ScheduledJobRunner,
     private val clock: SchedulerClock,
@@ -71,7 +71,7 @@ class SchedulerWorker(
      */
     private val onWorkerFailure: (stage: String, cause: Throwable) -> Unit = { _, _ -> },
 ) {
-    fun start(scope: CoroutineScope): Job =
+    public fun start(scope: CoroutineScope): Job =
         scope.launch {
             while (isActive) {
                 try {
@@ -89,7 +89,7 @@ class SchedulerWorker(
 
     // One pass, exposed separately from start, so it can be called from a test or an admin
     // endpoint without spawning a coroutine or waiting out the interval.
-    suspend fun tick(): Int {
+    public suspend fun tick(): Int {
         var fired = 0
         repository.findDue(clock.nowEpochMs(), batchSize).forEach { job ->
             val ranAt = clock.nowEpochMs()

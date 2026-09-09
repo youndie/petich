@@ -6,20 +6,20 @@ import io.github.youndie.petich.ResumePayload
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class CreatePetichRequest(
+public data class CreatePetichRequest(
     val id: String,
     val type: String,
     val payload: PetichPayload,
 )
 
 @Serializable
-data class ResumePetichRequest(
+public data class ResumePetichRequest(
     val payload: PetichPayload? = null,
     val resumePayload: ResumePayload? = null,
 )
 
 @Serializable
-data class PetichResponse(
+public data class PetichResponse(
     val id: String,
     val status: String,
     val requiredAction: String? = null,
@@ -27,17 +27,18 @@ data class PetichResponse(
 )
 
 @Serializable
-data class ErrorResponse(
+public data class ErrorResponse(
     val error: String,
     val details: String? = null,
 )
 
-fun Petich.toResponse(
+public fun Petich.toResponse(
     requiredAction: String? = null,
     error: String? = null,
-) = PetichResponse(
-    id = this.id,
-    status = this.status.name,
-    requiredAction = requiredAction,
-    error = error,
-)
+): PetichResponse =
+    PetichResponse(
+        id = this.id,
+        status = this.status.name,
+        requiredAction = requiredAction,
+        error = error,
+    )

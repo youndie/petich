@@ -11,7 +11,7 @@ import kotlin.time.Instant
 // Recurrence. Deliberately NOT cron: a cron expression needs a parser, does incomparably more
 // than a recurring job requires, and "0 0 3 * *" cannot be explained to an end user. The list
 // is closed and grows only as real needs appear.
-enum class Recurrence {
+public enum class Recurrence {
     // A single run at the appointed instant, after which the job closes.
     ONCE,
     DAILY,
@@ -25,7 +25,7 @@ enum class Recurrence {
 // must not know which business object is inside, or it stops being a portable mechanism and
 // becomes part of one particular feature. Whoever executes the job parses the payload (see
 // ScheduledJobRunner).
-data class ScheduledJob(
+public data class ScheduledJob(
     val id: String,
     // Who owns the job. The scheduler does not care, but every application needs a "show me my
     // scheduled items" query, and putting the owner in the payload would mean searching JSON.
@@ -50,7 +50,7 @@ data class ScheduledJob(
 //
 // The time zone is a parameter: "monthly on the 1st" is meaningless without one, and the scheduler
 // has no business choosing it on the application's behalf.
-fun Recurrence.nextRunAfter(
+public fun Recurrence.nextRunAfter(
     fromEpochMs: Long,
     timeZone: TimeZone,
 ): Long? {
