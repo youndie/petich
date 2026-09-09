@@ -13,11 +13,11 @@ import kotlin.time.Duration.Companion.seconds
 // putting the method on PetichRepository itself would force every existing test double to
 // implement it, though exactly one consumer needs the expired-petiches query. A storage that
 // cannot do this simply cannot be swept — visible in the type rather than discovered at runtime.
-interface ExpiringPetichRepository : PetichRepository {
+public interface ExpiringPetichRepository : PetichRepository {
     // Petiches in PENDING_SIGNATURE whose suspendedUntilEpochMs is non-null and already in the
     // past. Filtering happens in the storage: pulling every suspended petich into memory to sift
     // them client-side amounts to having no index at all.
-    suspend fun findExpired(
+    public suspend fun findExpired(
         nowEpochMs: Long,
         limit: Int,
     ): List<Petich>
@@ -34,7 +34,7 @@ interface ExpiringPetichRepository : PetichRepository {
 // Resilience is the same as OutboxRelayWorker's: a failure on ONE petich does not sink the batch,
 // and a storage failure between polls does not sink the worker. An expired petich is not going
 // anywhere and will be picked up by the next pass, so "log and carry on" loses nothing here.
-class SuspendedPetichSweeper(
+public class SuspendedPetichSweeper(
     private val repository: ExpiringPetichRepository,
     // Which engine owns the petich. Not one engine for everything: an application usually keeps
     // several, sharing ONE petich storage but each with its own interceptor list. Rolling back a
@@ -67,7 +67,7 @@ class SuspendedPetichSweeper(
      */
     private val onWorkerFailure: (stage: String, cause: Throwable) -> Unit = { _, _ -> },
 ) {
-    fun start(scope: CoroutineScope): Job =
+    public fun start(scope: CoroutineScope): Job =
         scope.launch {
             while (isActive) {
                 try {
@@ -86,7 +86,7 @@ class SuspendedPetichSweeper(
 
     // Separate from start: a single pass can be invoked by hand — from a test or an admin
     // endpoint — without spawning a coroutine or waiting out the interval.
-    suspend fun sweep(): Int {
+    public suspend fun sweep(): Int {
         var expired = 0
         repository.findExpired(clock.nowEpochMs(), batchSize).forEach { petich ->
             try {

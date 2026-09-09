@@ -19,7 +19,7 @@ import io.github.youndie.petich.ResumePayload
  * [lateness] travels with it: a step reacting to a deadline sometimes cares how far past it is —
  * a grace period, say — and this is the only place that number is known.
  */
-data class TimerFired(
+public data class TimerFired(
     val timerId: String,
     val lateness: Long,
 ) : ResumePayload()
@@ -39,7 +39,7 @@ data class TimerFired(
  * chronik exists to make impossible, so this module does not offer it rather than offering it
  * broken. See the module's README.
  */
-class SagaTimerSink(
+public class SagaTimerSink(
     private val repository: PetichRepository,
     /**
      * Which engine owns a given saga.

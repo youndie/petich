@@ -5,12 +5,12 @@ package io.github.youndie.petich.idempotency
 // the comment in IdempotencyRepository.kt). FingerprintMismatch means the caller must REJECT
 // (409/422) rather than quietly process: the same key arrived with different request parameters,
 // which is either a client bug (key reused for a different logical operation) or abuse.
-sealed class IdempotencyCheck {
-    data object FirstUse : IdempotencyCheck()
+public sealed class IdempotencyCheck {
+    public data object FirstUse : IdempotencyCheck()
 
-    data object SameRequest : IdempotencyCheck()
+    public data object SameRequest : IdempotencyCheck()
 
-    data object FingerprintMismatch : IdempotencyCheck()
+    public data object FingerprintMismatch : IdempotencyCheck()
 }
 
 // This module has exactly one responsibility: detect that a key was reused with a DIFFERENT
@@ -18,8 +18,8 @@ sealed class IdempotencyCheck {
 // does that (saveOrGet plus a short circuit on a terminal status) whenever the caller uses the
 // idempotency key as Petich.id. Duplicating that here would create a second source of truth for
 // one and the same fact.
-object IdempotencyGuard {
-    suspend fun check(
+public object IdempotencyGuard {
+    public suspend fun check(
         repository: IdempotencyRepository,
         key: String,
         requestFingerprint: String,

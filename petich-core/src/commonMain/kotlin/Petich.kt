@@ -15,14 +15,14 @@ import kotlin.random.Random
 import kotlin.time.Duration
 
 @Serializable
-abstract class PetichPayload
+public abstract class PetichPayload
 
 @Serializable
-abstract class ResumePayload
+public abstract class ResumePayload
 
 @Serializable
-abstract class EnrichedPayload {
-    abstract fun merge(other: EnrichedPayload): EnrichedPayload
+public abstract class EnrichedPayload {
+    public abstract fun merge(other: EnrichedPayload): EnrichedPayload
 }
 
 // @SerialName is load-bearing, not cosmetic. Without it the polymorphic discriminator is the
@@ -32,7 +32,7 @@ abstract class EnrichedPayload {
 // it from refactorings.
 @Serializable
 @SerialName("simple_enriched")
-data class SimpleEnrichedPayload(
+public data class SimpleEnrichedPayload(
     val data: Map<String, String> = emptyMap(),
 ) : EnrichedPayload() {
     override fun merge(other: EnrichedPayload): EnrichedPayload =
@@ -43,7 +43,7 @@ data class SimpleEnrichedPayload(
         }
 }
 
-enum class PetichStatus {
+public enum class PetichStatus {
     DRAFT,
     PENDING_SIGNATURE,
     PROCESSING,
@@ -53,12 +53,12 @@ enum class PetichStatus {
     COMPENSATING,
 }
 
-fun PetichStatus.isTerminal(): Boolean =
+public fun PetichStatus.isTerminal(): Boolean =
     this == PetichStatus.COMPLETED ||
         this == PetichStatus.REJECTED ||
         this == PetichStatus.FAILED
 
-data class Petich(
+public data class Petich(
     val id: String,
     val type: String,
     val currentPhase: PetichPhase = PetichPhase.ENRICHMENT,
@@ -86,11 +86,11 @@ data class Petich(
 // Wall clock specifically, not TimeSource.Monotonic (which OutboxRelayWorker uses for backoff): a
 // deadline survives a process restart and is compared across rows in a database, and monotonic
 // marks mean nothing outside a single process.
-fun interface PetichClock {
-    fun nowEpochMs(): Long
+public fun interface PetichClock {
+    public fun nowEpochMs(): Long
 }
 
-enum class PetichPhase {
+public enum class PetichPhase {
     ENRICHMENT,
     VALIDATION,
     AUTHORIZATION,
@@ -101,7 +101,7 @@ enum class PetichPhase {
 // The default timeout table. DEFAULTS, not engine constants: they are overridden through
 // PetichEngineConfig because they differ between environments — external services answer more
 // slowly on dev than in production.
-val PetichPhase.timeoutMs
+public val PetichPhase.timeoutMs: Long
     get() =
         when (this) {
             PetichPhase.ENRICHMENT -> 1000L
@@ -113,7 +113,7 @@ val PetichPhase.timeoutMs
 
 // Engine settings. Every default equals what used to be hardcoded, so existing code that creates
 // a PetichEngine without a config behaves exactly as before.
-data class PetichEngineConfig(
+public data class PetichEngineConfig(
     val phaseTimeoutsMs: Map<PetichPhase, Long> = PetichPhase.entries.associateWith { it.timeoutMs },
     // How many times to retry the whole processing pass on a version conflict.
     val maxProcessAttempts: Int = 5,
@@ -154,15 +154,15 @@ data class PetichEngineConfig(
         }
     }
 
-    fun timeoutMs(phase: PetichPhase): Long = phaseTimeoutsMs[phase] ?: phase.timeoutMs
+    public fun timeoutMs(phase: PetichPhase): Long = phaseTimeoutsMs[phase] ?: phase.timeoutMs
 
-    fun compensationTimeoutMs(phase: PetichPhase): Long = compensationTimeoutsMs?.get(phase) ?: timeoutMs(phase)
+    public fun compensationTimeoutMs(phase: PetichPhase): Long = compensationTimeoutsMs?.get(phase) ?: timeoutMs(phase)
 }
 
-sealed interface InterceptorResult {
-    val enrichedPayload: EnrichedPayload? get() = null
+public sealed interface InterceptorResult {
+    public val enrichedPayload: EnrichedPayload? get() = null
 
-    data class Proceed(
+    public data class Proceed(
         override val enrichedPayload: EnrichedPayload? = null,
         val outboxEvents: List<OutboxEvent> = emptyList(),
         // Committed with the state change this result produces, or reported as dropped. See
@@ -170,7 +170,7 @@ sealed interface InterceptorResult {
         val sideEffects: List<PetichSideEffect> = emptyList(),
     ) : InterceptorResult
 
-    data class Suspend(
+    public data class Suspend(
         val requiredAction: String,
         override val enrichedPayload: EnrichedPayload? = null,
         // How long to await client action AT THIS PARTICULAR STEP. null takes the blanket
@@ -184,18 +184,18 @@ sealed interface InterceptorResult {
         val sideEffects: List<PetichSideEffect> = emptyList(),
     ) : InterceptorResult
 
-    data class Resuspend(
+    public data class Resuspend(
         val requiredAction: String,
         override val enrichedPayload: EnrichedPayload? = null,
         val ttl: Duration? = null,
         val sideEffects: List<PetichSideEffect> = emptyList(),
     ) : InterceptorResult
 
-    data class Reject(
+    public data class Reject(
         val reason: String,
     ) : InterceptorResult
 
-    data class Compensate(
+    public data class Compensate(
         val reason: String,
     ) : InterceptorResult
 }
@@ -203,18 +203,18 @@ sealed interface InterceptorResult {
 /**
  * The main contract for every business feature.
  */
-interface PetichInterceptor<T : PetichPayload> {
-    val phase: PetichPhase
-    val priority: Int get() = 0 // Defaults to 0; the higher the number, the earlier it runs
+public interface PetichInterceptor<T : PetichPayload> {
+    public val phase: PetichPhase
+    public val priority: Int get() = 0 // Defaults to 0; the higher the number, the earlier it runs
 
-    fun supports(payload: PetichPayload): Boolean
+    public fun supports(payload: PetichPayload): Boolean
 
-    suspend fun intercept(
+    public suspend fun intercept(
         petich: Petich,
         payload: T,
     ): InterceptorResult
 
-    suspend fun compensate(
+    public suspend fun compensate(
         petich: Petich,
         payload: T,
     )
@@ -224,7 +224,7 @@ interface PetichInterceptor<T : PetichPayload> {
     // interceptors that must reliably announce a rollback — "the reservation was released", say —
     // override this method instead
     // compensate().
-    suspend fun compensateWithEvents(
+    public suspend fun compensateWithEvents(
         petich: Petich,
         payload: T,
     ): List<OutboxEvent> {
@@ -232,7 +232,7 @@ interface PetichInterceptor<T : PetichPayload> {
         return emptyList()
     }
 
-    suspend fun tryIntercept(
+    public suspend fun tryIntercept(
         petich: Petich,
         payload: PetichPayload,
     ): InterceptorResult? =
@@ -244,7 +244,7 @@ interface PetichInterceptor<T : PetichPayload> {
             null
         }
 
-    suspend fun tryCompensate(
+    public suspend fun tryCompensate(
         petich: Petich,
         payload: PetichPayload,
     ): List<OutboxEvent> =
@@ -279,12 +279,12 @@ private inline fun <R> PetichInterceptor<*>.withPayloadDiagnostics(
         )
     }
 
-interface PetichRepository {
-    suspend fun findById(id: String): Petich?
+public interface PetichRepository {
+    public suspend fun findById(id: String): Petich?
 
-    suspend fun saveOrGet(petich: Petich): Petich
+    public suspend fun saveOrGet(petich: Petich): Petich
 
-    suspend fun update(petich: Petich): Boolean
+    public suspend fun update(petich: Petich): Boolean
 }
 
 // An optional extension: an implementation able to write outbox events in the SAME SQL
@@ -292,8 +292,8 @@ interface PetichRepository {
 // checks `repository is OutboxAwarePetichRepository` at the persistence point and quietly degrades
 // to a plain update(petich) when the repository does not support it, or when there are no events.
 // Plain PetichRepository implementations therefore keep working without a single change.
-interface OutboxAwarePetichRepository : PetichRepository {
-    suspend fun update(
+public interface OutboxAwarePetichRepository : PetichRepository {
+    public suspend fun update(
         petich: Petich,
         outboxEvents: List<OutboxEvent>,
     ): Boolean
@@ -315,13 +315,13 @@ interface OutboxAwarePetichRepository : PetichRepository {
 // a second transaction. If the process dies between the two, the state is committed and the other
 // half is not: exactly the dual write OutboxAwarePetichRepository exists to make impossible, in a
 // different place. This closes the same hole for anything that is not an event.
-interface PetichSideEffect
+public interface PetichSideEffect
 
 // The counterpart of OutboxAwarePetichRepository for side effects. Optional in the same way and for
 // the same reason: existing implementations keep working untouched, and a storage that cannot do
 // this says so in its type rather than at runtime.
-interface SideEffectAwarePetichRepository : PetichRepository {
-    suspend fun update(
+public interface SideEffectAwarePetichRepository : PetichRepository {
+    public suspend fun update(
         petich: Petich,
         outboxEvents: List<OutboxEvent>,
         sideEffects: List<PetichSideEffect>,
@@ -331,26 +331,26 @@ interface SideEffectAwarePetichRepository : PetichRepository {
 // What expireSuspended did. Not a Boolean: "not found", "no longer waiting" and "deadline not
 // reached yet" are three different situations, and a worker benefits from telling them apart in
 // its logs.
-sealed interface ExpireResult {
-    data class Expired(
+public sealed interface ExpireResult {
+    public data class Expired(
         val petichId: String,
     ) : ExpireResult
 
-    data class NotSuspended(
+    public data class NotSuspended(
         val status: PetichStatus,
     ) : ExpireResult
 
-    data object NotExpiredYet : ExpireResult
+    public data object NotExpiredYet : ExpireResult
 
-    data object NotFound : ExpireResult
+    public data object NotFound : ExpireResult
 }
 
 // The reason an expired petich goes to compensation. A constant rather than an inline literal:
 // it is what distinguishes a deadline rollback from an interceptor rejection during an incident
 // review.
-const val EXPIRED_REASON: String = "Petich expired while waiting for the client"
+public const val EXPIRED_REASON: String = "Petich expired while waiting for the client"
 
-class PetichEngine(
+public class PetichEngine(
     private val interceptors: List<PetichInterceptor<*>>,
     private val repository: PetichRepository,
     private val compensationFailureHandler: CompensationFailureHandler = NoOpCompensationFailureHandler(),
@@ -545,7 +545,7 @@ class PetichEngine(
     // seeing state that has already changed. That is why the state is re-read inside the lock and
     // every condition re-checked: the decision the worker made from its query results may be stale
     // by now.
-    suspend fun expireSuspended(petichId: String): ExpireResult {
+    public suspend fun expireSuspended(petichId: String): ExpireResult {
         val entry =
             lockMapMutex.withLock {
                 petichLocks.getOrPut(petichId) { LockEntry() }.also { it.holders++ }
@@ -579,7 +579,7 @@ class PetichEngine(
         }
     }
 
-    suspend fun process(petich: Petich): PetichResult {
+    public suspend fun process(petich: Petich): PetichResult {
         val entry =
             lockMapMutex.withLock {
                 petichLocks.getOrPut(petich.id) { LockEntry() }.also { it.holders++ }
@@ -912,36 +912,36 @@ class PetichEngine(
     }
 }
 
-class OptimisticLockException : RuntimeException("Version conflict")
+public class OptimisticLockException : RuntimeException("Version conflict")
 
-sealed interface PetichResult {
-    data class Success(
+public sealed interface PetichResult {
+    public data class Success(
         val petich: Petich,
     ) : PetichResult
 
-    data class ActionRequired(
+    public data class ActionRequired(
         val actionType: String,
         val petich: Petich,
     ) : PetichResult
 
-    data class Error(
+    public data class Error(
         val reason: String,
     ) : PetichResult
 
-    data class SystemFailure(
+    public data class SystemFailure(
         val details: String,
     ) : PetichResult
 }
 
-interface CompensationFailureHandler {
-    suspend fun handle(
+public interface CompensationFailureHandler {
+    public suspend fun handle(
         e: Exception,
         petich: Petich,
         interceptor: PetichInterceptor<*>,
     )
 }
 
-class NoOpCompensationFailureHandler : CompensationFailureHandler {
+public class NoOpCompensationFailureHandler : CompensationFailureHandler {
     override suspend fun handle(
         e: Exception,
         petich: Petich,

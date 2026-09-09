@@ -5,7 +5,7 @@ package io.github.youndie.petich.outbox
 // knows nothing about petiches or interceptors, only about "a row with id/type/payload that must
 // be delivered at least once". Bridging the two types is the storage layer's job (see
 // ExposedPetichRepository and ExposedOutboxRepository in :petich-postgres).
-data class OutboxRecord(
+public data class OutboxRecord(
     val id: String,
     val type: String,
     val payload: String,

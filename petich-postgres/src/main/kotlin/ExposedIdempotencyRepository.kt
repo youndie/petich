@@ -11,7 +11,7 @@ import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 
-class ExposedIdempotencyRepository(
+public class ExposedIdempotencyRepository(
     private val db: Database,
     private val table: IdempotencyKeysTable,
 ) : IdempotencyRepository {

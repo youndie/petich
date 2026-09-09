@@ -14,35 +14,35 @@ package io.github.youndie.petich
  *
  * Calls arrive from different coroutines concurrently, so an implementation must be thread-safe.
  */
-interface PetichEngineMetrics {
+public interface PetichEngineMetrics {
     /** A saga pass began. Together with [onOptimisticRetry] this yields the average attempt count. */
-    fun onProcessAttempt(type: String) = Unit
+    public fun onProcessAttempt(type: String): Unit = Unit
 
     /**
      * A saga pass restarts because of a version conflict: someone changed the same petich first.
      * A direct measure of contention — the one thing that separates "we hit the database ceiling"
      * from "we are fighting over a row".
      */
-    fun onOptimisticRetry(
+    public fun onOptimisticRetry(
         type: String,
         attempt: Int,
-    ) = Unit
+    ): Unit = Unit
 
     /** A state write retried within a single pass (see forceUpdateStateWithRetry). */
-    fun onStateUpdateRetry(type: String) = Unit
+    public fun onStateUpdateRetry(type: String): Unit = Unit
 
     /** The saga went backwards. Compensation costs more than the forward pass, and a spike of
      *  rollbacks changes the load profile. */
-    fun onCompensation(
+    public fun onCompensation(
         type: String,
         reason: String,
-    ) = Unit
+    ): Unit = Unit
 
     /**
      * The saga is waiting on client action. A repeated wait (Resuspend) counts too: from outside
      * it is indistinguishable from the first, and it costs the engine the same.
      */
-    fun onSuspend(type: String) = Unit
+    public fun onSuspend(type: String): Unit = Unit
 
     /**
      * Outbox events were produced and thrown away, because the configured repository is not an
@@ -61,10 +61,10 @@ interface PetichEngineMetrics {
      * mistake, in production, and [PetichEngineConfig.requireOutbox] is the same mistake refused
      * at construction instead.
      */
-    fun onDroppedEvents(
+    public fun onDroppedEvents(
         type: String,
         count: Int,
-    ) = Unit
+    ): Unit = Unit
 
     /**
      * Work an interceptor asked to have committed with the state change, thrown away because the
@@ -78,10 +78,10 @@ interface PetichEngineMetrics {
      * [PetichEngineConfig.requireSideEffects] is the same mistake refused at wiring time instead of
      * counted at runtime.
      */
-    fun onDroppedSideEffects(
+    public fun onDroppedSideEffects(
         petichType: String,
         count: Int,
-    ) = Unit
+    ): Unit = Unit
 
-    object NoOp : PetichEngineMetrics
+    public object NoOp : PetichEngineMetrics
 }

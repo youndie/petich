@@ -7,8 +7,8 @@ package io.github.youndie.petich
 // between a business mutation and a network effect (push, webhook) structurally impossible.
 // Delivering the event (a relay worker, at-least-once) is :petich-outbox-core's separate concern;
 // petich-core knows nothing about it.
-interface OutboxEvent {
-    val id: String
-    val type: String
-    val payload: String // pre-serialised JSON — the interceptor does the serialising itself
+public interface OutboxEvent {
+    public val id: String
+    public val type: String
+    public val payload: String // pre-serialised JSON — the interceptor does the serialising itself
 }
