@@ -193,7 +193,11 @@ class OneTransactionTest {
                     config = PetichEngineConfig(maxStateUpdateAttempts = 1),
                 )
 
-            @Suppress("SwallowedResult") // the refused write surfaces as a throw; that IS the case
+            @Suppress(
+                "SwallowedResult",
+                "ktlint:kapkan:cancellation-swallowed",
+                "a test capturing the throw it is about; nothing cancels this scope",
+            )
             val ignored = runCatching { engine.process(saga("s2")) }
 
             // The step has to have ASKED for the timer, or its absence says nothing: a process that
@@ -278,7 +282,11 @@ class OneTransactionTest {
             // own, and COMMITS IT — which is exactly what the first version of this test did, and
             // the timer duly outlived a transaction that was never its own. Mixing the two is the
             // trap anybody wiring this up will fall into.
-            @Suppress("SwallowedResult") // the throw IS the abandonment being tested
+            @Suppress(
+                "SwallowedResult",
+                "ktlint:kapkan:cancellation-swallowed",
+                "a test capturing the throw it is about; nothing cancels this scope",
+            )
             val ignored =
                 runCatching {
                     suspendTransaction(db = db) {
