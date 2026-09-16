@@ -84,7 +84,7 @@ hypothesis was confirmed or refuted.
 | [B-11](docs/backlog/B-11-chronik-bridge-blocked.md) `[ ]` | petich-chronik stays JVM-only until chronik publishes a native variant | P2 | S | - |
 | [B-15](docs/backlog/B-15-release-order-and-the-first-native-version.md) `[ ]` | The first release carrying native variants, and the order it has to go out in | P2 | S | B-12 |
 | [B-16](docs/backlog/B-16-access-scoring-decimal-fixture.md) `[?]` | AccessScoring stays JVM-only because its fixture does decimal finance | P2 | M | - |
-| [B-13](docs/backlog/B-13-ci-and-the-konan-toolchain.md) `[ ]` | CI downloads the Kotlin/Native toolchain on every run | infra | S | B-03 |
+| [B-13](docs/backlog/B-13-ci-and-the-konan-toolchain.md) `[~]` | CI downloads the Kotlin/Native toolchain on every run | infra | S | B-03 |
 
 ## Closed (9)
 
