@@ -78,7 +78,6 @@ hypothesis was confirmed or refuted.
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-04](docs/backlog/B-04-scenario-suites-on-both-targets.md) `[ ]` | The three end-to-end saga suites run on the JVM only | P1 | M | B-03 |
 | [B-05](docs/backlog/B-05-concurrency-under-the-native-memory-model.md) `[ ]` | The per-saga lock has never run under the Kotlin/Native memory model | P1 | S/M | B-03 |
 | [B-06](docs/backlog/B-06-ktor-module-and-the-jvm-pinned-catalogue.md) `[ ]` | petich-ktor: the catalogue names -jvm coordinates, which cannot resolve for a native target | P1 | S | B-03 |
 | [B-08](docs/backlog/B-08-which-database-for-the-native-store.md) `[?]` | Which database does a native consumer store sagas in — Postgres through sqlx4k, or SQLite? | P1 | XS | - |
@@ -88,9 +87,10 @@ hypothesis was confirmed or refuted.
 | [B-11](docs/backlog/B-11-chronik-bridge-blocked.md) `[ ]` | petich-chronik stays JVM-only until chronik publishes a native variant | P2 | S | - |
 | [B-14](docs/backlog/B-14-module-table-says-which-targets.md) `[ ]` | The README module table says nothing about targets, and after the port the answer differs per module | P2 | XS | B-06 |
 | [B-15](docs/backlog/B-15-release-order-and-the-first-native-version.md) `[ ]` | The first release carrying native variants, and the order it has to go out in | P2 | S | B-12 |
+| [B-16](docs/backlog/B-16-access-scoring-decimal-fixture.md) `[?]` | AccessScoring stays JVM-only because its fixture does decimal finance | P2 | M | - |
 | [B-13](docs/backlog/B-13-ci-and-the-konan-toolchain.md) `[ ]` | CI downloads the Kotlin/Native toolchain on every run | infra | S | B-03 |
 
-## Closed (4)
+## Closed (5)
 
 **The gate and the negative control**
 
@@ -100,6 +100,7 @@ hypothesis was confirmed or refuted.
 **The portable four**
 
 - [B-03](docs/backlog/B-03-linux-target-on-the-portable-four.md) `[x]` - linuxX64 on the four modules that already compile anywhere
+- [B-04](docs/backlog/B-04-scenario-suites-on-both-targets.md) `[x]` - The three end-to-end saga suites run on the JVM only
 
 **Somewhere to store it**
 

@@ -1,7 +1,7 @@
 ---
 id: B-04
 title: "The three end-to-end saga suites run on the JVM only"
-status: open
+status: done
 priority: P1
 size: M
 stage: stage-1-portable
@@ -38,3 +38,27 @@ everything *except* the three suites that look most like a real application.
   `petich-core/src/jvmTest/kotlin/io/github/youndie/petich/AccessScoringPetichEngineTest.kt`,
   `petich-core/src/jvmTest/kotlin/io/github/youndie/petich/ConfirmResumePayload.kt`
 
+## Closed 2026-09-16 — two suites of three, and the third has an item of its own
+
+`BadgeIssuancePetichEngineTest` and `StockMovePetichEngineTest` are in `commonTest` and run on both
+targets. `petich-core` on `linuxX64` went from **52 tests to 72**; `jvmTest` still reports **84,
+0 failures**, the same number as before the move, so nothing was dropped on the way. The difference
+is exactly the 12 cases of `AccessScoringPetichEngineTest`.
+
+**The premise of this item was half wrong, and the compiler said so twice.**
+
+*First:* the list of what kept these suites on the JVM was drawn from their imports, and the imports
+do not show everything. `getOrDefault`, `putIfAbsent` and `computeIfPresent` are `java.util.Map`
+methods available on a plain Kotlin `Map` on the JVM, invisible in an import list and unresolved on
+Kotlin/Native. That is a better answer to "how do I find the JVM-only surface" than grepping
+imports: declare the target and read the errors.
+
+*Second:* `AccessScoring`'s `BigDecimal` is not "money in a fixture". It is an amortisation with
+`divide(…, 10, HALF_UP)` and a power over a decimal, and hundredths in a `Long` cannot hold it.
+Moving it means changing the numbers the assertions check — which is a decision about honesty, not
+a refactor, so it is [B-16](B-16-access-scoring-decimal-fixture.md), a question for the owner.
+
+**What did NOT move: the assertions.** One test compares a notification string carrying a
+human-readable amount (`"WITHDRAW: from1 -50500.00"`). With hundredths in a `Long` the log said
+`-5050000`, and the cheap fix would have been to update the expectation. The fixture formats the
+amount instead, so the test still checks the string it always checked.
