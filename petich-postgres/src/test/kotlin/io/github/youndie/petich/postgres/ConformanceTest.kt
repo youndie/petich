@@ -191,7 +191,9 @@ class ConformanceTest {
     // --- The controls. A corpus is only worth its green runs if a broken store turns it red. ---
 
     /** Last writer wins: the stored version is read and the write is rewritten to match it. */
-    private inner class VersionBlindStore : OutboxAwarePetichRepository, ExpiringPetichRepository {
+    private inner class VersionBlindStore :
+        OutboxAwarePetichRepository,
+        ExpiringPetichRepository {
         override suspend fun findById(id: String): Petich? = store.findById(id)
 
         override suspend fun saveOrGet(petich: Petich): Petich = store.saveOrGet(petich)
@@ -211,7 +213,9 @@ class ConformanceTest {
     }
 
     /** The state change commits and the intent to notify is dropped — silently, as it would be. */
-    private inner class OutboxBlindStore : OutboxAwarePetichRepository, ExpiringPetichRepository {
+    private inner class OutboxBlindStore :
+        OutboxAwarePetichRepository,
+        ExpiringPetichRepository {
         override suspend fun findById(id: String): Petich? = store.findById(id)
 
         override suspend fun saveOrGet(petich: Petich): Petich = store.saveOrGet(petich)
