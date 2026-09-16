@@ -166,7 +166,7 @@ class SchedulerWorkerTest {
     // Missed periods are not caught up: for side-effecting work, three back-dated runs are more
     // dangerous than skipping them.
     @Test
-    fun `periods missed while the worker was down are skipped, not replayed`() =
+    fun `periods missed while the worker was down are skipped rather than replayed`() =
         runTest {
             val repository = InMemoryScheduleRepository()
             repository.save(job(nextRunAt = at("2026-01-15T09:00")))
