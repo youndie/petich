@@ -55,7 +55,7 @@ class EngineConfigTest {
     // ---- configurability -----------------------------------------------------------------------
 
     @Test
-    fun `a phase timeout comes from the config, not from the default table`() =
+    fun `a phase timeout comes from the config rather than from the default table`() =
         runBlocking {
             val slow =
                 object : PetichInterceptor<TestPayload> {

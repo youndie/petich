@@ -16,6 +16,17 @@ its dependencies into `~/.konan` — hundreds of megabytes — and does it again
 every job of the publish workflow. The publish path pays it twice over, since local publication and
 the snapshot upload are separate jobs.
 
+- **Measured while closing [B-03](B-03-linux-target-on-the-portable-four.md), and it corrects this
+  item's premise.** The first CI run with native targets (run 35150522949) shows the runner *already
+  carrying* the toolchain — `Kotlin/Native bundle directory
+  /home/runner/.konan/kotlin-native-prebuilt-linux-x86_64-2.4.10 is not empty. Native bundle files
+  will be overwritten` — and `downloadKotlinNativeDistribution` running **four times, once per
+  module**, over 21:07:22-21:07:51. The job took 1m51s against 2m26s for the documentation-only run
+  before it, so the native half did not make the build slower at all. What is worth fixing is
+  therefore narrower than "it downloads the toolchain every run", and how many bytes actually cross
+  the network is still unmeasured: read it off a run with `--info`, or from the step's own timing,
+  before writing a number down.
+
 - **Cache `~/.konan` keyed by the Kotlin version**, because that is what decides the contents; a key
   on the lockfile or the run number either never hits or never invalidates.
 - **`linuxX64Test` runs on the same runner, which is the point.** `ubuntu-latest` is a Linux x64 host,

@@ -289,6 +289,12 @@ nothing differs, because registration is explicit on both platforms and no refle
 To be settled by the existing `commonTest` suites running green as `linuxX64Test` in B-03 — if they
 do not, the finding belongs in this section rather than in a commit message.
 
+**Risk 3 — confirmed in part, 2026-09-16 (B-03).** Of the two findings this risk was written
+around, one appeared and one did not: three test names carried a comma (`Name contains illegal
+characters: ","`), and no `kotlin.jvm` import was missing anywhere. The errors did arrive all at
+once and all from test sources, which is the part worth keeping: a publication compiles no test
+source, so the run that proved the modules portable (§1.2) could not have found them.
+
 **Risk 3. A second target produces its errors all at once.** `allWarningsAsErrors` and
 `explicitApi()` are on (§1.7), and the two findings chronik got from the same change were both in
 code rather than in the build: `@JvmInline` without its import (`kotlin.jvm.*` is a default import

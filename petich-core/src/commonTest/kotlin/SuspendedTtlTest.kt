@@ -334,7 +334,7 @@ class SuspendedPetichSweeperTest {
     // A petich of someone else's type must not be rolled back by whichever engine comes to hand:
     // it has a different interceptor list, and the wrong compensations would run.
     @Test
-    fun `a petich with no owning engine is skipped, not compensated by another`() =
+    fun `a petich with no owning engine is skipped rather than compensated by another`() =
         runBlocking {
             val clock = TtlTestClock()
             val repository = TtlRepository()
