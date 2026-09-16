@@ -1,7 +1,7 @@
 ---
 id: B-06
 title: "petich-ktor: the catalogue names -jvm coordinates, which cannot resolve for a native target"
-status: wip
+status: done
 priority: P1
 size: S
 stage: stage-2-ktor
@@ -33,3 +33,34 @@ the JSON bridge, all verified present
 - Anchors: `gradle/libs.versions.toml`, `petich-ktor/build.gradle.kts`,
   `petich-ktor/src/jvmTest/kotlin/io/github/youndie/petich/ktor/PetichRoutingTest.kt`
 
+## Closed 2026-09-16
+
+Five coordinates lost their `-jvm` suffix, `petich-ktor` gained `linuxX64()`, and
+`PetichRoutingTest` moved to `commonTest`.
+
+**Ktor's test host runs on Kotlin/Native.** `testApplication` drives the routes on both targets:
+**7 tests on `jvmTest`, the same 7 on `linuxX64Test`**, 0 failures. That was the part of this item
+carrying the most risk — the rest is a build file — and it is answered by a run rather than by the
+klib's existence in a registry listing.
+
+**The suffix was the whole blocker, and it is worth saying why.** A `-jvm` coordinate names one
+platform's artefact. In a multiplatform source set it does not merely fail to help: it is what makes
+the native compilation unresolvable no matter which targets the module declares. The
+platform-agnostic coordinate resolves to the jvm artefact for a jvm consumer and to the klib for a
+native one, which is the mechanism KMP publication exists for — and the jvm suites staying green
+through this change is the evidence that nothing was taken away from the existing consumers.
+
+**One more `java.util.Map` method**, in the same shape as [B-04](B-04-scenario-suites-on-both-targets.md):
+the routing test's fake repository used `putIfAbsent`. Replaced with `getOrPut`.
+
+**Verified through the real path.** Local publication `b06-probe`, then the probe from
+[B-02](B-02-native-consumer-probe.md) declaring six coordinates at once —
+`petich-core`, `petich-ktor`, `petich-outbox-core`, `petich-idempotency`, `petich-scheduler`,
+`petich-conformance` — RESOLVED and linked. Six `<module>-linuxx64` directories now sit in the local
+repository beside the jvm ones. What the probe proves for the five it does not call into is
+resolution and linking; what `linuxX64Test` proves for `petich-ktor` is stronger, and it is the run
+above.
+
+**Still jvm-only, by decision rather than omission:** `petich-postgres` (research D3) and
+`petich-chronik` ([B-11](B-11-chronik-bridge-blocked.md), waiting on a release in another
+repository).
