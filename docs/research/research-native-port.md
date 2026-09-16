@@ -53,6 +53,13 @@ Verified by grep over every source set in this repository.
 | The dependencies of the six multiplatform modules are coroutines 1.11.0, serialization-json 1.11.0 and datetime 0.8.0, and all three publish `linuxX64` klibs | `gradle/libs.versions.toml`; `repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-linuxx64/1.11.0/`, `…/kotlinx-serialization-json-linuxx64/1.11.0/`, `…/kotlinx-datetime-linuxx64/0.8.0/` |
 | Backoff arithmetic uses `kotlin.math.pow` and `kotlin.random.Random`; recurrence uses `kotlin.time.Instant` and `kotlinx.datetime` | `petich-core/src/commonMain/kotlin/Petich.kt`, `petich-scheduler/src/commonMain/kotlin/ScheduledJob.kt` |
 
+**Confirmed while doing [B-02](../backlog/B-02-native-consumer-probe.md), 2026-09-16.** This was
+written as an argument and is now a measurement: `linuxX64()` was added to `petich-core`, published
+locally, and a separate `linuxX64` consumer resolved it, compiled against it, linked
+`native-consumer-probe.kexe` and ran it. No source in `petich-core` was touched. The line was
+reverted — the targets themselves are B-03 — and what the run still says nothing about is
+`linuxX64Test`, because a publication compiles no test source.
+
 **Consequence.** For the four modules that depend on nothing but coroutines, datetime and
 serialization, the port is the line `linuxX64()` in a build script. That is the argument for doing
 it, not a reason to expect it to be free — see §3 for what a second target is known to find.
