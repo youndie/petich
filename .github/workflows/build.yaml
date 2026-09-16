@@ -46,6 +46,26 @@ jobs:
           python3 tools/artifact-name-audit.py ci-${{ github.run_number }}
           python3 tools/jvm-floor-audit.py ci-${{ github.run_number }}
 
+      # THE HALF OF THE PUBLICATION THE THREE AUDITS ABOVE CANNOT BE RED ABOUT.
+      #
+      # `jvm-floor-audit.py` skips non-jvm variants by design — there is no floor in a klib — and
+      # the proba job in publish-snapshot.yaml resolves every coordinate from a JVM build. So after
+      # the port every native variant was published and asked about by nobody, and the failure a
+      # consumer meets ("no matching variant") happens in their build, with nothing in it about
+      # petich.
+      #
+      # This runs that consumer. It asks two things, and the first is the one a build cannot: that
+      # a module which DECLARES a native target actually published one — a directory that is not
+      # there is the same failure as a variant that never matched, and a green compilation says
+      # nothing about it. Then it resolves, compiles and links against the publication made in the
+      # step above.
+      #
+      # The module list is derived from the build scripts rather than typed here, for the reason
+      # consumer-coverage-audit.py exists one level up: a list in a workflow is a list nobody
+      # updates when the eighth module arrives.
+      - name: A Kotlin/Native consumer can resolve what was published
+        run: python3 tools/native-consumer-probe.py ci-${{ github.run_number }} --expect resolve
+
       # Reads two files, so it runs on a pull request rather than after a publish — this is the
       # moment a module is added, and the moment the coordinate list is not updated with it.
       - name: The consumer job covers every published module

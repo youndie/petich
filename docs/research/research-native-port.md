@@ -147,10 +147,17 @@ branch rather than folded into a feature.
 | `consumer-coverage-audit.py` compares the modules applying the publish convention against the coordinate list in the publish workflow — it counts modules, not variants | `tools/consumer-coverage-audit.py`, `.github/workflows/publish-snapshot.yaml` |
 | The consumer job that resolves those coordinates (`proba`, called through sborka's `publish-wip.yaml`) builds a JVM consumer | `.github/workflows/publish-snapshot.yaml`, and the note in `.github/workflows/build.yaml` about proba's consumer build pinning Java 21 |
 
-**Consequence.** After the port, half of what is published is checked by nobody: every guard in this
-repository either ignores native variants by design or asks a question only a JVM consumer can
-answer. The same gap is written down in chronik's B-16 as "the native half of the metadata stays
+**Consequence.** After the port, half of what is published would be checked by nobody: every guard
+in this repository either ignores native variants by design or asks a question only a JVM consumer
+can answer. The same gap is written down in chronik's B-16 as "the native half of the metadata stays
 hand-checked once" — inheriting it silently is the thing to avoid.
+
+**Closed by [B-12](../backlog/B-12-guards-meet-the-native-variants.md), 2026-09-16.** `build.yaml`
+now runs the native consumer against the publication it just made, on every push and pull request,
+with the module list derived from the build scripts. It answers two questions, and the cheaper one
+is the one no build can: a module that declares a native target and publishes no native variant is
+named before any consumer is compiled. proba's JVM consumer is unchanged and still answers for the
+jvm half.
 
 ### 1.9 There is no native consumer of petich today
 
