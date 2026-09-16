@@ -31,6 +31,14 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
 
+    // THE CORPUS, AND A REAL POSTGRES TO RUN IT AGAINST. The rules in :petich-conformance are
+    // statements about what petich promises a store will do; this module is the only place they can
+    // currently be run, and nothing smaller than the real database answers them — an in-memory fake
+    // decides for itself when a write becomes visible, which is half of what is being asked.
+    testImplementation(projects.petichConformance)
+    testImplementation(libs.testcontainers.postgresql)
+    testImplementation(libs.postgres.driver)
+
     // No test framework declared here any more. `sborka.jvm` puts `kotlin("test")` on the test
     // classpath and `sborka.test` runs it on the JUnit Platform, so this module joins the other five
     // on JUnit 5 instead of being the one left on JUnit 4 — which is what `kotlin-test-junit` was.

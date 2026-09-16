@@ -16,11 +16,11 @@ and the links run top to bottom.
 | Feature | `features/` | *what* the system does and why; BDD scenarios | this repository |
 | Service | `services/` | modules: what each owns, how it is built, how it is wired in | this repository |
 
-**Only `research/` exists today, and that is a state rather than a format.** This tree was started
-for one subject — taking the engine to Kotlin/Native — and the honest thing is to document that
-subject properly rather than to create five empty directories with the right names. `features/` and
-`services/` arrive with the first item that needs them; the engine's behaviour is described in
-[`README.md`](../README.md) meanwhile, and that is the file to correct if it disagrees with the code.
+**`research/` and one `services/` document, and that is a state rather than a format.** This tree
+was started for one subject — taking the engine to Kotlin/Native — and grows with the items that
+need it: `services/petich-conformance.md` arrived with the module it describes (B-07). `features/`
+arrives the same way; the engine's behaviour is described in [`README.md`](../README.md) meanwhile,
+and that is the file to correct if it disagrees with the code.
 
 There is no `screens/` layer and no `api/` layer. petich is a library: it has no client, and the
 routes in `petich-ktor` are something a consumer mounts rather than a service anyone deploys.
@@ -78,6 +78,11 @@ to this one. That is why anchors run on a schedule and do not block.
 The list below is **checked** against the files on disk: a document missing here, or an entry with no
 file behind it, fails `coverage_map.py`. The grouping and the descriptions are written by a person —
 the machine guards only the membership.
+
+### Services (1)
+
+- [x] [petich-conformance](services/petich-conformance.md) — the rules a storage implementation has
+  to satisfy, as cases that can be run against one; what it deliberately does not promise
 
 ### Research (1)
 
