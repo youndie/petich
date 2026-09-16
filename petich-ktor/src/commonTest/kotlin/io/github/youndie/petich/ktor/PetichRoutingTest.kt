@@ -30,7 +30,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -60,11 +59,13 @@ data class TestEnrichedPayload(
 }
 
 class TestRepository : PetichRepository {
-    private val petiches = ConcurrentHashMap<String, Petich>()
+    private val petiches = mutableMapOf<String, Petich>()
 
     override suspend fun findById(id: String): Petich? = petiches[id]
 
-    override suspend fun saveOrGet(petich: Petich): Petich = petiches.putIfAbsent(petich.id, petich) ?: petich
+    // Kotlin's, not java.util.Map's: putIfAbsent exists on the JVM only, and the fake is never
+    // touched from two threads — testApplication drives one request at a time here.
+    override suspend fun saveOrGet(petich: Petich): Petich = petiches.getOrPut(petich.id) { petich }
 
     override suspend fun update(petich: Petich): Boolean {
         val current = petiches[petich.id] ?: return false
