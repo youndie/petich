@@ -1,7 +1,7 @@
 ---
 id: B-14
 title: "The README module table says nothing about targets, and after the port the answer differs per module"
-status: open
+status: done
 priority: P2
 size: XS
 stage: stage-5-release
@@ -31,3 +31,17 @@ those they can take before they try.
   why in four words, and `README.md` links `docs/` in one line.
 - Anchors: `README.md`, `docs/README.md`, `docs/research/research-native-port.md`
 
+## Closed 2026-09-16
+
+A `targets` column, and two rows that say *why* rather than only *what*: `petich-postgres` is jvm
+only because JDBC is a JVM interface rather than a protocol (research D3), and `petich-chronik`
+until chronik publishes a native variant ([B-11](B-11-chronik-bridge-blocked.md)). A reader picking
+modules meets both answers in the table they were already reading.
+
+One paragraph was added under it, because the table cannot say it: a native service can take the
+engine, the HTTP surface and the three independent modules, and **has nowhere to store a saga** —
+the gap is a store, not a target, and that is [B-09](B-09-native-store-module.md) behind
+[B-08](B-08-which-database-for-the-native-store.md).
+
+The link to `docs/` was already added when the tree was created, so this item's second half was
+done before it was picked; said here rather than silently ticked.

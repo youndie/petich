@@ -44,16 +44,21 @@ The engine takes on exactly that:
 
 ### 📦 Modules
 
-| module | what for | depends on |
-| --- | --- | --- |
-| `petich-core` | the engine: sagas, interceptors, phases, compensation, suspend/resume, TTL | — |
-| `petich-ktor` | REST endpoints for creating and resuming a saga | `petich-core` |
-| `petich-postgres` | storage on Exposed | core, outbox, idempotency, scheduler |
-| `petich-outbox-core` | at-least-once event delivery with backoff and dead lettering | — |
-| `petich-idempotency` | protection against a key reused with a DIFFERENT request | — |
-| `petich-scheduler` | a saga on a schedule, starting with no HTTP initiator | — |
-| `petich-chronik` | a fired [chronik](https://github.com/youndie/chronik) timer resumes a suspended saga | `petich-core` |
-| `petich-conformance` | the rules a storage implementation has to satisfy, as cases you can run against yours | core, outbox, idempotency, scheduler |
+| module | what for | targets | depends on |
+| --- | --- | --- | --- |
+| `petich-core` | the engine: sagas, interceptors, phases, compensation, suspend/resume, TTL | jvm, linuxX64 | — |
+| `petich-ktor` | REST endpoints for creating and resuming a saga | jvm, linuxX64 | `petich-core` |
+| `petich-postgres` | storage on Exposed | **jvm only** — Exposed over JDBC, and JDBC is a JVM interface rather than a protocol | core, outbox, idempotency, scheduler |
+| `petich-outbox-core` | at-least-once event delivery with backoff and dead lettering | jvm, linuxX64 | — |
+| `petich-idempotency` | protection against a key reused with a DIFFERENT request | jvm, linuxX64 | — |
+| `petich-scheduler` | a saga on a schedule, starting with no HTTP initiator | jvm, linuxX64 | — |
+| `petich-chronik` | a fired [chronik](https://github.com/youndie/chronik) timer resumes a suspended saga | **jvm only** — until chronik publishes a native variant | `petich-core` |
+| `petich-conformance` | the rules a storage implementation has to satisfy, as cases you can run against yours | jvm, linuxX64 | core, outbox, idempotency, scheduler |
+
+A Kotlin/Native service can take the engine, its HTTP surface and the three independent modules. What
+it cannot take yet is a **store**: the only implementation of the four storage contracts is Exposed
+over JDBC. The corpus in `petich-conformance` is what a native store will be accepted by — see
+[docs/](docs/) for where that stands.
 
 Three modules deliberately do not depend on the core. `petich-outbox-core` knows only about a row —
 "id/type/payload, deliver at least once"; `petich-scheduler` only about "it is time" and "here is the
