@@ -79,7 +79,7 @@ toolchain.
 | Run | Cache | `Downloading dependency` lines | Build job |
 |---|---|---|---|
 | first (35154692046) | *Cache not found … konan-Linux-46a6eef…*, saved at the end | **4** | 2m12s |
-| second (see the pull request) | restored | **0** | — |
+| second (35154923899) | *Cache restored from key: konan-Linux-46a6eef…* | **0** | 1m44s |
 
 The job time is the weaker number of the two and is quoted with that said: a shared runner varies by
 tens of seconds by itself (2m26s, 1m51s, 2m0s, 2m15s on the four runs before this change, with no
