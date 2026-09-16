@@ -32,6 +32,11 @@ durability the engine promises is, until this module exists, a JVM-only promise.
 - **Does not cover:** DDL. Like `petich-postgres`, the module ships no migrations; the schema is the
   consumer's, and the table and index names are part of the contract.
 
+- **The corpus cannot see one caller racing another** ([B-07](B-07-storage-conformance-corpus.md)
+  closes with this gap named): it runs one caller at a time, so a store that passes every rule can
+  still hand one row to two workers. The atomicity test with several workers belongs next to the
+  store, in this item.
+
 - AC: the corpus is green against this store on both targets, an atomicity case with four workers
   hands out each row once, and the [probe](B-02-native-consumer-probe.md) — a `linuxX64` project with
   its own driver — runs a saga end to end: create, suspend, resume, compensate, and the outbox rows

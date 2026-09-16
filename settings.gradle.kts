@@ -51,6 +51,11 @@ include(":petich-idempotency")
 // "here is the payload".
 include(":petich-scheduler")
 
+// The rules every storage implementation has to satisfy, as cases that can be run against one.
+// Written while there is a single implementation on purpose: a corpus written after the second one
+// describes the intersection of the two rather than the contract.
+include(":petich-conformance")
+
 // The bridge to chronik: a fired timer wakes a suspended saga. A module of its own so that the
 // engine does not gain a dependency on a timer library that most applications will not use.
 include(":petich-chronik")
