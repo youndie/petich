@@ -1,0 +1,35 @@
+---
+id: B-13
+title: "CI downloads the Kotlin/Native toolchain on every run"
+status: open
+priority: infra
+size: S
+stage: stage-5-release
+blocked_by: [B-03]
+---
+
+# B-13 — `~/.konan` on the build and publish workflows
+
+`build.yaml` runs `./gradlew build` on `ubuntu-latest` with `setup-kotlin` and no cache beyond
+Gradle's own. The first build that declares a native target fetches the Kotlin/Native compiler and
+its dependencies into `~/.konan` — hundreds of megabytes — and does it again on the next run, and on
+every job of the publish workflow. The publish path pays it twice over, since local publication and
+the snapshot upload are separate jobs.
+
+- **Cache `~/.konan` keyed by the Kotlin version**, because that is what decides the contents; a key
+  on the lockfile or the run number either never hits or never invalidates.
+- **`linuxX64Test` runs on the same runner, which is the point.** `ubuntu-latest` is a Linux x64 host,
+  so the native tests execute rather than merely compile — no second runner and no cross-compilation
+  question. The day an Apple target is added, that stops being true, and the decision to leave them
+  out (research D2) is what keeps CI single-runner.
+- **Rejected: a separate workflow for the native build.** Two workflows mean two green ticks with
+  different opinions about the same commit; the whole point of `build.yaml` is that it builds what
+  lands.
+- **Does not cover:** build time itself. What is being removed is a download, not compilation.
+
+- AC: the second run of `build.yaml` on an unchanged Kotlin version restores `~/.konan` from the
+  cache, and the job log shows no toolchain download; the numbers before and after are quoted in the
+  item.
+- Anchors: `.github/workflows/build.yaml`, `.github/workflows/publish-snapshot.yaml`,
+  `gradle/libs.versions.toml`
+
