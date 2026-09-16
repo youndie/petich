@@ -1,8 +1,8 @@
 ---
 id: B-02
 title: "A linuxX64 consumer project that must fail today"
-status: open
-priority: P1
+status: wip
+priority: P0
 size: S
 stage: stage-0-gate
 ---
@@ -13,6 +13,11 @@ Everything in this backlog is accepted by the same sentence — "a Kotlin/Native
 petich" — and nothing in this repository can say it. The build compiles, the tests pass and the
 publication succeeds today, with a library no native consumer can resolve at all
 ([research §1.1](../research/research-native-port.md)).
+
+- **Raised to P0 on 2026-09-16, before it was picked.** It went in as P1 beside a P0 it blocks,
+  which reads as "do the P0 first" — and doing so destroys this item: the control being written is
+  that the probe *refuses* to resolve, and [B-03](B-03-linux-target-on-the-portable-four.md) is the
+  change that makes it resolve. A negative control has one window, and it closes when the fix lands.
 
 - **The probe is written first and must fail first.** A throwaway `linuxX64` project that declares
   the petich coordinates from `mavenLocal`, calls the engine and links. Run against today's

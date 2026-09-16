@@ -78,9 +78,9 @@ hypothesis was confirmed or refuted.
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
+| [B-02](docs/backlog/B-02-native-consumer-probe.md) `[~]` | A linuxX64 consumer project that must fail today | P0 | S | - |
 | [B-03](docs/backlog/B-03-linux-target-on-the-portable-four.md) `[ ]` | linuxX64 on the four modules that already compile anywhere | P0 | S | B-02 |
 | [B-07](docs/backlog/B-07-storage-conformance-corpus.md) `[ ]` | A conformance corpus for the four storage contracts, written while there is one implementation | P0 | M | - |
-| [B-02](docs/backlog/B-02-native-consumer-probe.md) `[ ]` | A linuxX64 consumer project that must fail today | P1 | S | - |
 | [B-04](docs/backlog/B-04-scenario-suites-on-both-targets.md) `[ ]` | The three end-to-end saga suites run on the JVM only | P1 | M | B-03 |
 | [B-05](docs/backlog/B-05-concurrency-under-the-native-memory-model.md) `[ ]` | The per-saga lock has never run under the Kotlin/Native memory model | P1 | S/M | B-03 |
 | [B-06](docs/backlog/B-06-ktor-module-and-the-jvm-pinned-catalogue.md) `[ ]` | petich-ktor: the catalogue names -jvm coordinates, which cannot resolve for a native target | P1 | S | B-03 |
