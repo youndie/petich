@@ -1,7 +1,7 @@
 ---
 id: B-06
 title: "petich-ktor: the catalogue names -jvm coordinates, which cannot resolve for a native target"
-status: open
+status: wip
 priority: P1
 size: S
 stage: stage-2-ktor

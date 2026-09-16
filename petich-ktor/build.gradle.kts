@@ -9,6 +9,15 @@ plugins {
 kotlin {
     jvm()
 
+    // The HTTP surface follows the engine onto the second target. Everything this module touches —
+    // the plugin API, routing, receive/respond, StatusPages, the JSON negotiation bridge — is common
+    // in Ktor and publishes a linuxX64 klib at the version this catalogue pins; the engine a
+    // consumer mounts these routes on is CIO there, and this module depends on no engine.
+    //
+    // The change that made it possible is in the catalogue rather than here: the five Ktor
+    // coordinates no longer end in `-jvm`.
+    linuxX64()
+
     sourceSets {
         commonMain {
             dependencies {

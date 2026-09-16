@@ -21,11 +21,16 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinx-datetime" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 
-ktor-serverCore = { module = "io.ktor:ktor-server-core-jvm", version.ref = "ktor" }
-ktor-serverContentNegotiation = { module = "io.ktor:ktor-server-content-negotiation-jvm", version.ref = "ktor" }
-ktor-serverStatusPages = { module = "io.ktor:ktor-server-status-pages-jvm", version.ref = "ktor" }
-ktor-serverTestHost = { module = "io.ktor:ktor-server-test-host-jvm", version.ref = "ktor" }
-ktor-serializationJson = { module = "io.ktor:ktor-serialization-kotlinx-json-jvm", version.ref = "ktor" }
+# NO `-jvm` SUFFIX, and that is the load-bearing part of these five lines. A suffixed coordinate is
+# one platform's artefact, so in a multiplatform source set it does not merely fail to help: it is
+# what makes the native compilation unresolvable, whatever targets the module declares. The
+# platform-agnostic coordinate resolves to the jvm artefact for a jvm consumer and to the klib for a
+# native one, which is the whole mechanism KMP publication exists for.
+ktor-serverCore = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
+ktor-serverContentNegotiation = { module = "io.ktor:ktor-server-content-negotiation", version.ref = "ktor" }
+ktor-serverStatusPages = { module = "io.ktor:ktor-server-status-pages", version.ref = "ktor" }
+ktor-serverTestHost = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
+ktor-serializationJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
 
 exposed-core = { group = "org.jetbrains.exposed", name = "exposed-core", version.ref = "exposed" }
 exposed-jdbc = { group = "org.jetbrains.exposed", name = "exposed-jdbc", version.ref = "exposed" }
