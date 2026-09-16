@@ -1,7 +1,7 @@
 ---
 id: B-13
 title: "CI downloads the Kotlin/Native toolchain on every run"
-status: open
+status: done
 priority: infra
 size: S
 stage: stage-5-release
@@ -44,3 +44,44 @@ the snapshot upload are separate jobs.
 - Anchors: `.github/workflows/build.yaml`, `.github/workflows/publish-snapshot.yaml`,
   `gradle/libs.versions.toml`
 
+## Closed 2026-09-16 — and the correction above was itself wrong
+
+The entry in this item dated earlier today said the runner already carries the toolchain and the
+premise was narrower than written. It is not, and the mistake is the useful part: the line I read
+as evidence —
+
+```
+Kotlin/Native bundle directory /home/runner/.konan/kotlin-native-prebuilt-linux-x86_64-2.4.10
+is not empty. Native bundle files will be overwritten.
+```
+
+— is about the bundle directory the task had just set up, and says nothing about the **dependencies**,
+which are the gigabyte. Twelve seconds later the same log says what actually happens:
+
+```
+Downloading native dependencies (LLVM, sysroot etc). This is a one-time action performed only on
+the first run of the compiler.
+Downloading dependency https://download.jetbrains.com/kotlin/native/x86_64-unknown-linux-gnu-gcc-8.3.0-…
+Downloading dependency https://download.jetbrains.com/kotlin/native/lldb-4-linux.tar.gz
+```
+
+"Only on the first run" is per machine, and a runner is a new machine every run. Reading half a log
+and a job duration is how a correct premise gets talked out of the backlog.
+
+**The fix was already written and switched off.** `youndie/sborka/.github/actions/setup-kotlin`
+carries a `konan-cache` input, `false` by default — right for the builds with no native targets, and
+wrong for this one since [B-03](B-03-linux-target-on-the-portable-four.md). One line turns it on; the
+key is the version catalogue, so a Kotlin bump misses on purpose instead of reusing the wrong
+toolchain.
+
+**Measured on this branch's own two runs**, same commit tree apart from this note:
+
+| Run | Cache | `Downloading dependency` lines | Build job |
+|---|---|---|---|
+| first (35154692046) | *Cache not found … konan-Linux-46a6eef…*, saved at the end | **4** | 2m12s |
+| second (35154923899) | *Cache restored from key: konan-Linux-46a6eef…* | **0** | 1m44s |
+
+The job time is the weaker number of the two and is quoted with that said: a shared runner varies by
+tens of seconds by itself (2m26s, 1m51s, 2m0s, 2m15s on the four runs before this change, with no
+native-related difference between them). The count of downloads is the measurement that does not
+move.

@@ -19,7 +19,19 @@ jobs:
       # this build needs: Gradle itself runs on the newer one while the toolchain compiles against
       # the floor (sborka.jvmFloor) and needs that JDK present to do it. Relying on whatever the
       # runner image happens to preinstall is how a floor silently becomes "whatever the machine had".
+      # konan-cache, because this build has native targets now. Without it every run fetches the
+      # Kotlin/Native dependencies — LLVM, the sysroot, the gcc toolchain, lldb — from
+      # download.jetbrains.com, which the log says in as many words:
+      #
+      #   Downloading native dependencies (LLVM, sysroot etc). This is a one-time action performed
+      #   only on the first run of the compiler.
+      #
+      # "Only on the first run" is per machine, and a runner is a new machine every time. The cache
+      # in the shared action is keyed on the version catalogue, so a Kotlin bump misses it on
+      # purpose rather than reusing the wrong toolchain.
       - uses: youndie/sborka/.github/actions/setup-kotlin@main
+        with:
+          konan-cache: true
 
       - run: ./gradlew build --no-daemon
 
