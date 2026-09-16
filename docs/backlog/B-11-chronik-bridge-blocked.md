@@ -32,3 +32,26 @@ a target its dependency cannot resolve for.
 - Anchors: `petich-chronik/build.gradle.kts`,
   `petich-chronik/src/jvmTest/kotlin/OneTransactionTest.kt`, `gradle/libs.versions.toml`
 
+## Iteration 1 — 2026-09-16: still blocked, and the request is filed
+
+Rechecked rather than assumed, because the whole item rests on one HTTP status:
+
+```
+$ curl -o /dev/null -w "%{http_code}" .../chronik/chronik-core-linuxx64/0.1.0/chronik-core-linuxx64-0.1.0.klib
+404
+$ curl -s .../chronik-core/maven-metadata.xml | grep version
+<version>0.1.0</version>
+```
+
+Unchanged: `0.1.0` is still the only release and it is jvm-only. On chronik's side the work is
+merged — `linuxX64()` landed in its #19 and the sqlx4k store in #20 — so what is missing is a
+release, not code.
+
+**Asked for, in the repository that can answer:** [youndie/chronik#21](https://github.com/youndie/chronik/issues/21),
+with the 404 quoted and the release order spelled out. The item stays `open` rather than becoming a
+question: there is nothing for the owner to decide here, only something to publish.
+
+**What is ready to do the moment that returns 200:** one line in
+`petich-chronik/build.gradle.kts`, the version bump in the catalogue, and the module's `commonTest`
+running on both targets. `OneTransactionTest` stays in `jvmTest` — it needs a real Postgres through
+Testcontainers, and that is a JVM stand rather than a petich limitation.
