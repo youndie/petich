@@ -12,6 +12,9 @@ already happened
 
 Built around a single question: what is left in the system if you die halfway.
 
+Why it is built this way, and what is being worked on: [`docs/`](docs/) and the
+[backlog](backlog.md).
+
 ### 🤔 What it solves
 
 An operation that spans several services is not one database write. Reserve capacity, claim a quota,

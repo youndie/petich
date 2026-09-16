@@ -1,0 +1,67 @@
+# The documentation gate. The code gate is build.yaml, and the two are separate on purpose: this one
+# needs python and seconds, that one needs a JDK, a local publication and three audits.
+name: check
+
+# No path filters. They save seconds and buy red default branches: a generated index diverges from
+# its sources when something outside the listed paths moves, and a new directory is a list nobody
+# remembers to update. The whole tree is checked in seconds.
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"          # Monday morning, for the anchors job below
+  workflow_dispatch:
+
+jobs:
+  check:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install pyyaml
+
+      # BEFORE `make check`, and that order is the value of this step: both catch a number taken
+      # twice, but this one says which branch took it and under what name, while the gate says
+      # "duplicate ids: B-06". The first failing step is the message the author reads.
+      #
+      # The refspec is explicit because `git fetch origin main` moves FETCH_HEAD and creates no
+      # remote-tracking ref.
+      - if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin \
+            "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
+          python3 scripts/backlog_index.py --against "origin/$GITHUB_BASE_REF"
+
+      - run: make check
+
+      # Default branch only: `status: draft` is legal in a pull request, where it means "this branch
+      # will make it true", and a defect the moment it merges.
+      - if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: python3 scripts/docs_check.py --on-main
+
+  # On a schedule rather than on a pull request, and non-blocking. An anchor rots because somebody
+  # refactored a DIFFERENT repository — half of the research anchors point at chronik, kore and
+  # sborka — so a pull request here is the least likely moment for one to break, and a red build
+  # nobody caused is a build people learn to ignore.
+  #
+  # The sibling repositories are not cloned here, so their anchors are reported unresolved every
+  # week. That is the honest result rather than a misconfiguration: this job answers for the paths
+  # into THIS repository, and those are the ones that must stay green.
+  anchors:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install pyyaml
+
+      - run: python3 scripts/code_anchors.py --repos ..
