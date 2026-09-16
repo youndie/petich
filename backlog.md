@@ -68,6 +68,50 @@ not move a file.
 A stage closes as a whole and gets a line here: what came out beyond the plan, and which research
 hypothesis was confirmed or refuted.
 
+### Where the port stands — 2026-09-17
+
+**Ten of sixteen items are done, and a Kotlin/Native consumer can take six of the eight published
+modules.** `stage-0-gate` and `stage-2-ktor` are closed; `stage-1-portable` is closed except for one
+suite that turned into a question; `stage-5-release` is closed except for the release itself.
+
+What the stages produced beyond their plan:
+
+* **The probe pays for itself twice.** [B-02](docs/backlog/B-02-native-consumer-probe.md) built it as
+  a negative control; [B-12](docs/backlog/B-12-guards-meet-the-native-variants.md) made it a CI step,
+  where it now also answers the question no build can — a module that declares a native target and
+  publishes no native variant is named before a consumer is compiled.
+* **Two premises in this file were wrong, and both were corrected where they were written.**
+  [B-05](docs/backlog/B-05-concurrency-under-the-native-memory-model.md) asked for coverage that
+  [B-03](docs/backlog/B-03-linux-target-on-the-portable-four.md) had already delivered unannounced;
+  [B-13](docs/backlog/B-13-ci-and-the-konan-toolchain.md) carries a correction of a correction —
+  a log line read as "the toolchain is already here" was about something else, and the gigabyte was
+  being downloaded on every run after all.
+* **The import list is not the JVM surface.** `getOrDefault`, `putIfAbsent`, `computeIfPresent` are
+  `java.util.Map` methods available on a plain Kotlin `Map`, invisible above the file and unresolved
+  on the second target ([B-04](docs/backlog/B-04-scenario-suites-on-both-targets.md),
+  [B-06](docs/backlog/B-06-ktor-module-and-the-jvm-pinned-catalogue.md)). Declaring the target and
+  reading the errors is the method; grepping imports is not.
+* **The storage contracts got their first test of any kind**
+  ([B-07](docs/backlog/B-07-storage-conformance-corpus.md)), and the corpus found something before a
+  second store exists: a store with no version predicate breaks an *outbox* rule, because the refusal
+  never happens and the events of the stale update are written.
+
+**What is left is four items and two decisions, and none of them is work this backlog can do on its
+own:**
+
+| Item | Waiting for |
+|---|---|
+| [B-08](docs/backlog/B-08-which-database-for-the-native-store.md) `[?]` | the owner: Postgres through sqlx4k, or SQLite. The driver decides the module's name, its dialect and what the corpus runs against |
+| [B-16](docs/backlog/B-16-access-scoring-decimal-fixture.md) `[?]` | the owner: what happens to a suite whose fixture does decimal finance |
+| [B-09](docs/backlog/B-09-native-store-module.md), [B-10](docs/backlog/B-10-the-clock-the-second-store-cannot-read.md) | B-08 |
+| [B-11](docs/backlog/B-11-chronik-bridge-blocked.md) | a chronik release carrying its native variants — [youndie/chronik#21](https://github.com/youndie/chronik/issues/21) |
+| [B-15](docs/backlog/B-15-release-order-and-the-first-native-version.md) | B-11, and then a release, which is a decision rather than a task |
+
+**The honest summary of the port so far:** a native service can take the engine, its HTTP surface and
+the three independent modules, and still has nowhere to store a saga. That gap is B-09, and B-09
+waits on a driver nobody has asked for yet (§1.9 of the research: there is no native consumer of
+petich today). Stopping here is the correct place to stop.
+
 ## Labels
 
 `[ ]` open · `[~]` in progress · `[x]` done · `[?]` open question · `[-]` dropped
