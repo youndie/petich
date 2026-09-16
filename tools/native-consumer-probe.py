@@ -43,18 +43,60 @@ BINARY = PROBE / "build" / "bin" / "linuxX64" / "debugExecutable" / "native-cons
 parser = argparse.ArgumentParser()
 parser.add_argument("version", help="the petich version to resolve, as published to mavenLocal")
 parser.add_argument("--expect", choices=("resolve", "refusal"), default="resolve")
-parser.add_argument("--modules", default="petich-core",
-                    help="comma-separated module names the consumer declares")
+parser.add_argument("--modules", default="auto",
+                    help="comma-separated module names, or `auto`: every module whose build script "
+                         "declares a native target and the publish convention")
 args = parser.parse_args()
 
 # The compiler the library is built with, read from the catalogue rather than written out here. Two
 # places to bump is one place to forget, and a probe on a different compiler answers about a
 # compiler nobody ships.
+def declared_native_modules():
+    """The modules that say they publish for a native target, read from the build scripts.
+
+    A list typed into a workflow is a list nobody updates when the eighth module arrives — the
+    defect `consumer-coverage-audit.py` exists for, one level up. This reads the same two facts the
+    build reads: the publish convention is applied, and a native target is declared.
+    """
+    modules = []
+    for directory in sorted(ROOT.iterdir()):
+        script = directory / "build.gradle.kts"
+        if not script.is_file():
+            continue
+        text = script.read_text()
+        if "sborkaPublish" in text and "linuxX64(" in text:
+            modules.append(directory.name)
+    return modules
+
+
 catalogue = (ROOT / "gradle" / "libs.versions.toml").read_text()
 match = re.search(r'^kotlin\s*=\s*"([^"]+)"', catalogue, re.M)
 if not match:
     sys.exit("no `kotlin = \"...\"` in gradle/libs.versions.toml — the probe cannot pick a compiler")
 kotlin = match.group(1)
+
+if args.modules == "auto":
+    modules = declared_native_modules()
+    if not modules:
+        sys.exit("no module declares both the publish convention and a native target — "
+                 "the probe would pass by asking about nothing")
+    args.modules = ",".join(modules)
+    print(f"declared native modules: {args.modules}\n")
+
+# DECLARED IS NOT PUBLISHED, and the gap between them is the thing this check adds to the resolve
+# below. A module whose script says linuxX64 and whose publication carries no such directory is
+# exactly the failure a consumer meets as "no matching variant", and it is invisible to a build that
+# compiled the target perfectly well.
+m2_group = os.path.expanduser("~/.m2/repository/io/github/youndie/petich")
+missing = [
+    module for module in args.modules.split(",")
+    if not os.path.isdir(f"{m2_group}/{module.strip()}-linuxx64/{args.version}")
+]
+if missing and args.expect == "resolve":
+    sys.exit(
+        "declared a native target and published no native variant at {0}: {1}\n"
+        "(looked for {2}/<module>-linuxx64/{0})".format(args.version, ", ".join(missing), m2_group)
+    )
 
 started = time.time()
 if BINARY.exists():
