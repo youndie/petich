@@ -1,8 +1,6 @@
 package io.github.youndie.petich
 
 import kotlinx.coroutines.runBlocking
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -51,12 +49,12 @@ data class BadgeIssuanceEnrichedPayload(
 // --- Fakes ---
 
 class FakeDirectoryService {
-    val records = ConcurrentHashMap<String, String>()
+    val records = mutableMapOf<String, String>()
     val closedRecords = mutableSetOf<String>()
     val operationLog = mutableListOf<String>()
 
     fun createBadgeRecord(holderId: String): String {
-        val recordId = "ACC-${UUID.randomUUID().toString().take(8)}"
+        val recordId = testId("ACC")
         records[recordId] = holderId
         operationLog.add("CREATE_RECORD: $holderId -> $recordId")
         return recordId
@@ -76,8 +74,8 @@ class FakeCredentialService {
         val blocked: Boolean = false,
     )
 
-    val issuedBadges = ConcurrentHashMap<String, VirtualBadge>()
-    val idempotencyRegistry = ConcurrentHashMap<String, String>()
+    val issuedBadges = mutableMapOf<String, VirtualBadge>()
+    val idempotencyRegistry = mutableMapOf<String, String>()
     val operationLog = mutableListOf<String>()
     var callCount = 0
     var failAfterCreationOnAttempt: Int? = null
@@ -95,7 +93,7 @@ class FakeCredentialService {
             return Triple(existing, badge.pan, badge.cvv)
         }
 
-        val badgeId = "BADGE-${UUID.randomUUID().toString().take(8)}"
+        val badgeId = testId("BADGE")
         val pan = (1..16).map { (0..9).random() }.joinToString("")
         val cvv = (100..999).random().toString()
         issuedBadges[badgeId] = VirtualBadge(pan, cvv)
@@ -113,13 +111,13 @@ class FakeCredentialService {
     }
 
     fun blockBadge(badgeId: String) {
-        issuedBadges.computeIfPresent(badgeId) { _, badge -> badge.copy(blocked = true) }
+        issuedBadges[badgeId]?.let { badge -> issuedBadges[badgeId] = badge.copy(blocked = true) }
         operationLog.add("BLOCK_BADGE: $badgeId")
     }
 }
 
 class FakePrintingFactory {
-    val orders = ConcurrentHashMap<String, String>()
+    val orders = mutableMapOf<String, String>()
     val cancelledOrders = mutableSetOf<String>()
     val operationLog = mutableListOf<String>()
     var unavailableDesigns = mutableSetOf<BadgeMaterial>()
@@ -132,7 +130,7 @@ class FakePrintingFactory {
             operationLog.add("PRINTING_REJECT: design $design unavailable for $badgeId")
             throw RuntimeException("Design $design: plastic unavailable")
         }
-        val orderId = "EMB-${UUID.randomUUID().toString().take(8)}"
+        val orderId = testId("EMB")
         orders[orderId] = badgeId
         operationLog.add("PRINTING_ORDER: $badgeId -> $orderId design=$design")
         return orderId
@@ -146,7 +144,7 @@ class FakePrintingFactory {
 }
 
 open class FakeDeliveryService {
-    val deliveries = ConcurrentHashMap<String, String>()
+    val deliveries = mutableMapOf<String, String>()
     val cancelledDeliveries = mutableSetOf<String>()
     val operationLog = mutableListOf<String>()
 
@@ -154,7 +152,7 @@ open class FakeDeliveryService {
         printingOrderId: String,
         address: String,
     ): String {
-        val trackingId = "TRK-${UUID.randomUUID().toString().take(8)}"
+        val trackingId = testId("TRK")
         deliveries[trackingId] = address
         operationLog.add("SCHEDULE_DELIVERY: $printingOrderId -> $trackingId addr=$address")
         return trackingId

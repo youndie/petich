@@ -1,9 +1,14 @@
 package io.github.youndie.petich
 
+// MONEY AND QUANTITY ARE HUNDREDTHS OF A UNIT, as a Long.
+//
+// They were java.math.BigDecimal, which is the only thing that kept this suite on the JVM — the
+// engine never looks inside a payload, so the type is the fixture's business and not petich's.
+// Every value here has at most two decimal places, so hundredths hold them exactly and the one
+// piece of arithmetic in the file (one per cent of an amount) stays exact: 20_000_000L reads as
+// 200000.00, and the limit below is 100000.00.
+
 import kotlinx.coroutines.runBlocking
-import java.math.BigDecimal
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -13,13 +18,13 @@ import kotlin.test.assertTrue
 data class StockMovePayload(
     val fromWarehouseId: String,
     val toWarehouseId: String,
-    val amount: BigDecimal,
+    val amount: Long,
     val sku: String,
 ) : PetichPayload()
 
 data class StockMoveEnrichedPayload(
-    val overhead: BigDecimal = BigDecimal.ZERO,
-    val finalAmount: BigDecimal = BigDecimal.ZERO,
+    val overhead: Long = 0L,
+    val finalAmount: Long = 0L,
     val reservationId: String? = null,
     val confirmCode: String? = null,
     val confirmAttempts: Int = 0,
@@ -27,8 +32,8 @@ data class StockMoveEnrichedPayload(
     override fun merge(other: EnrichedPayload): EnrichedPayload =
         if (other is StockMoveEnrichedPayload) {
             copy(
-                overhead = other.overhead.takeIf { it > BigDecimal.ZERO } ?: overhead,
-                finalAmount = other.finalAmount.takeIf { it > BigDecimal.ZERO } ?: finalAmount,
+                overhead = other.overhead.takeIf { it > 0L } ?: overhead,
+                finalAmount = other.finalAmount.takeIf { it > 0L } ?: finalAmount,
                 reservationId = other.reservationId ?: reservationId,
                 confirmCode = other.confirmCode ?: confirmCode,
                 confirmAttempts = other.confirmAttempts.takeIf { it > 0 } ?: confirmAttempts,
@@ -41,16 +46,16 @@ data class StockMoveEnrichedPayload(
 // --- Fakes ---
 
 class FakeInventoryService {
-    val quantities = mutableMapOf<String, BigDecimal>()
-    val reservations = mutableMapOf<String, Pair<String, BigDecimal>>()
+    val quantities = mutableMapOf<String, Long>()
+    val reservations = mutableMapOf<String, Pair<String, Long>>()
     val operationLog = mutableListOf<String>()
 
     fun reserve(
         warehouseId: String,
-        amount: BigDecimal,
+        amount: Long,
         reservationId: String,
     ) {
-        quantities[warehouseId] = quantities.getOrDefault(warehouseId, BigDecimal.ZERO) - amount
+        quantities[warehouseId] = (quantities[warehouseId] ?: 0L) - amount
         reservations[reservationId] = warehouseId to amount
         operationLog.add("RESERVE: $warehouseId $amount $reservationId")
     }
@@ -58,13 +63,13 @@ class FakeInventoryService {
     fun cancelReservation(reservationId: String) {
         val reservation = reservations.remove(reservationId) ?: return
         val (warehouseId, amount) = reservation
-        quantities[warehouseId] = quantities.getOrDefault(warehouseId, BigDecimal.ZERO) + amount
+        quantities[warehouseId] = (quantities[warehouseId] ?: 0L) + amount
         operationLog.add("CANCEL_RESERVATION: $reservationId")
     }
 
     fun withdraw(
         warehouseId: String,
-        amount: BigDecimal,
+        amount: Long,
         reservationId: String,
     ) {
         reservations.remove(reservationId)
@@ -73,9 +78,9 @@ class FakeInventoryService {
 
     fun deposit(
         warehouseId: String,
-        amount: BigDecimal,
+        amount: Long,
     ) {
-        quantities[warehouseId] = quantities.getOrDefault(warehouseId, BigDecimal.ZERO) + amount
+        quantities[warehouseId] = (quantities[warehouseId] ?: 0L) + amount
         operationLog.add("DEPOSIT: $warehouseId $amount")
     }
 }
@@ -89,11 +94,14 @@ class FakeNotifierService {
 }
 
 class FakePetichRepository : PetichRepository {
-    private val petiches = ConcurrentHashMap<String, Petich>()
+    private val petiches = mutableMapOf<String, Petich>()
 
     override suspend fun findById(id: String): Petich? = petiches[id]
 
-    override suspend fun saveOrGet(petich: Petich): Petich = petiches.putIfAbsent(petich.id, petich) ?: petich
+    // putIfAbsent is java.util.Map's, not Kotlin's — one of the three methods that kept this
+    // fixture on the JVM without ever appearing in an import.
+    override suspend fun saveOrGet(petich: Petich): Petich =
+        petiches[petich.id] ?: petich.also { petiches[petich.id] = it }
 
     override suspend fun update(petich: Petich): Boolean {
         val current = petiches[petich.id] ?: return false
@@ -123,7 +131,7 @@ class OverheadInterceptor : MoveInterceptor() {
         petich: Petich,
         payload: StockMovePayload,
     ): InterceptorResult {
-        val overhead = payload.amount.multiply(BigDecimal("0.01"))
+        val overhead = payload.amount / 100 // one per cent, exact in hundredths
         return InterceptorResult.Proceed(
             StockMoveEnrichedPayload(
                 overhead = overhead,
@@ -132,6 +140,11 @@ class OverheadInterceptor : MoveInterceptor() {
         )
     }
 }
+
+// What a notification carries is a human-readable amount, and the assertions below check exactly
+// that string. Formatting here rather than changing the expectations keeps the test asserting what
+// it always asserted: hundredths are the fixture's storage, "50500.00" is what the user is told.
+private fun Long.asAmount(): String = "${this / 100}.${(this % 100).toString().padStart(2, '0')}"
 
 class StockEnrichmentInterceptor(
     private val inventoryService: FakeInventoryService,
@@ -144,7 +157,7 @@ class StockEnrichmentInterceptor(
         payload: StockMovePayload,
     ): InterceptorResult {
         val enriched = petich.enrichedPayload as StockMoveEnrichedPayload
-        val quantity = inventoryService.quantities.getOrDefault(payload.fromWarehouseId, BigDecimal.ZERO)
+        val quantity = (inventoryService.quantities[payload.fromWarehouseId] ?: 0L)
         if (quantity < enriched.finalAmount) return InterceptorResult.Reject("Insufficient stock")
         return InterceptorResult.Proceed()
     }
@@ -158,7 +171,7 @@ class CapacityCheckInterceptor : MoveInterceptor() {
         petich: Petich,
         payload: StockMovePayload,
     ): InterceptorResult {
-        if (payload.amount > BigDecimal(100000)) return InterceptorResult.Reject("Move limit exceeded")
+        if (payload.amount > 10_000_000L) return InterceptorResult.Reject("Move limit exceeded")
         return InterceptorResult.Proceed()
     }
 }
@@ -229,7 +242,7 @@ class StockReservationInterceptor(
         payload: StockMovePayload,
     ): InterceptorResult {
         val enriched = petich.enrichedPayload as StockMoveEnrichedPayload
-        val reservationId = UUID.randomUUID().toString()
+        val reservationId = testId("RES")
         inventoryService.reserve(payload.fromWarehouseId, enriched.finalAmount, reservationId)
         return InterceptorResult.Proceed(StockMoveEnrichedPayload(reservationId = reservationId))
     }
@@ -304,8 +317,8 @@ class NotificationInterceptor(
         payload: StockMovePayload,
     ): InterceptorResult {
         val enriched = petich.enrichedPayload as StockMoveEnrichedPayload
-        notificationLog.add("WITHDRAW: ${payload.fromWarehouseId} -${enriched.finalAmount}")
-        notificationLog.add("DEPOSIT: ${payload.toWarehouseId} +${enriched.finalAmount}")
+        notificationLog.add("WITHDRAW: ${payload.fromWarehouseId} -${enriched.finalAmount.asAmount()}")
+        notificationLog.add("DEPOSIT: ${payload.toWarehouseId} +${enriched.finalAmount.asAmount()}")
         return InterceptorResult.Proceed()
     }
 }
@@ -341,15 +354,15 @@ class StockMovePetichEngineTest {
     fun testHappyPathWithSmsConfirmation() =
         runBlocking {
             val inventoryService = FakeInventoryService()
-            inventoryService.quantities["from1"] = BigDecimal("200000")
-            inventoryService.quantities["to1"] = BigDecimal("0")
+            inventoryService.quantities["from1"] = 20_000_000L
+            inventoryService.quantities["to1"] = 0L
             val notifierService = FakeNotifierService()
             val notificationLog = mutableListOf<String>()
 
             val (engine, repo) =
                 createEngine(inventoryService, notifierService, notificationLog)
 
-            val payload = StockMovePayload("from1", "to1", BigDecimal("50000"), "RUB")
+            val payload = StockMovePayload("from1", "to1", 5_000_000L, "RUB")
             val petich =
                 Petich(
                     id = "p1",
@@ -379,11 +392,11 @@ class StockMovePetichEngineTest {
 
             // Asserts
             assertEquals(
-                BigDecimal("149500.00"),
+                14_950_000L,
                 inventoryService.quantities["from1"],
                 "Quantity should be restored",
             ) // 200000 - 50500 (amount + overhead)
-            assertEquals(BigDecimal("50500.00"), inventoryService.quantities["to1"]) // 0 + 50500
+            assertEquals(5_050_000L, inventoryService.quantities["to1"]) // 0 + 50500
             assertTrue(notificationLog.contains("WITHDRAW: from1 -50500.00"), "Notifications: $notificationLog")
             assertTrue(notificationLog.contains("DEPOSIT: to1 +50500.00"), "Notifications: $notificationLog")
         }
@@ -392,13 +405,13 @@ class StockMovePetichEngineTest {
     fun testFraudBlockTriggersCompensation() =
         runBlocking {
             val inventoryService = FakeInventoryService()
-            inventoryService.quantities["from1"] = BigDecimal("200000")
+            inventoryService.quantities["from1"] = 20_000_000L
             val notifierService = FakeNotifierService()
             val notificationLog = mutableListOf<String>()
 
             val (engine, _) = createEngine(inventoryService, notifierService, notificationLog, shouldBlockFraud = true)
 
-            val payload = StockMovePayload("from1", "to1", BigDecimal("50000"), "RUB")
+            val payload = StockMovePayload("from1", "to1", 5_000_000L, "RUB")
             val petich =
                 Petich(
                     id = "p2",
@@ -417,8 +430,8 @@ class StockMovePetichEngineTest {
     fun testDepositFailureTriggersCompensation() =
         runBlocking {
             val inventoryService = FakeInventoryService()
-            inventoryService.quantities["from1"] = BigDecimal("200000.00")
-            inventoryService.quantities["to1"] = BigDecimal("0.00")
+            inventoryService.quantities["from1"] = 20_000_000L
+            inventoryService.quantities["to1"] = 0L
             val notifierService = FakeNotifierService()
             val notificationLog = mutableListOf<String>()
 
@@ -431,7 +444,7 @@ class StockMovePetichEngineTest {
                     failDeposit = true,
                 )
 
-            val payload = StockMovePayload("from1", "to1", BigDecimal("50000"), "RUB")
+            val payload = StockMovePayload("from1", "to1", 5_000_000L, "RUB")
             val petich =
                 Petich(
                     id = "p4",
@@ -459,7 +472,7 @@ class StockMovePetichEngineTest {
             assertTrue(result2 is PetichResult.SystemFailure, "Expected SystemFailure, but got: $result2")
 
             // Asserts: Compensation should have happened
-            assertEquals(BigDecimal("200000.00"), inventoryService.quantities["from1"], "Quantity should be restored")
+            assertEquals(20_000_000L, inventoryService.quantities["from1"], "Quantity should be restored")
             assertTrue(inventoryService.reservations.isEmpty(), "Reservation should be cancelled")
             assertTrue(
                 inventoryService.operationLog.any { it.contains("CANCEL_RESERVATION") },
@@ -471,15 +484,15 @@ class StockMovePetichEngineTest {
     fun testWrongConfirmThenCorrectConfirm() =
         runBlocking {
             val inventoryService = FakeInventoryService()
-            inventoryService.quantities["from1"] = BigDecimal("200000")
-            inventoryService.quantities["to1"] = BigDecimal("0")
+            inventoryService.quantities["from1"] = 20_000_000L
+            inventoryService.quantities["to1"] = 0L
             val notifierService = FakeNotifierService()
             val notificationLog = mutableListOf<String>()
 
             val (engine, _) =
                 createEngine(inventoryService, notifierService, notificationLog)
 
-            val payload = StockMovePayload("from1", "to1", BigDecimal("50000"), "RUB")
+            val payload = StockMovePayload("from1", "to1", 5_000_000L, "RUB")
             val petich =
                 Petich(
                     id = "p-confirm1",
@@ -513,13 +526,13 @@ class StockMovePetichEngineTest {
     fun testMaxConfirmAttemptsExceeded() =
         runBlocking {
             val inventoryService = FakeInventoryService()
-            inventoryService.quantities["from1"] = BigDecimal("200000")
+            inventoryService.quantities["from1"] = 20_000_000L
             val notifierService = FakeNotifierService()
             val notificationLog = mutableListOf<String>()
 
             val (engine, _) = createEngine(inventoryService, notifierService, notificationLog)
 
-            val payload = StockMovePayload("from1", "to1", BigDecimal("50000"), "RUB")
+            val payload = StockMovePayload("from1", "to1", 5_000_000L, "RUB")
             val petich =
                 Petich(
                     id = "p-confirm2",
@@ -551,13 +564,13 @@ class StockMovePetichEngineTest {
     fun testMoveLimitExceeded() =
         runBlocking {
             val inventoryService = FakeInventoryService()
-            inventoryService.quantities["from1"] = BigDecimal("500000")
+            inventoryService.quantities["from1"] = 50_000_000L
             val notifierService = FakeNotifierService()
             val notificationLog = mutableListOf<String>()
 
             val (engine, _) = createEngine(inventoryService, notifierService, notificationLog)
 
-            val payload = StockMovePayload("from1", "to1", BigDecimal("150000"), "RUB")
+            val payload = StockMovePayload("from1", "to1", 15_000_000L, "RUB")
             val petich =
                 Petich(
                     id = "p-limit",
@@ -576,13 +589,13 @@ class StockMovePetichEngineTest {
     fun testInsufficientStock() =
         runBlocking {
             val inventoryService = FakeInventoryService()
-            inventoryService.quantities["from1"] = BigDecimal("100")
+            inventoryService.quantities["from1"] = 10_000L
             val notifierService = FakeNotifierService()
             val notificationLog = mutableListOf<String>()
 
             val (engine, _) = createEngine(inventoryService, notifierService, notificationLog)
 
-            val payload = StockMovePayload("from1", "to1", BigDecimal("50000"), "RUB")
+            val payload = StockMovePayload("from1", "to1", 5_000_000L, "RUB")
             val petich =
                 Petich(
                     id = "p-stock",
@@ -653,7 +666,7 @@ class StockMovePetichEngineTest {
             }
 
             val inventoryService = FakeInventoryService()
-            inventoryService.quantities["from1"] = BigDecimal("200000")
+            inventoryService.quantities["from1"] = 20_000_000L
             val repo = FakePetichRepository()
             val interceptors =
                 listOf(
@@ -665,7 +678,7 @@ class StockMovePetichEngineTest {
                 )
             val engine = PetichEngine(interceptors, repo)
 
-            val payload = StockMovePayload("from1", "to1", BigDecimal("50000"), "RUB")
+            val payload = StockMovePayload("from1", "to1", 5_000_000L, "RUB")
             val petich =
                 Petich(
                     id = "p-cross",
@@ -700,15 +713,15 @@ class StockMovePetichEngineTest {
     fun testReprocessCompletedPetichIsIdempotent() =
         runBlocking {
             val inventoryService = FakeInventoryService()
-            inventoryService.quantities["from1"] = BigDecimal("200000")
-            inventoryService.quantities["to1"] = BigDecimal("0")
+            inventoryService.quantities["from1"] = 20_000_000L
+            inventoryService.quantities["to1"] = 0L
             val notifierService = FakeNotifierService()
             val notificationLog = mutableListOf<String>()
 
             val (engine, _) =
                 createEngine(inventoryService, notifierService, notificationLog)
 
-            val payload = StockMovePayload("from1", "to1", BigDecimal("50000"), "RUB")
+            val payload = StockMovePayload("from1", "to1", 5_000_000L, "RUB")
             val petich =
                 Petich(
                     id = "p-idem",
