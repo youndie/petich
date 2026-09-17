@@ -1,7 +1,7 @@
 plugins {
-    alias(libs.plugins.kotlinJvm) apply false
-    alias(libs.plugins.kotlinMultiplatform) apply false
-    alias(libs.plugins.kotlinSerialization) apply false
+    alias(wip.plugins.kotlinJvm) apply false
+    alias(wip.plugins.kotlinMultiplatform) apply false
+    alias(wip.plugins.kotlinSerialization) apply false
 }
 
 // The toolchain, the JVM floor and the org.gradle.jvm.version attribute used to be arranged here by
