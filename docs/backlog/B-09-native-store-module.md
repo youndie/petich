@@ -90,11 +90,13 @@ also a better test: it proves the outbox row and the state change commit togethe
 first write as *Serializer for class 'OrderPayload' is not found*. Written into the module's
 document, where a consumer meets it before the failure does.
 
-**One thing left unexplained rather than papered over.** Run against a Postgres started by hand on
-another port, the Rust driver panicked with `Io :: Unexpected error occurred` while `psql` on the
-same URL worked. Against the container Gradle starts for the tests — same image, same options — it
-connects every time. The runs above are the latter; the discrepancy is recorded because a reader hitting
-it should know it has been seen, not to claim it is understood.
+**One thing left unexplained rather than papered over** — and the way it was left was wrong. Run
+against a Postgres started by hand on another port, the Rust driver panicked with `Io :: Unexpected
+error occurred` while `psql` on the same URL worked; this item recorded it as an oddity of that one
+container. On 2026-09-17 the same failure hit a hosted runner inside the ordinary gate, in the
+`[linuxX64]` variant of `ConcurrentWritersTest`. It is a flake, not an oddity, and it now has an item
+of its own: [B-17](B-17-native-store-test-flake.md). An observation that cannot be explained is worth
+recording; deciding *where it belongs* on the strength of one run is what this got wrong.
 
 **Half of [B-10](B-10-the-clock-the-second-store-cannot-read.md) arrived here by construction:** this
 store takes a `PetichClock` and reads no platform clock. What remains is the Exposed store's two

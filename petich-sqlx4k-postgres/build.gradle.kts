@@ -79,20 +79,35 @@ val postgresPassword = "petich"
 val startTestPostgres by tasks.registering(Exec::class) {
     description = "Start the Postgres the store's tests run against."
     commandLine(
-        "sh",
+        // bash and not sh: the readiness check below opens a TCP connection through /dev/tcp, which
+        // dash does not have — and checking readiness the way the TESTS connect is the whole point
+        // of this rewrite.
+        "bash",
         "-c",
         """
         docker rm -f $postgresContainer >/dev/null 2>&1 || true
         docker run --rm -d --name $postgresContainer \
             -e POSTGRES_USER=petich -e POSTGRES_PASSWORD=petich -e POSTGRES_DB=petich \
             -p $postgresPort:5432 postgres:18-alpine >/dev/null
-        # Ready means "answers queries", not "the container is up": the first connection otherwise
-        # races the initdb the image runs on first boot.
-        for attempt in ${'$'}(seq 1 60); do
-            docker exec $postgresContainer pg_isready -U petich -d petich >/dev/null 2>&1 && exit 0
+        # READY MEANS "ANSWERS ON THE PORT THE TESTS USE".
+        #
+        # This used to be `docker exec … pg_isready`, which asks the server from INSIDE the
+        # container and says nothing about the published port — the one every test connects to.
+        # Between "ready inside" and "the mapping accepts" there is a window, and a driver that
+        # connects into it fails with an error about I/O rather than about a database that is not
+        # up yet. That is what B-17 is about, and this closes the half of it that is ours.
+        #
+        # Two questions, both from the host: the port accepts a connection, and Postgres answers the
+        # startup protocol on it.
+        for attempt in ${'$'}(seq 1 90); do
+            if (exec 3<>/dev/tcp/127.0.0.1/$postgresPort) 2>/dev/null &&
+               docker run --rm --network host postgres:18-alpine \
+                   pg_isready -h 127.0.0.1 -p $postgresPort -U petich -d petich >/dev/null 2>&1; then
+                exit 0
+            fi
             sleep 1
         done
-        echo "postgres did not become ready in 60s" >&2
+        echo "postgres did not answer on 127.0.0.1:$postgresPort in 90s" >&2
         exit 1
         """.trimIndent(),
     )
