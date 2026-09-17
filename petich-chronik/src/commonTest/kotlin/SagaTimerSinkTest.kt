@@ -187,7 +187,7 @@ class SagaTimerSinkTest {
         }
 
     @Test
-    fun `an engine that fails to resume lets the delivery fail, so chronik retries it`() =
+    fun `an engine that fails to resume lets the delivery fail so chronik retries it`() =
         runTest {
             val repository = InMemoryRepository()
             val exploding =

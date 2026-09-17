@@ -11,6 +11,12 @@ plugins {
 kotlin {
     jvm()
 
+    // The bridge follows the engine onto the second target, which it could not do while its
+    // dependency had no native variant: a module cannot declare a target its dependency publishes
+    // nothing for, and the failure is a resolution error in the consumer's build rather than
+    // anything this repository could see.
+    linuxX64()
+
     sourceSets {
         commonMain {
             dependencies {
