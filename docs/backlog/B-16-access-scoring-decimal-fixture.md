@@ -1,7 +1,7 @@
 ---
 id: B-16
 title: "AccessScoring stays JVM-only because its fixture does decimal finance"
-status: question
+status: dropped
 priority: P2
 size: M
 stage: stage-1-portable
@@ -43,3 +43,26 @@ other suite got — cannot hold that, so the values, and the assertions on them,
   with the approach named.
 - Anchors: `petich-core/src/jvmTest/kotlin/io/github/youndie/petich/AccessScoringPetichEngineTest.kt`,
   `petich-core/src/commonTest/kotlin/io/github/youndie/petich/StockMovePetichEngineTest.kt`
+
+## Dropped 2026-09-17 — the owner picked (a): it stays on the JVM
+
+`AccessScoringPetichEngineTest` keeps its `java.math.BigDecimal` and keeps running on `jvmTest`
+only. Nothing is to be done, which is why this closes as `dropped` rather than `done`.
+
+**What that costs, stated so nobody has to rediscover it.** `petich-core` runs 72 of its 84 cases on
+`linuxX64`; the twelve that stay are this suite's. What the native target therefore does not
+exercise is **the fixture's decimal arithmetic** — an amortisation with `divide(…, 10, HALF_UP)` —
+not any part of petich: the engine paths that suite walks (enrichment, validation, rejection,
+cross-phase compensation, suspend and resume) are exercised on both targets by
+`StockMovePetichEngineTest` and `BadgeIssuancePetichEngineTest`, which moved in
+[B-04](B-04-scenario-suites-on-both-targets.md).
+
+**Why (b) and (c) were the wrong trades.** Rewriting the fixture in integer basis points means
+recomputing every expectation, and the expectations would be whatever the new arithmetic printed —
+a test that checks its author's answer. Bringing a multiplatform decimal library into `commonTest`
+adds a dependency to the library's test surface for one suite. Neither buys coverage of petich; both
+buy symmetry, and symmetry is not a reason.
+
+**If it ever becomes one**, the trigger is a consumer whose sagas carry decimal money on
+Kotlin/Native — then the question is not this suite but whether the engine's own contract needs a
+decimal type, which is a different item.

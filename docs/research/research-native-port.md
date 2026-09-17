@@ -334,6 +334,13 @@ service usually carries and is what the neighbouring timer library chose, for a 
 existed. There is no such consumer here (§1.9), and the driver decides the module's name, its SQL
 dialect and its conformance run. Item: B-08, deliberately `question` rather than `open`.
 
+**Open question 3 — answered 2026-09-17: the decimal suite stays on the JVM.** One of the three
+end-to-end saga suites keeps `BigDecimal` and keeps running on `jvmTest` only
+([B-16](../backlog/B-16-access-scoring-decimal-fixture.md), dropped by the owner). What the native
+target loses is the *fixture's* arithmetic, not petich: the engine paths it walks are covered on
+both targets by the two suites that moved. Symmetry between the two targets' suite lists was
+explicitly not accepted as a reason to rewrite a test's expectations.
+
 **Open question 2 — is the port worth its second half at all today?** Stages 0–2 remove a resolution
 wall for a cost measured in lines. Stage 3 is a real implementation with a corpus behind it. The
 honest answer is that stage 3 waits for question 1 to have an owner, and this document says so
