@@ -190,7 +190,9 @@ contention at all, so the figure sits comfortably above one in a workload where 
 
 One JVM floor for every module at once — not tidiness but a Gradle requirement: a module built
 below the floor cannot depend on one advertising it, so it is all of them or none. The number lives
-in `buildSrc/src/main/kotlin/JvmFloor.kt` and nowhere else.
+in `gradle.properties` as `sborka.jvmFloor`, and nowhere else: the shared conventions read it there,
+`tools/jvm-floor-audit.py` compares the published bytecode against the same line, and no build script
+spells it out.
 
 **Java 21 is a consumer's floor too.** Every published variant declares it as
 `org.gradle.jvm.version`, so a project on anything older is refused at resolution, by name, before
