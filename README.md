@@ -54,11 +54,13 @@ The engine takes on exactly that:
 | `petich-scheduler` | a saga on a schedule, starting with no HTTP initiator | jvm, linuxX64 | — |
 | `petich-chronik` | a fired [chronik](https://github.com/youndie/chronik) timer resumes a suspended saga | **jvm only** — until chronik publishes a native variant | `petich-core` |
 | `petich-conformance` | the rules a storage implementation has to satisfy, as cases you can run against yours | jvm, linuxX64 | core, outbox, idempotency, scheduler |
+| `petich-sqlx4k-postgres` | the same storage contracts over sqlx4k, for a service with no JVM; brings no driver | jvm, linuxX64 | core, outbox, idempotency, scheduler |
 
-A Kotlin/Native service can take the engine, its HTTP surface and the three independent modules. What
-it cannot take yet is a **store**: the only implementation of the four storage contracts is Exposed
-over JDBC. The corpus in `petich-conformance` is what a native store will be accepted by — see
-[docs/](docs/) for where that stands.
+A Kotlin/Native service can take the engine, its HTTP surface, the three independent modules **and a
+store**: `petich-sqlx4k-postgres` implements the same four contracts over sqlx4k and is accepted by
+the corpus in `petich-conformance` on both targets. `petich-postgres` stays where it is — Exposed
+over JDBC — and both write the same columns, so a service can move one process at a time. See
+[docs/](docs/).
 
 Three modules deliberately do not depend on the core. `petich-outbox-core` knows only about a row —
 "id/type/payload, deliver at least once"; `petich-scheduler` only about "it is time" and "here is the

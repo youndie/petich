@@ -11,6 +11,7 @@ postgres-driver = "42.7.13"
 testcontainers = "2.0.5"
 kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0"
+sqlx4k = "1.13.1"
 kotlinxSerializationJson = "1.11.0"
 
 [libraries]
@@ -31,6 +32,13 @@ ktor-serverContentNegotiation = { module = "io.ktor:ktor-server-content-negotiat
 ktor-serverStatusPages = { module = "io.ktor:ktor-server-status-pages", version.ref = "ktor" }
 ktor-serverTestHost = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 ktor-serializationJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+
+# The database-agnostic half of sqlx4k: Driver, Transaction, Statement, ResultSet. NOT a driver —
+# see petich-sqlx4k-postgres/build.gradle.kts for why the store depends on this and not on
+# `sqlx4k-postgres`.
+sqlx4k-core = { module = "io.github.smyrgeorge:sqlx4k", version.ref = "sqlx4k" }
+# The driver, and only the TESTS take it: an application wiring up the store already has one.
+sqlx4k-postgres = { module = "io.github.smyrgeorge:sqlx4k-postgres", version.ref = "sqlx4k" }
 
 exposed-core = { group = "org.jetbrains.exposed", name = "exposed-core", version.ref = "exposed" }
 exposed-jdbc = { group = "org.jetbrains.exposed", name = "exposed-jdbc", version.ref = "exposed" }
