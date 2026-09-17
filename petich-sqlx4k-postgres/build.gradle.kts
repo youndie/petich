@@ -79,32 +79,31 @@ val postgresPassword = "petich"
 val startTestPostgres by tasks.registering(Exec::class) {
     description = "Start the Postgres the store's tests run against."
     commandLine(
-        // bash and not sh: the readiness check below opens a TCP connection through /dev/tcp, which
-        // dash does not have — and checking readiness the way the TESTS connect is the whole point
-        // of this rewrite.
-        "bash",
+        "sh",
         "-c",
         """
         docker rm -f $postgresContainer >/dev/null 2>&1 || true
         docker run --rm -d --name $postgresContainer \
             -e POSTGRES_USER=petich -e POSTGRES_PASSWORD=petich -e POSTGRES_DB=petich \
             -p $postgresPort:5432 postgres:18-alpine >/dev/null
-        # READY MEANS "ANSWERS ON THE PORT THE TESTS USE".
+        # READY MEANS "POSTGRES ANSWERS ON THE ADDRESS THE TESTS USE", and both halves of that
+        # sentence were wrong here once. B-17 is the flake they caused.
         #
-        # This used to be `docker exec … pg_isready`, which asks the server from INSIDE the
-        # container and says nothing about the published port — the one every test connects to.
-        # Between "ready inside" and "the mapping accepts" there is a window, and a driver that
-        # connects into it fails with an error about I/O rather than about a database that is not
-        # up yet. That is what B-17 is about, and this closes the half of it that is ours.
+        # It was `docker exec … pg_isready`: the server asked from INSIDE the container. Measured on
+        # this image, that answers about 0.7-0.9 s before Postgres answers on the published port
+        # (1.65 s vs 2.32 s, 1.65 vs 2.47, 2.05 vs 2.94 over three fresh containers) — the window a
+        # driver connects into and comes back from with `Io :: Unexpected error occurred`.
         #
-        # Two questions, both from the host: the port accepts a connection, and Postgres answers the
-        # startup protocol on it.
+        # A TCP connect to the mapped port does NOT close it, and that is the part worth knowing:
+        # docker's proxy accepts the connection whether or not anything is listening behind it. Right
+        # after the old check said ready, the port accepted 8 times out of 8 while Postgres answered
+        # 0 of those 8. A check that looks like evidence and is not is worse than no check.
+        #
+        # So the question is asked in the protocol, from the host, through the published port —
+        # `pg_isready` in a container on the host network, which needs no client on the runner.
         for attempt in ${'$'}(seq 1 90); do
-            if (exec 3<>/dev/tcp/127.0.0.1/$postgresPort) 2>/dev/null &&
-               docker run --rm --network host postgres:18-alpine \
-                   pg_isready -h 127.0.0.1 -p $postgresPort -U petich -d petich >/dev/null 2>&1; then
-                exit 0
-            fi
+            docker run --rm --network host postgres:18-alpine \
+                pg_isready -h 127.0.0.1 -p $postgresPort -U petich -d petich >/dev/null 2>&1 && exit 0
             sleep 1
         done
         echo "postgres did not answer on 127.0.0.1:$postgresPort in 90s" >&2
