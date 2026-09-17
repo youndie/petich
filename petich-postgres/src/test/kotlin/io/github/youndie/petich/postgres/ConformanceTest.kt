@@ -5,6 +5,7 @@ import io.github.youndie.petich.ExpiringPetichRepository
 import io.github.youndie.petich.OutboxAwarePetichRepository
 import io.github.youndie.petich.OutboxEvent
 import io.github.youndie.petich.Petich
+import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichRepository
 import io.github.youndie.petich.SimpleEnrichedPayload
@@ -290,6 +291,63 @@ class ConformanceTest {
                 findings,
                 "two callers racing for one new key produce exactly one winner",
             )
+        }
+
+    // --- B-10: where time comes from ------------------------------------------------------------
+
+    /**
+     * Both stamps come from the clock the store was handed, not from the platform.
+     *
+     * The value is deliberately absurd — 4242 is not a plausible epoch millisecond — so that a store
+     * which read `System.currentTimeMillis()` instead cannot pass by coincidence: it would write
+     * something around 1.7e12.
+     */
+    @Test
+    fun `the outbox stamp comes from the clock the store was given`() =
+        runBlocking {
+            truncate()
+            val fixed = PetichClock { 4_242L }
+            val store = ExposedPetichRepository(db, petichTable, outboxTable, fixed)
+
+            store.saveOrGet(petich("stamped"))
+            store.update(petich("stamped").copy(version = 1L), listOf(event("evt-stamped")))
+
+            val stamps =
+                transaction(db) {
+                    outboxTable.selectAll().map { it[outboxTable.createdAt] }
+                }
+            assertEquals(listOf(4_242L), stamps)
+        }
+
+    @Test
+    fun `the idempotency stamp comes from the clock the store was given`() =
+        runBlocking {
+            truncate()
+            val fixed = PetichClock { 4_242L }
+            val store = ExposedIdempotencyRepository(db, idempotencyTable, fixed)
+
+            store.tryClaim("key", "fingerprint")
+
+            val stamps =
+                transaction(db) {
+                    idempotencyTable.selectAll().map { it[idempotencyTable.createdAt] }
+                }
+            assertEquals(listOf(4_242L), stamps)
+        }
+
+    private fun petich(id: String) =
+        Petich(
+            id = id,
+            type = "clock",
+            status = io.github.youndie.petich.PetichStatus.PROCESSING,
+            payload = ConformancePayload(id),
+        )
+
+    private fun event(id: String) =
+        object : OutboxEvent {
+            override val id: String = id
+            override val type: String = "clock.event"
+            override val payload: String = "{}"
         }
 
     private fun assertNoFindings(findings: List<Finding>) =
