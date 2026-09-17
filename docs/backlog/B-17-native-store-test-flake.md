@@ -1,7 +1,7 @@
 ---
 id: B-17
 title: "The native store's concurrency test fails sometimes, with an I/O error from the driver"
-status: wip
+status: done
 priority: P1
 size: S/M
 stage: stage-3-storage
@@ -56,3 +56,46 @@ its own runtime. That is a correlation, not a mechanism, and this item does not 
 - Anchors: `petich-sqlx4k-postgres/build.gradle.kts`,
   `petich-sqlx4k-postgres/src/commonTest/kotlin/io/github/youndie/petich/sqlx4k/postgres/ConcurrentWritersTest.kt`,
   `petich-sqlx4k-postgres/src/commonTest/kotlin/io/github/youndie/petich/sqlx4k/postgres/PostgresHarness.kt`
+
+## Closed 2026-09-17 — the mechanism, measured
+
+**It was the readiness check, and the reason it fooled everybody is that it answers the wrong
+question in a way that looks right.**
+
+`docker exec … pg_isready` asks the server from *inside* the container. On this image that answers
+**0.7–0.9 s before Postgres answers on the published port** — three fresh containers, the inside
+check at 1.65 s / 1.65 s / 2.05 s and the mapped port at 2.32 s / 2.47 s / 2.94 s. A driver
+connecting into that window comes back with `Io :: Unexpected error occurred`, which names I/O and
+not a database that is not up yet.
+
+**A TCP connect does not close the window, and this is the part worth carrying elsewhere.** Right
+after the inside check said ready, the mapped port accepted a connection **8 times out of 8** while
+Postgres answered **0 of those 8**: docker's proxy accepts whether or not anything is listening
+behind it. The first version of this fix checked exactly that, and it would have passed every time
+the bug was present — a check that looks like evidence and is not is worse than no check, so it is
+gone.
+
+**Reproduced on purpose, in the shape CI had it:** cold container, gate released by the inside
+check, the native test binary first to connect —
+
+```
+gate released by the inside check; starting the native test binary now
+Io :: Unexpected error occurred.
+```
+
+That also explains the three observations that did not fit before. In CI, `jvmTest` was
+`FROM-CACHE`, so nothing warmed the database and the native test was the **first** connection, 11 s
+after the container started. The one earlier failure was against a container started seconds
+earlier by hand. And the five green reruns on the big box all ran against a container that was
+already warm.
+
+**The fix** is one question, asked the way the tests ask it: `pg_isready` from the host, through the
+published port, in a container on the host network — no client needed on the runner. With it, cold
+container, both test tasks green.
+
+**Where else this pattern lives:** nowhere else in the portfolio — a grep for
+`docker exec … pg_isready` finds this file and no other. chronik's Postgres tests go through
+Testcontainers, which waits on the mapped port itself.
+
+**What was NOT done:** no retry around the test, no longer timeout, no moving the case to jvm-only.
+The defect was in the harness, and the test that caught it keeps its four writers.
