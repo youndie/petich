@@ -1,7 +1,7 @@
 ---
 id: B-09
 title: "The native store: the four contracts implemented over sqlx4k, driver supplied by the application"
-status: open
+status: wip
 priority: P1
 size: L
 stage: stage-3-storage

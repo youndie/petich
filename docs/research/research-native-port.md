@@ -263,6 +263,19 @@ Why:
   elsewhere in order to make a build green, which is the failure mode the bridge module was carved
   out to avoid.
 
+### D8. The native store speaks Postgres, through sqlx4k *(answered by the owner, 2026-09-17)*
+
+Open question 1 below asked which database a native consumer stores sagas in. The answer is
+Postgres, and the module is `petich-sqlx4k-postgres`.
+
+Why it matters beyond the name: the corpus from D4 then compares like with like — the same dialect
+the Exposed store writes — so a rule both satisfy is a rule about petich rather than about what two
+different databases happen to agree on. A native service and a JVM one can also share a database
+during a migration, which SQLite would have ruled out.
+
+The price is in the tests rather than in the code: SQLite is a file, Postgres is a server, so the
+suite needs one reachable from both targets. B-09 carries that wiring.
+
 ### D7. Acceptance is a consumer that resolves, not metadata read by eye
 
 Decision: every stage that changes what is published is accepted by a separate `linuxX64` project
@@ -315,7 +328,7 @@ only thing standing there. What is not acceptable is inheriting the gap without 
 **Risk 5. Cross-repository release order.** §1.6 and D6. Mitigation: B-15 states the order and the
 version, and B-11 is blocked rather than "in progress" until the 404 becomes a 200.
 
-**Open question 1 — which database does a native consumer store sagas in?** Postgres through
+**Open question 1 — answered 2026-09-17: Postgres through sqlx4k (D8).** The question as it stood: Postgres through
 sqlx4k keeps the SQL and the semantics of the existing store; SQLite matches what a small native
 service usually carries and is what the neighbouring timer library chose, for a consumer that
 existed. There is no such consumer here (§1.9), and the driver decides the module's name, its SQL

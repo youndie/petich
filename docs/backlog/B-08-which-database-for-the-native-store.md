@@ -1,7 +1,7 @@
 ---
 id: B-08
 title: "Which database does a native consumer store sagas in — Postgres through sqlx4k, or SQLite?"
-status: question
+status: done
 priority: P1
 size: XS
 stage: stage-3-storage
@@ -35,3 +35,19 @@ what the conformance run in [B-09](B-09-native-store-module.md) runs against.
 - Anchors: `petich-postgres/src/main/kotlin/` (the dialect being matched or left),
   `gradle/libs.versions.toml`
 
+## Answered 2026-09-17 — Postgres through sqlx4k
+
+The owner picked Postgres. So the module is **`petich-sqlx4k-postgres`** — named after the driver
+*and* the dialect, because the day a second sqlx4k backend appears next to it a name like
+`petich-sqlx4k` starts lying, and chronik renamed its own store one day before release for exactly
+that.
+
+What the answer buys, beyond having one: the corpus compares like with like. The SQL this store
+writes is the same dialect the Exposed store writes, so a rule that both satisfy is a rule about
+petich rather than about what two different databases happen to share — and a rule only one
+satisfies is a real difference with a name. It also means a native service and a JVM service can
+share a database through a migration, which a SQLite store would have made impossible.
+
+What it costs, said plainly: the tests need a **server**. SQLite would have been a file; this needs
+a Postgres reachable from both `jvmTest` and `linuxX64Test`, and [B-09](B-09-native-store-module.md)
+carries how that is arranged rather than leaving each contributor to invent it.
