@@ -25,6 +25,12 @@ Usage, always after a local publication of the version being asked about:
     python3 tools/native-consumer-probe.py <v> --expect refusal      # before the port
     python3 tools/native-consumer-probe.py <v> --expect resolve      # after it
 
+And after a RELEASE, against the repository a stranger would use — which is a different question
+from the one above, because an upload that succeeded and a coordinate somebody else can resolve are
+two different events:
+
+    python3 tools/native-consumer-probe.py 0.2.0 --repository https://repo1.maven.org/maven2
+
 It needs a Linux x64 host with the Kotlin/Native toolchain: linking a linuxX64 executable is the
 question being asked, so nothing about this runs usefully on the mac.
 """
@@ -35,6 +41,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PROBE = ROOT / "tools" / "native-consumer-probe"
@@ -46,6 +53,10 @@ parser.add_argument("--expect", choices=("resolve", "refusal"), default="resolve
 parser.add_argument("--modules", default="auto",
                     help="comma-separated module names, or `auto`: every module whose build script "
                          "declares a native target and the publish convention")
+parser.add_argument("--repository", default=None,
+                    help="resolve petich from this repository instead of the local publication — "
+                         "the only way to ask what a RELEASE gives a stranger, e.g. "
+                         "https://repo1.maven.org/maven2")
 args = parser.parse_args()
 
 # The compiler the library is built with, read from the catalogue rather than written out here. Two
@@ -94,16 +105,37 @@ if args.modules == "auto":
 # below. A module whose script says linuxX64 and whose publication carries no such directory is
 # exactly the failure a consumer meets as "no matching variant", and it is invisible to a build that
 # compiled the target perfectly well.
-m2_group = os.path.expanduser("~/.m2/repository/io/github/youndie/petich")
-missing = [
-    module for module in args.modules.split(",")
-    if not os.path.isdir(f"{m2_group}/{module.strip()}-linuxx64/{args.version}")
-]
-if missing and args.expect == "resolve":
-    sys.exit(
-        "declared a native target and published no native variant at {0}: {1}\n"
-        "(looked for {2}/<module>-linuxx64/{0})".format(args.version, ", ".join(missing), m2_group)
-    )
+#
+# Against a remote repository the same question is a HEAD per coordinate rather than a directory
+# listing: a repository is not a filesystem, and asking it for the file a consumer would fetch is
+# closer to the question than asking it for a directory it may not even expose.
+if args.expect == "resolve":
+    modules = [module.strip() for module in args.modules.split(",")]
+    if args.repository is None:
+        m2_group = os.path.expanduser("~/.m2/repository/io/github/youndie/petich")
+        missing = [
+            module for module in modules
+            if not os.path.isdir(f"{m2_group}/{module}-linuxx64/{args.version}")
+        ]
+        where = f"{m2_group}/<module>-linuxx64/{args.version}"
+    else:
+        base = args.repository.rstrip("/") + "/io/github/youndie/petich"
+        missing = []
+        for module in modules:
+            url = f"{base}/{module}-linuxx64/{args.version}/{module}-linuxx64-{args.version}.klib"
+            request = urllib.request.Request(url, method="HEAD")
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    if response.status != 200:
+                        missing.append(module)
+            except Exception:
+                missing.append(module)
+        where = f"{base}/<module>-linuxx64/{args.version}/<module>-linuxx64-{args.version}.klib"
+    if missing:
+        sys.exit(
+            "declared a native target and published no native variant at {0}: {1}\n"
+            "(looked for {2})".format(args.version, ", ".join(missing), where)
+        )
 
 started = time.time()
 if BINARY.exists():
@@ -120,6 +152,8 @@ command = [
     f"-Pprobe.modules={args.modules}",
     "--no-daemon", "--console=plain",
 ]
+if args.repository:
+    command.append(f"-Pprobe.repository={args.repository}")
 print(f"$ {' '.join(command)}\n")
 completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
 output = completed.stdout + completed.stderr
@@ -130,7 +164,8 @@ missing = [c for c in coordinates if re.search(rf"Could not find {re.escape(c)}:
 
 if missing:
     outcome = "NOT PUBLISHED"
-    detail = ", ".join(missing) + f" is not in the local repository at {args.version}"
+    where = args.repository or "the local repository"
+    detail = ", ".join(missing) + f" is not in {where} at {args.version}"
 elif refused:
     outcome = "REFUSED"
     detail = ", ".join(refused) + " has no variant this target can use"

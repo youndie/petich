@@ -31,12 +31,27 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
-        // Only petich comes from the local publication, and petich comes ONLY from there. Without
-        // the second half the probe has a way to pass by accident: Maven Central still serves
-        // 0.1.0, so a build that failed to see the local publication would resolve the released
-        // one instead and answer a question about last month's artefacts.
-        mavenLocal {
-            content { includeGroup("io.github.youndie.petich") }
+        // WHERE PETICH COMES FROM, and only from there.
+        //
+        // `mavenLocal` by default: the probe's usual question is whether the publication this build
+        // just made can be taken by a native consumer. `-Pprobe.repository=<url>` points it at a
+        // real repository instead, which is the only way to ask the question a RELEASE raises —
+        // an upload that succeeded and a coordinate a stranger can resolve are two different events.
+        //
+        // Whichever it is, the group comes from exactly one place and Maven Central is excluded from
+        // serving it. Without that the probe has a way to pass by accident: Central still serves the
+        // previous release, so a build that failed to see the publication under test would resolve
+        // last month's artefacts and report success.
+        val petichFrom = providers.gradleProperty("probe.repository").orNull
+        if (petichFrom == null) {
+            mavenLocal {
+                content { includeGroup("io.github.youndie.petich") }
+            }
+        } else {
+            maven(petichFrom) {
+                name = "probe-subject"
+                content { includeGroup("io.github.youndie.petich") }
+            }
         }
         mavenCentral {
             content { excludeGroup("io.github.youndie.petich") }
