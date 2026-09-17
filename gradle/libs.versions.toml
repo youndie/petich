@@ -4,7 +4,7 @@
 # publishes carries `kotlin`, so there is no Kotlin version in this file to drift from the rest
 # of the portfolio.
 sborka = "0.4.0.87"
-ktor = "3.5.2"
+ktor = "3.6.0"
 chronik = "0.2.0"
 exposed = "1.4.0"
 # Test-only, and only in :petich-chronik: the claim that a timer and a saga state commit together
