@@ -52,7 +52,7 @@ The engine takes on exactly that:
 | `petich-outbox-core` | at-least-once event delivery with backoff and dead lettering | jvm, linuxX64 | — |
 | `petich-idempotency` | protection against a key reused with a DIFFERENT request | jvm, linuxX64 | — |
 | `petich-scheduler` | a saga on a schedule, starting with no HTTP initiator | jvm, linuxX64 | — |
-| `petich-chronik` | a fired [chronik](https://github.com/youndie/chronik) timer resumes a suspended saga | **jvm only** — until chronik publishes a native variant | `petich-core` |
+| `petich-chronik` | a fired [chronik](https://github.com/youndie/chronik) timer resumes a suspended saga | jvm, linuxX64 — needs chronik 0.2.0 or newer | `petich-core` |
 | `petich-conformance` | the rules a storage implementation has to satisfy, as cases you can run against yours | jvm, linuxX64 | core, outbox, idempotency, scheduler |
 | `petich-sqlx4k-postgres` | the same storage contracts over sqlx4k, for a service with no JVM; brings no driver | jvm, linuxX64 | core, outbox, idempotency, scheduler |
 

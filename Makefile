@@ -23,6 +23,12 @@ gate:
 	$(PY) scripts/backlog_index.py --check
 	$(PY) scripts/docs_check.py
 	$(PY) scripts/coverage_map.py --check
+	# THE README'S MODULE TABLE AGAINST THE BUILD SCRIPTS. Here rather than in build.yaml because it
+	# reads two files and needs no JDK — and here rather than nowhere because this exact row already
+	# rotted once: `petich-chronik` said "jvm only" through the release that gave it a native
+	# variant. A consumer reads the table before the build scripts, so a row that outlived its
+	# module is the one thing in this repository that compiling cannot catch.
+	$(PY) tools/module-table-audit.py
 
 # Non-blocking, on purpose. bdd_report counts scenarios, and demanding a percentage is meaningless
 # while acceptance is by hand. code_anchors goes stale because of a refactor in somebody else's
