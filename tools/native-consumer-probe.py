@@ -81,9 +81,33 @@ def declared_native_modules():
 
 
 catalogue = (ROOT / "gradle" / "libs.versions.toml").read_text()
-match = re.search(r'^kotlin\s*=\s*"([^"]+)"', catalogue, re.M)
+
+# The compiler, read from the catalogue the BUILD reads rather than from this repository's own.
+# `kotlin` used to be a line in libs.versions.toml; it now comes from `wip`, the version catalogue
+# a sborka release publishes, and this probe has to follow it there — a version spelled out here
+# would be a second number to keep in step, which is what moving it removed.
+#
+# The sborka pin is what names the release, so the probe asks the same release the build resolved
+# its plugins from. Failing loudly on a miss matters: a probe that quietly fell back to some other
+# compiler would answer a question nobody asked.
+match = re.search(r'^sborka\s*=\s*"([^"]+)"', catalogue, re.M)
 if not match:
-    sys.exit("no `kotlin = \"...\"` in gradle/libs.versions.toml — the probe cannot pick a compiler")
+    sys.exit("no `sborka = \"...\"` in gradle/libs.versions.toml — the probe cannot find the shared catalogue")
+sborka = match.group(1)
+
+SHARED_CATALOGUE = (
+    "https://reposilite.kotlin.website/snapshots/io/github/youndie/sborka/catalog/"
+    f"{sborka}/catalog-{sborka}.toml"
+)
+try:
+    with urllib.request.urlopen(SHARED_CATALOGUE, timeout=30) as response:
+        shared = response.read().decode()
+except OSError as error:
+    sys.exit(f"cannot read the shared catalogue at {SHARED_CATALOGUE}: {error}")
+
+match = re.search(r'^kotlin\s*=\s*"([^"]+)"', shared, re.M)
+if not match:
+    sys.exit(f"no `kotlin = \"...\"` in {SHARED_CATALOGUE} — the probe cannot pick a compiler")
 kotlin = match.group(1)
 
 # The driver the probe links, read from the same catalogue for the same reason as the compiler: the
