@@ -76,15 +76,26 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.youndie.petich:petich-core:0.1.0")
-    implementation("io.github.youndie.petich:petich-ktor:0.1.0")
-    implementation("io.github.youndie.petich:petich-postgres:0.1.0")
+    implementation("io.github.youndie.petich:petich-core:0.2.0")
+    implementation("io.github.youndie.petich:petich-ktor:0.2.0")
+    implementation("io.github.youndie.petich:petich-postgres:0.2.0")
 }
 ```
 
 Releases are on Maven Central. Snapshots keep going to
-`https://reposilite.kotlin.website/snapshots` as `0.1.0.<build>` — add that repository beside
+`https://reposilite.kotlin.website/snapshots` as `<version>.<build>` — add that repository beside
 `mavenCentral()` to take one.
+
+**On Kotlin/Native** the coordinates are the same; take `petich-sqlx4k-postgres` instead of
+`petich-postgres`, and bring your own sqlx4k driver:
+
+```kotlin
+dependencies {
+    implementation("io.github.youndie.petich:petich-core:0.2.0")
+    implementation("io.github.youndie.petich:petich-sqlx4k-postgres:0.2.0")
+    implementation("io.github.smyrgeorge:sqlx4k-postgres:1.13.1")   // the driver is yours
+}
+```
 
 `petich-postgres` deliberately ships no driver and no connection pool: it works with an Exposed
 `Database` handed to it and does not know which DBMS sits underneath. Choosing a driver is the
