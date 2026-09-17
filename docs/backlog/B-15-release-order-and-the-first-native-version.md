@@ -48,6 +48,15 @@ snapshot first: the same tree, the same publication path, a number nobody has to
 | **shashki**, a real consumer: `:server:build` and `:server:test` against the candidate | green, no code change |
 | **konekt**, a real consumer of six petich modules including `petich-ktor`: four modules built, `:server:test` and `:feature:purchase-server-domain:test` | green, no code change |
 | a saga end to end on artefacts **fetched from the repository** rather than built locally | `PENDING_SIGNATURE → COMPLETED`, its event in the outbox |
+| konekt's **whole** build — the way its own gate runs it: every module, the conformance tests against Testcontainers, the Android application, the Apple targets compiled | BUILD SUCCESSFUL |
+
+**The whole-build line needed checking before it could be written**, and that is worth more than the
+line. `./gradlew build` came back green in 30 seconds with *1025 actionable tasks: 26 executed, 999
+up-to-date* — a number that proves the build ran, not that anything was rebuilt against the new
+version. Reading the test-result files by date showed three modules exercised today and one,
+`shared/server-common`, carrying results from five days earlier. Forced with `--rerun-tasks` it is
+19 tests, 0 failures, against the candidate. A green incremental build is a claim about Gradle's
+inputs, not about the dependency that changed.
 
 **Why the two consumers are the part worth having.** `proba` builds a synthetic consumer, which
 answers "does this coordinate resolve"; shashki and konekt answer the question that matters to the
