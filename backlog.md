@@ -119,7 +119,7 @@ What the stages produced beyond their plan:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-15](docs/backlog/B-15-release-order-and-the-first-native-version.md) `[ ]` | The first release carrying native variants, and the order it has to go out in | P2 | S | B-12 |
+| [B-15](docs/backlog/B-15-release-order-and-the-first-native-version.md) `[~]` | The first release carrying native variants, and the order it has to go out in | P2 | S | B-12 |
 | [B-16](docs/backlog/B-16-access-scoring-decimal-fixture.md) `[?]` | AccessScoring stays JVM-only because its fixture does decimal finance | P2 | M | - |
 
 ## Closed (14)

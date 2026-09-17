@@ -1,7 +1,7 @@
 ---
 id: B-15
 title: "The first release carrying native variants, and the order it has to go out in"
-status: open
+status: wip
 priority: P2
 size: S
 stage: stage-5-release
@@ -35,3 +35,36 @@ which is a state a consumer has to be told about rather than discover.
   `petich-postgres` is absent from that list.
 - Anchors: `.github/workflows/publish-snapshot.yaml`, `gradle.properties`, `README.md`
 
+## Rehearsal — 2026-09-17, on 0.2.0.39
+
+A version on Central can never be rewritten or taken back, so the release was rehearsed on a
+snapshot first: the same tree, the same publication path, a number nobody has to live with.
+`0.2.0.39` went to reposilite from `main` by the ordinary workflow.
+
+| What was asked | Answer |
+|---|---|
+| the JVM consumer job (`proba`) resolving all nine coordinates from a real remote | success |
+| the native probe against that remote — `--repository https://reposilite.kotlin.website/snapshots` | RESOLVED, `.kexe` linked |
+| **shashki**, a real consumer: `:server:build` and `:server:test` against the candidate | green, no code change |
+| **konekt**, a real consumer of six petich modules including `petich-ktor`: four modules built, `:server:test` and `:feature:purchase-server-domain:test` | green, no code change |
+| a saga end to end on artefacts **fetched from the repository** rather than built locally | `PENDING_SIGNATURE → COMPLETED`, its event in the outbox |
+| konekt's **whole** build — the way its own gate runs it: every module, the conformance tests against Testcontainers, the Android application, the Apple targets compiled | BUILD SUCCESSFUL |
+
+**The whole-build line needed checking before it could be written**, and that is worth more than the
+line. `./gradlew build` came back green in 30 seconds with *1025 actionable tasks: 26 executed, 999
+up-to-date* — a number that proves the build ran, not that anything was rebuilt against the new
+version. Reading the test-result files by date showed three modules exercised today and one,
+`shared/server-common`, carrying results from five days earlier. Forced with `--rerun-tasks` it is
+19 tests, 0 failures, against the candidate. A green incremental build is a claim about Gradle's
+inputs, not about the dependency that changed.
+
+**Why the two consumers are the part worth having.** `proba` builds a synthetic consumer, which
+answers "does this coordinate resolve"; shashki and konekt answer the question that matters to the
+jvm half of the world — *does the code that already depends on petich still compile and pass its
+own tests*. konekt is the one that could have gone wrong: it takes `petich-ktor`, whose Ktor
+coordinates changed from `-jvm` to the platform-agnostic ones in [B-06](B-06-ktor-module-and-the-jvm-pinned-catalogue.md).
+Both catalogues were edited locally and restored; neither repository carries a commit from this.
+
+**What the rehearsal still does not prove:** that Central serves it. An upload that succeeded and a
+coordinate a stranger can resolve are two different events, and the second one is the acceptance
+below — run against `https://repo1.maven.org/maven2` once the bundle is released.
