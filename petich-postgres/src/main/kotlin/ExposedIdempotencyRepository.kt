@@ -1,5 +1,6 @@
 package io.github.youndie.petich.postgres
 
+import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.idempotency.IdempotencyRecord
 import io.github.youndie.petich.idempotency.IdempotencyRepository
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,9 @@ import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 public class ExposedIdempotencyRepository(
     private val db: Database,
     private val table: IdempotencyKeysTable,
+    // See ExposedPetichRepository: one place where time comes from, a parameter rather than a call
+    // to the platform, and the default is what this class did before.
+    private val clock: PetichClock = PetichClock { systemTimeMillis() },
 ) : IdempotencyRepository {
     // Dispatchers.IO is load-bearing, not cosmetic. Without it the transaction runs on whatever
     // dispatcher called it — for routes, that means directly on the Ktor engine threads. JDBC is
@@ -38,11 +42,7 @@ public class ExposedIdempotencyRepository(
                     // Same rule, much smaller stake: this stamp is never compared across
                     // instances and never sorted on — it exists so old keys can be swept. Skew
                     // moves a key's expiry by the skew and nothing else reads it. See #20.
-                    @Suppress(
-                        "ktlint:kapkan:wall-clock",
-                        "Written, never compared or ordered; only key sweeping reads it, see #20",
-                    )
-                    it[createdAt] = System.currentTimeMillis()
+                    it[createdAt] = clock.nowEpochMs()
                 }
                 true
             } catch (_: ExposedSQLException) {

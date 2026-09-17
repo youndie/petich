@@ -4,6 +4,7 @@ import io.github.youndie.petich.ExpiringPetichRepository
 import io.github.youndie.petich.OutboxAwarePetichRepository
 import io.github.youndie.petich.OutboxEvent
 import io.github.youndie.petich.Petich
+import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,6 +24,14 @@ public class ExposedPetichRepository(
     private val db: Database,
     private val table: PetichTable,
     private val outboxTable: OutboxEventsTable,
+    // WHERE TIME COMES FROM, as a parameter — the same shape the engine has always had
+    // (PetichClock) and the one the sqlx4k store was born with, which has no platform to read.
+    //
+    // The default keeps every existing consumer compiling and behaving exactly as before. What it
+    // buys is the seam: an application running several replicas can hand all of them ONE source of
+    // time, which is the cheap half of youndie/petich#20 — the other half, a server-side default on
+    // the column, changes DDL this library does not ship.
+    private val clock: PetichClock = PetichClock { systemTimeMillis() },
 ) : OutboxAwarePetichRepository,
     ExpiringPetichRepository {
     // Dispatchers.IO is load-bearing, not cosmetic. Without it the transaction runs on whatever
@@ -102,11 +111,11 @@ public class ExposedPetichRepository(
                 // library deliberately ships none, so the change lands in every consumer's
                 // migrations. That is a decision with a release behind it, not a line in a build
                 // bump. Tracked in youndie/petich#20.
-                @Suppress(
-                    "ktlint:kapkan:wall-clock",
-                    "Replica skew reorders the outbox queue; the fix is a column default, see #20",
-                )
-                val now = System.currentTimeMillis()
+                //
+                // What DID change (B-10): the clock is a constructor parameter, so an application
+                // that can give its replicas one source of time no longer has to wait for that
+                // release. The default is the old behaviour, unchanged.
+                val now = clock.nowEpochMs()
                 outboxTable.batchInsert(outboxEvents) { event ->
                     this[outboxTable.id] = event.id
                     this[outboxTable.type] = event.type
