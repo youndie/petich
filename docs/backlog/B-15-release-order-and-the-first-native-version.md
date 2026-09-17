@@ -1,7 +1,7 @@
 ---
 id: B-15
 title: "The first release carrying native variants, and the order it has to go out in"
-status: wip
+status: done
 priority: P2
 size: S
 stage: stage-5-release
@@ -68,3 +68,49 @@ Both catalogues were edited locally and restored; neither repository carries a c
 **What the rehearsal still does not prove:** that Central serves it. An upload that succeeded and a
 coordinate a stranger can resolve are two different events, and the second one is the acceptance
 below — run against `https://repo1.maven.org/maven2` once the bundle is released.
+
+## Closed 2026-09-17 — petich 0.2.0 is on Central
+
+The order held: chronik **0.2.0** first ([B-11](B-11-chronik-bridge-blocked.md)), petich **0.2.0**
+after it, so no release ever shipped six modules with native variants and a seventh without.
+
+**The acceptance is a consumer resolving from the repository a stranger would use**, not an upload
+that returned success:
+
+```
+$ python3 tools/native-consumer-probe.py 0.2.0 --repository https://repo1.maven.org/maven2 --expect resolve
+-Pprobe.modules=petich-chronik,petich-conformance,petich-core,petich-idempotency,petich-ktor,
+                petich-outbox-core,petich-scheduler,petich-sqlx4k-postgres
+RESOLVED: … native-consumer-probe.kexe linked
+```
+
+Eight modules, every one declaring a native target, all resolved from Central. Then the same binary
+against a real Postgres, on the **released** artefacts rather than a local publication:
+
+```
+pass 1: result=ActionRequired stored=PENDING_SIGNATURE version=1
+pass 2: result=Success  stored=COMPLETED version=3
+outbox: [(shipped-order-1, order.shipped)]
+SAGA OK: created, suspended, resumed, completed, and its event is in the outbox
+```
+
+**`petich-postgres` is absent from that list by decision, and Central shows exactly that:**
+
+```
+petich-postgres-0.2.0.jar        200
+petich-postgres-linuxx64 …klib   404
+```
+
+It is Exposed over JDBC, and JDBC is a JVM interface rather than a protocol (research D3). A
+Kotlin/Native service takes `petich-sqlx4k-postgres` instead, which speaks the same columns — so a
+system can move one process at a time with both stores pointed at one database.
+
+**What the release rehearsal bought, said once because it is the reusable part.** Everything above
+had already been run on `0.2.0.39` in reposilite: the same probe against a real remote, both real
+consumers built and tested, the saga on fetched artefacts. A version on Central cannot be rewritten
+or taken back; a snapshot costs nothing and answers the same questions. The only thing the rehearsal
+could not answer is whether Central serves it, which is what the run above is for.
+
+**The last step was a person's, by design.** `central.yaml` in youndie/sborka uploads the bundle
+staged and stops; the owner pressed Publish in the portal, for both repositories. Nothing here
+automates that, and this item does not propose to.
