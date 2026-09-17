@@ -20,6 +20,12 @@ pluginManagement {
     plugins {
         id("org.jetbrains.kotlin.multiplatform") version
             settings.providers.gradleProperty("probe.kotlinVersion").get()
+        // A consumer that STORES sagas needs this, and finding that out is part of what the probe
+        // is for: the payload is written as polymorphic JSON, so `@Serializable` without the plugin
+        // is an annotation nothing reads — and the failure arrives at the first write, as
+        // "Serializer for class 'OrderPayload' is not found", rather than at compile time.
+        id("org.jetbrains.kotlin.plugin.serialization") version
+            settings.providers.gradleProperty("probe.kotlinVersion").get()
     }
 }
 

@@ -75,6 +75,13 @@ if not match:
     sys.exit("no `kotlin = \"...\"` in gradle/libs.versions.toml — the probe cannot pick a compiler")
 kotlin = match.group(1)
 
+# The driver the probe links, read from the same catalogue for the same reason as the compiler: the
+# store ships no driver, so the consumer picks one, and a version written out here would drift.
+match = re.search(r'^sqlx4k\s*=\s*"([^"]+)"', catalogue, re.M)
+if not match:
+    sys.exit("no `sqlx4k = \"...\"` in gradle/libs.versions.toml — the probe cannot pick a driver")
+sqlx4k = match.group(1)
+
 if args.modules == "auto":
     modules = declared_native_modules()
     if not modules:
@@ -109,6 +116,7 @@ command = [
     "linkDebugExecutableLinuxX64",
     f"-Pprobe.petichVersion={args.version}",
     f"-Pprobe.kotlinVersion={kotlin}",
+    f"-Pprobe.sqlx4kVersion={sqlx4k}",
     f"-Pprobe.modules={args.modules}",
     "--no-daemon", "--console=plain",
 ]

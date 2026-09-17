@@ -79,10 +79,12 @@ The list below is **checked** against the files on disk: a document missing here
 file behind it, fails `coverage_map.py`. The grouping and the descriptions are written by a person —
 the machine guards only the membership.
 
-### Services (1)
+### Services (2)
 
 - [x] [petich-conformance](services/petich-conformance.md) — the rules a storage implementation has
   to satisfy, as cases that can be run against one; what it deliberately does not promise
+- [x] [petich-sqlx4k-postgres](services/petich-sqlx4k-postgres.md) — the store a Kotlin/Native
+  service can take: the four contracts over sqlx4k, no driver, no schema, no clock of its own
 
 ### Research (1)
 

@@ -56,6 +56,11 @@ include(":petich-scheduler")
 // describes the intersection of the two rather than the contract.
 include(":petich-conformance")
 
+// The second storage implementation, and the first one a Kotlin/Native service can take: the four
+// contracts over sqlx4k, speaking Postgres. It carries no driver — the application opens one and
+// hands it in — because a native binary that links two sqlx4k drivers does not link at all.
+include(":petich-sqlx4k-postgres")
+
 // The bridge to chronik: a fired timer wakes a suspended saga. A module of its own so that the
 // engine does not gain a dependency on a timer library that most applications will not use.
 include(":petich-chronik")

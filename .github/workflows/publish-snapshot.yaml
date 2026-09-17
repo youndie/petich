@@ -26,6 +26,7 @@ jobs:
         io.github.youndie.petich:petich-scheduler
         io.github.youndie.petich:petich-chronik
         io.github.youndie.petich:petich-conformance
+        io.github.youndie.petich:petich-sqlx4k-postgres
     # Named one by one rather than `secrets: inherit`: this hands them to a workflow in another
     # repository, and the two it needs are the two it gets.
     secrets:

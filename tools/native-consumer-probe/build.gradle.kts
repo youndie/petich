@@ -1,5 +1,6 @@
 plugins {
     kotlin("multiplatform")
+    kotlin("plugin.serialization")
 }
 
 // The consumer under test: a Kotlin/Native binary that declares petich coordinates and links.
@@ -31,6 +32,18 @@ kotlin {
                     .forEach { module ->
                         implementation("io.github.youndie.petich:$module:$version")
                     }
+
+                // THE DRIVER, AND THE CONSUMER IS THE ONE WHO BRINGS IT.
+                //
+                // petich-sqlx4k-postgres depends on the database-agnostic half of sqlx4k and no
+                // driver, precisely so that the application chooses one — and so that a binary
+                // never links two of them, which does not link at all. This probe is that
+                // application: it takes the Postgres driver, and the fact that the result LINKS is
+                // the evidence for that design, not the comment above it.
+                implementation(
+                    "io.github.smyrgeorge:sqlx4k-postgres:" +
+                        providers.gradleProperty("probe.sqlx4kVersion").get(),
+                )
             }
         }
     }
