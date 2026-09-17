@@ -68,46 +68,41 @@ not move a file.
 A stage closes as a whole and gets a line here: what came out beyond the plan, and which research
 hypothesis was confirmed or refuted.
 
-### Where the port stands — 2026-09-17
+### The port is done — 2026-09-17
 
-**Thirteen of sixteen items are done, and a Kotlin/Native service can now run petich end to end.**
-`stage-0-gate`, `stage-2-ktor` and `stage-3-storage` are closed; `stage-1-portable` is closed except
-for one suite that became a question; `stage-5-release` is closed except for the release itself.
+**Fifteen of sixteen items are closed, and `io.github.youndie.petich` 0.2.0 is on Maven Central with
+native variants.** The sixteenth is a question for the owner
+([B-16](docs/backlog/B-16-access-scoring-decimal-fixture.md)), not work.
 
-The sentence this summary carried a few hours ago — *a native service can take the engine and still
-has nowhere to store a saga* — is no longer true. `petich-sqlx4k-postgres`
-([B-09](docs/backlog/B-09-native-store-module.md)) implements the four storage contracts over
-sqlx4k, takes the driver from the application, and is accepted by the corpus on both targets. The
-acceptance was a native binary with its own driver running a saga through create → suspend → resume
-→ complete against a real Postgres, with its outbox row.
+A Kotlin/Native service takes the engine, its HTTP surface, the three independent modules, the
+conformance corpus and a **store** — eight coordinates, all resolved from Central by a native
+consumer that then ran a saga end to end against a real Postgres. `petich-postgres` stays JVM-only
+by decision, writing the same columns as its native counterpart, so a system moves one process at a
+time.
 
-What the stages produced beyond their plan:
-
-* **The probe pays for itself three times.** A negative control in
-  [B-02](docs/backlog/B-02-native-consumer-probe.md); a CI guard in
-  [B-12](docs/backlog/B-12-guards-meet-the-native-variants.md) that also catches "declared a native
-  target, published no native variant"; and in B-09 the thing that runs a whole saga — where the
-  fact that it **links** is the evidence that the store carries no driver.
-* **The corpus earned its place before the second store existed.** On its first run against the new
-  store it reported five broken rules and named one cause (a parameter the UPDATE never mentions).
-  Written after that store, it would have described the intersection of the two instead.
-* **Three premises in this file were wrong, and each correction sits where it was written.**
-  [B-05](docs/backlog/B-05-concurrency-under-the-native-memory-model.md) asked for coverage
-  [B-03](docs/backlog/B-03-linux-target-on-the-portable-four.md) had already delivered;
-  [B-13](docs/backlog/B-13-ci-and-the-konan-toolchain.md) holds a correction of a correction; and
-  [B-04](docs/backlog/B-04-scenario-suites-on-both-targets.md)'s list of JVM-only usages was drawn
-  from imports, which do not show `java.util.Map`'s methods on a Kotlin `Map`.
-* **Two findings came from running rather than reading:** the engine does not re-run the step that
-  suspended, and a consumer that stores sagas needs the serialization plugin — both found by the
-  probe failing, both now in the documents.
-
-**What is left is three items, and none of them is work this backlog can do on its own:**
-
-| Item | Waiting for |
+| Stage | Closed by |
 |---|---|
-| [B-11](docs/backlog/B-11-chronik-bridge-blocked.md) | a chronik release carrying its native variants — [youndie/chronik#21](https://github.com/youndie/chronik/issues/21); `chronik-core-linuxx64` is still 404 |
-| [B-15](docs/backlog/B-15-release-order-and-the-first-native-version.md) | B-11, and then a release, which is a decision rather than a task |
-| [B-16](docs/backlog/B-16-access-scoring-decimal-fixture.md) `[?]` | the owner: what happens to a suite whose fixture does decimal finance |
+| `stage-0-gate` | the documentation gate, and a probe that had to fail before anything could pass |
+| `stage-1-portable` | `linuxX64` on the four independent modules; two of the three saga suites moved to both targets; the per-saga lock observed under a real dispatcher on both |
+| `stage-2-ktor` | `petich-ktor` on both targets, the `-jvm` coordinates gone from the catalogue |
+| `stage-3-storage` | the corpus first, the driver question answered by the owner, then `petich-sqlx4k-postgres` — with the clock a parameter in all three stores |
+| `stage-4-bridge` | `petich-chronik`, after chronik released 0.2.0 |
+| `stage-5-release` | the guards that see native variants, the cached toolchain, the module table, and the release itself |
+
+**What this backlog is worth keeping for, beyond the code:**
+
+* **Everything was accepted by a consumer, never by a build log.** The probe from B-02 reported
+  REFUSED before the port and RESOLVED after it, against the local publication, then against
+  reposilite, then against Central — the same code answering the same question at three distances.
+* **The corpus preceded the second store and paid for it immediately**: five rules broken, one cause
+  named, before anything was published.
+* **Four premises written in this file turned out wrong** — B-05's, B-13's twice, B-04's list of
+  JVM-only usages — and each correction sits where the claim was, not in a commit message.
+* **The release was rehearsed on a snapshot** and only then uploaded, because a version on Central
+  cannot be rewritten or taken back. The rehearsal caught nothing; it cost one afternoon and would
+  have caught everything.
+* **The last step stayed a person's.** The upload workflow leaves the bundle staged by design, and
+  the Publish click for chronik and for petich was the owner's.
 
 ## Labels
 
