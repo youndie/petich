@@ -262,10 +262,22 @@ outcome, and what it reported is that it declined to act.
 
 ### 💰 Cost
 
-One saga of six interceptors is about 17 database writes, 11 of them into the saga table itself:
-`1 INSERT + one UPDATE per interceptor + 1 final`, plus the suspend/resume machinery. A saga of four
-interceptors comes to 9 writes. The numbers were taken through `pg_stat_user_tables` and do not
-depend on the hardware.
+A saga of six steps costs **eight writes to the saga table**: one `INSERT`, one `UPDATE` per step,
+and one that completes it. Events an interceptor hands over ride along inside those writes rather
+than adding any — three steps emitting one event each make three rows in the outbox and no extra
+write to the saga.
+
+**A suspension does not add a write; it moves one.** The step that suspends writes
+`PENDING_SIGNATURE` instead of the `Proceed` it would have written, and it is deliberately not
+re-executed on resume, so the same six steps cost the same eight writes whether the saga waits for a
+human in the middle or not. What the resume does add is a `saveOrGet` at the head of its pass, which
+changes no row here and is an `INSERT … ON CONFLICT DO NOTHING` in the sqlx4k store — so a count of
+*statements* is one higher than this count of *row changes*.
+
+Both numbers are asserted by `WriteCountTest`, against that exact scenario, so a change that adds a
+write fails a test rather than aging a sentence. The figure this paragraph used to carry — "about 17
+writes, 11 of them into the saga table" — was taken once by hand for a scenario nobody wrote down,
+and could not be reproduced.
 
 This is the price of recoverability: state is written at every step boundary precisely so that a
 process dying between steps never leaves a saga in an unknown position. Each of those writes is
