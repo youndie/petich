@@ -29,6 +29,12 @@ gate:
 	# variant. A consumer reads the table before the build scripts, so a row that outlived its
 	# module is the one thing in this repository that compiling cannot catch.
 	$(PY) tools/module-table-audit.py
+	# THE SAGA TABLE, DESCRIBED THREE WAYS. Here for the same reason as the row above: it reads
+	# three files, needs no JDK, and the thing it guards is invisible to compiling. petich ships no
+	# DDL, so what a consumer runs on an existing schema is a paragraph in the README — and a
+	# paragraph beside a growing set of columns rots on the first release nobody edits it. 0.3.0
+	# added three columns and named them nowhere; both consumers found out from a saga that failed.
+	$(PY) tools/schema-notes-audit.py
 
 # Non-blocking, on purpose. bdd_report counts scenarios, and demanding a percentage is meaningless
 # while acceptance is by hand. code_anchors goes stale because of a refactor in somebody else's
