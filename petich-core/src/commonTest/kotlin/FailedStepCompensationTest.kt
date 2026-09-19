@@ -245,8 +245,13 @@ class FailedStepCompensationTest {
 
             assertEquals(
                 listOf(
-                    "do:reserve", "do:quota", "do:charge",
-                    "undo:charge", "undo:charge", "undo:quota", "undo:reserve",
+                    "do:reserve",
+                    "do:quota",
+                    "do:charge",
+                    "undo:charge",
+                    "undo:charge",
+                    "undo:quota",
+                    "undo:reserve",
                 ),
                 log.entries,
                 "the resumed rollback repeats the step it was interrupted on and skips neither below it",

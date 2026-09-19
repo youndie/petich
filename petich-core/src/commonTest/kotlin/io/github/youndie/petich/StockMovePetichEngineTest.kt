@@ -48,6 +48,7 @@ data class StockMoveEnrichedPayload(
 class FakeInventoryService {
     val quantities = mutableMapOf<String, Long>()
     val reservations = mutableMapOf<String, Pair<String, Long>>()
+    val deposited = mutableMapOf<String, Long>()
     val operationLog = mutableListOf<String>()
 
     fun reserve(
@@ -81,7 +82,25 @@ class FakeInventoryService {
         amount: Long,
     ) {
         quantities[warehouseId] = (quantities[warehouseId] ?: 0L) + amount
+        deposited[warehouseId] = (deposited[warehouseId] ?: 0L) + amount
         operationLog.add("DEPOSIT: $warehouseId $amount")
+    }
+
+    // Undo a deposit THIS saga made, and nothing else. Since B-18 a compensation is also called
+    // for the step that failed, so this is reached with nothing deposited - which is the case the
+    // guard exists for. Without it the reversal would invent a withdrawal the warehouse never saw.
+    fun reverseDeposit(
+        warehouseId: String,
+        amount: Long,
+    ) {
+        val posted = deposited[warehouseId] ?: 0L
+        if (posted < amount) {
+            operationLog.add("REVERSE_DEPOSIT_SKIPPED: $warehouseId $amount")
+            return
+        }
+        deposited[warehouseId] = posted - amount
+        quantities[warehouseId] = (quantities[warehouseId] ?: 0L) - amount
+        operationLog.add("REVERSE_DEPOSIT: $warehouseId $amount")
     }
 }
 
@@ -297,12 +316,16 @@ class DepositInterceptor(
         return InterceptorResult.Proceed()
     }
 
+    // It undoes ITS OWN deposit. It used to call withdraw() with the reservation id belonging to
+    // StockReservationInterceptor, which removed that reservation - and the reservation step's own
+    // compensation, running next, then found nothing to cancel and left the stock short. Harmless
+    // while a failed step was skipped by the rollback; a silent loss the moment it was not.
     override suspend fun compensate(
         petich: Petich,
         payload: StockMovePayload,
     ) {
         val enriched = petich.enrichedPayload as StockMoveEnrichedPayload
-        inventoryService.withdraw(payload.toWarehouseId, enriched.finalAmount, enriched.reservationId!!)
+        inventoryService.reverseDeposit(payload.toWarehouseId, enriched.finalAmount)
     }
 }
 
