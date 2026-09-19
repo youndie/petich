@@ -175,7 +175,8 @@ What the rehearsal caught that reading the diff did not:
   replica; `findStuck` is a second queue it does not cover.
 * **A green rehearsal is not a clean bill.** konekt's top-up suite passes because no test makes the
   payment gateway *throw* — it covers the declined path, which B-18 did not change. The hole B-18
-  opened in `TopUpInterceptors.kt:82` is real, filed upstream, and invisible from here.
+  opened in `TopUpInterceptors.kt:82` is real and invisible from here — reported as
+  youndie/konekt#48, with a fix shape taken from that repository's own ledger invariant.
 
 The first of these is why 0.3.0 does not go to Central yet:
 [B-24](docs/backlog/B-24-a-release-that-adds-a-column-names-it-nowhere.md) is a release blocker, and
