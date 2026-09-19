@@ -33,6 +33,8 @@ The engine takes on exactly that:
   request, holding neither a thread nor a database connection;
 - **a deadline on that wait** — a suspended saga nobody came back to is rolled back by a background
   sweeper instead of living forever while holding resources it already claimed;
+- **a saga whose process died** — the same sweeper re-drives what was left in `PROCESSING` or
+  `COMPENSATING`, which is what the state written at every step boundary was paid for;
 - **resistance to races** — optimistic locking by version plus a per-saga mutex inside the process;
 - **reliable notifications** — with an outbox-aware repository (`petich-postgres` is one) the intent
   to emit an event is written in the SAME transaction as the state change, which makes "the work
@@ -214,14 +216,23 @@ depend on the hardware.
 This is the price of recoverability: state is written at every step boundary precisely so that a
 process dying between steps never leaves a saga in an unknown position.
 
-**Known is not the same as picked up.** Only `PENDING_SIGNATURE` has a background reader — the
-sweeper above. A process that dies mid-pass leaves its saga in `PROCESSING`, and one that dies
-mid-rollback leaves it in `COMPENSATING`; the engine resumes both correctly the moment somebody calls
-`process()` with that id again, and today nothing in this library calls it. The recovery is paid for
-at every step boundary and wired up by the application. `B-19` in the backlog is the query and the
-worker that would close the gap; its first half — a bounded, countable, terminal end for a rollback
-that keeps failing — is in, because a worker that re-drives sagas before that exists is a hot loop
-around a `compensate()` that will never succeed.
+**And something reads it.** A process that dies mid-pass leaves its saga in `PROCESSING`, one that
+dies mid-rollback leaves it in `COMPENSATING`, and `SuspendedPetichSweeper` now re-drives both
+through the engine, which resumes from the written position. It is off until you choose
+`stuckAfter`, and that number is a formula rather than a taste: there is no lease, so nothing
+distinguishes a dead process from a slow one, and it must exceed the longest a healthy pass can
+take —
+
+```
+stuckAfter > max(phaseTimeoutsMs ∪ compensationTimeoutsMs)
+```
+
+— because two instances re-driving one saga both call `intercept()`, and the optimistic version
+protects the row rather than the effects.
+
+The stores stamp each row on every write to answer that query, and that stamp is deliberately in no
+index: it changes on all eleven writes, so indexing it would make every one of them a non-HOT update
+on the busiest table here to serve a query that runs once per poll.
 
 ### 📊 Observability
 
