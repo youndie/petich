@@ -102,6 +102,12 @@ youndie/konekt#48, `ValidateTopUp` is a `PetichCheck` with no `compensate` to wr
 uses `ctx.emit`, and V13 migrates the four 0.3.0/0.4.0 columns. konekt's full build is green — 47
 test classes on `:server` alone.
 
+**First thing next iteration, before any new work:** `72e0c49` is a correctness fix every consumer
+needs and it is parked on this long-lived branch, so every later item branches from a `main` without
+it. It touches only `Petich.kt`, `DefinitionEngineTest.kt` and the research — cherry-pick it onto its
+own branch, merge it on green, and rebase this one. Holding a shipped fix hostage to an unfinished
+migration is the cost of having committed it here.
+
 **Next:** konekt's purchase saga, whose `HoldFundsInterceptor` holds money and suspends in one step —
 the member the new types have to earn their keep on. Then its tariff saga, then shashki, whose tree
 was still carrying another session's work at the start of this iteration.
