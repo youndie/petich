@@ -295,8 +295,14 @@ take —
 stuckAfter > max(phaseTimeoutsMs ∪ compensationTimeoutsMs)
 ```
 
-— because two instances re-driving one saga both call `intercept()`, and the optimistic version
-protects the row rather than the effects.
+— because a saga being worked on slowly by a live instance must not look stranded.
+
+**Two sweepers do not need anything built around them.** Each claims a saga with one write before
+touching it, and the row's own optimistic lock decides: on the stranded queue the claim re-stamps the
+row and it stops matching the query that found it, and on the expiry queue the claim is the
+`PENDING_SIGNATURE → COMPENSATING` transition. **A sweeper that loses the claim skips that saga** — it
+does not retry, which is the difference between an arbiter and a race — and reports it through
+`onContended`. No lease table, no second query, and nothing for an application to implement.
 
 The stores stamp each row on every write to answer that query, and that stamp is deliberately in no
 index: it changes on all eleven writes, so indexing it would make every one of them a non-HOT update

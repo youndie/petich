@@ -422,6 +422,15 @@ public sealed interface ExpireResult {
         val details: String,
     ) : ExpireResult
 
+    /**
+     * Another sweeper got there first. Its own answer, and the reason this type exists at all: a
+     * replica that loses the claim must SKIP the saga, not retry it — retrying is what turns two
+     * sweepers into two rollbacks of one saga.
+     */
+    public data class Contended(
+        val petichId: String,
+    ) : ExpireResult
+
     public data object NotFound : ExpireResult
 }
 
@@ -872,8 +881,7 @@ public class PetichEngine(
                         if (mismatch is PetichResult.SystemFailure) {
                             ExpireResult.ChainChanged(petichId, mismatch.details)
                         } else {
-                            triggerCompensation(petich.copy(suspendedUntilEpochMs = null), EXPIRED_REASON)
-                            ExpireResult.Expired(petichId)
+                            expireClaimed(petich, petichId)
                         }
                     }
                 }
@@ -883,6 +891,44 @@ public class PetichEngine(
                 if (--entry.holders == 0) petichLocks.remove(petichId)
             }
         }
+    }
+
+    /**
+     * Take the saga, then roll it back — in that order, and the order is the whole point.
+     *
+     * **The claim IS the `PENDING_SIGNATURE -> COMPENSATING` transition**, written with a plain
+     * `update` whose `false` is obeyed. The per-saga mutex above is per PROCESS: it keeps two
+     * coroutines here apart and says nothing about the replica next to it, and the optimistic lock
+     * on the row is the only thing both of them can see.
+     *
+     * **It has to be this write and not a touch of the version**, because a touch leaves the row
+     * matching `findExpired` and leaves the outcome to whoever writes `COMPENSATING` first — which
+     * is nobody, since the write that follows goes through [forceUpdateStateWithRetry] and that one
+     * re-reads and writes again until it wins. Its retry is right where it lives (it competes with a
+     * live handler, and losing the rollback mark would leave a saga the database shows as executing
+     * with nothing rolling it back) and wrong as an arbiter, so the arbitration happens before it.
+     *
+     * The cost is one extra write per expiry: the rollback's own first write records `COMPENSATING`
+     * a second time. That is the price of the loser being stopped before it calls a single
+     * `compensate()`, and it is paid only on the expiry path.
+     */
+    private suspend fun expireClaimed(
+        petich: Petich,
+        petichId: String,
+    ): ExpireResult {
+        val claimed =
+            petich.copy(
+                status = PetichStatus.COMPENSATING,
+                // Written here rather than left null so the rollback that follows computes the same
+                // starting point it would have computed for itself.
+                compensatingFromIndex = petich.currentInterceptorIndex,
+                suspendedUntilEpochMs = null,
+                version = petich.version + 1,
+            )
+        if (!repository.update(claimed)) return ExpireResult.Contended(petichId)
+
+        triggerCompensation(claimed, EXPIRED_REASON)
+        return ExpireResult.Expired(petichId)
     }
 
     public suspend fun process(petich: Petich): PetichResult {
