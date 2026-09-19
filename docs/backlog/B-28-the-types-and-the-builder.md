@@ -1,7 +1,7 @@
 ---
 id: B-28
 title: "PetichStep, PetichCheck and a definition that says the order out loud"
-status: wip
+status: done
 priority: P1
 size: L
 stage: stage-9-definition
@@ -50,7 +50,10 @@ val orderPetich = petich<OrderPayload>("order") {
 
 - AC: a saga's order is readable in one place and asserted by a test that snapshots `describeChain`;
   a `PetichCheck` cannot be placed after a `PetichStep`, proved by a builder test that fails;
-  a `PetichCheck` has no `compensate` to write; the engine contains no unchecked payload cast.
+  a `PetichCheck` has no `compensate` to write; a saga runs end to end from a definition.
+  **The fourth criterion as first written — "the engine contains no unchecked payload cast" — was
+  not achievable here and moved to [B-33](B-33-remove-the-interceptor-model.md)**; see the closing
+  note.
 - Anchors: `petich-core/src/commonMain/kotlin/Petich.kt`,
   `docs/research/research-petich-dsl.md`
 
@@ -85,4 +88,46 @@ iteration rather than the tail of this one.
 **Trap re-paid:** a comma in a backticked test name is legal on JVM and illegal on Kotlin/Native. It
 is in this repository's notes and it still cost a build, because the names were written before the
 target was thought about.
+
+## Closed 2026-09-20
+
+The engine runs a definition. `PetichStep`, `PetichCheck`, their contexts, `PetichDefinition`,
+`petich(type) { … }` and `describeChain()`, plus the walk moved onto a seam both models answer.
+
+**The change is small because [B-21](B-21-the-chain-is-addressed-by-position.md) had already made
+it small.** That item reduced "which members run in this phase" to one function; the two models meet
+there and nowhere else, each answering four questions — what it is called, how it reads in a dump,
+what running it produced, what undoing it produced. The walk, the per-phase indices, the suspension
+and the rollback are shared, which is why three hundred tests did not have to move in the same change
+as the model.
+
+**An acceptance criterion of this item was not achievable and is corrected rather than quietly met.**
+"The engine contains no unchecked payload cast" cannot be true while the interceptor arm exists —
+that arm *is* the cast — and it is not fully true afterwards either: a stored payload is polymorphic
+and a definition is generic, so one cast remains where a row meets the definition its type names.
+What changed is its number and its address: **one declared place instead of one per member behind a
+`supports()` that could lie about anybody's payload**. The criterion moved to B-33 in that form.
+
+**Two decisions the code made that the research had not.**
+
+*The position stays an index.* A definition is a flat ordered list, so the obvious move was to store
+the member's key instead of `currentInterceptorIndex`. It buys nothing: B-21's fingerprint already
+carries the keys of the executed prefix, so a chain that moved is caught by name either way, and a
+key-as-position column would be a third storage change in one epic. The per-phase index keeps its
+meaning and both models keep working.
+
+*`CompensationFailureHandler` takes a step key.* It took the member object, and under a definition
+there is no interceptor to hand over. A key is better anyway: the handler wants to say **which** step
+could not be undone, and the key is the identity the row carries. Three test doubles here implement
+it; neither consumer does, so the cost was three signatures.
+
+**Dead code removed on the way**, because it was what blocked the type change: `successfulInterceptors`
+was appended to on every `Proceed` and read by nothing.
+
+**Verified:** 345 tests, 0 failures, on `jvm` and `linuxX64`. Twelve new cases — six on the builder's
+refusals, six running a saga through a definition end to end, including konekt's shape (a member that
+acts and then suspends) and B-18's (a member that throws is undone along with the ones before it).
+Three mutations after the change was committed: the engine ignoring definitions fails the engine
+cases, `fail` behaving as `reject` fails the one case that separates them, and dropping the builder's
+ordering rule fails both cases that assert it.
 
