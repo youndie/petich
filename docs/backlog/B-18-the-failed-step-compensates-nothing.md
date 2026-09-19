@@ -105,8 +105,8 @@ there before they take this version:
 | where | what it does on compensation | verdict |
 |---|---|---|
 | konekt `TopUpInterceptors.kt:82` | `balances.debit(...)`, under a comment stating it is "ONLY REACHED WHEN THE CREDIT ACTUALLY HAPPENED" | **breaks, and it is money.** A decline still returns `Compensate` and is still not undone, but a `payments.settle()` that *throws* now reaches this and debits a balance that was never credited. The comment is false from this version on |
-| konekt `PurchaseInterceptors.kt:133` | `balances.release(...)` then `entitlements.cancel(...)` | **check.** Reached when `hold()` or `createPending()` throws; safe only if both are no-ops for an id they never saw |
-| shashki `SettlementSteps.kt:200` | refunds `enriched(CHARGE_ID) ?: payload.holdId` | **check.** A charge step that throws before recording its id now falls back to refunding the fare hold |
+| konekt `PurchaseInterceptors.kt:133` | `balances.release(...)` then `entitlements.cancel(...)` | **check, and the more expensive direction.** Reached when `hold()` or `createPending()` throws, and a release without a hold ADDS money that was never taken |
+| shashki `SettlementSteps.kt:200` | refunds `enriched(CHARGE_ID) ?: payload.holdId` | **breaks, and it is money** — youndie/shashki#13. Checked since: a TIP charge that throws records no `CHARGE_ID`, so the fallback takes `payload.holdId`, which on a tip is the fare's already-captured hold — the outcome the comment two lines above forbids in those words |
 | shashki `OrderSteps.kt:169` | `enriched(HOLD_ID)?.let { payments.release(it) }` | safe — guarded by the record the step leaves, which is the pattern to copy |
 | shashki `SettlementSteps.kt:225` | `payouts.remove(rideId, kind)` | safe — removing a row that is not there is a no-op |
 
