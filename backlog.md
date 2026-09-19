@@ -161,9 +161,9 @@ public page that overstates the guarantee, rather than waiting for the engine to
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-22](docs/backlog/B-22-eleven-updates-rewrite-a-column-that-never-changes.md) `[~]` | Every saga UPDATE rewrites the immutable payload column, and the tables are created with no room for HOT | P2 | S | - |
+| [B-23](docs/backlog/B-23-nothing-checks-the-write-count.md) `[ ]` | The write count the README sells the engine on is measured by nothing | P3 | S | - |
 
-## Closed (21)
+## Closed (22)
 
 **The gate and the negative control**
 
@@ -206,5 +206,9 @@ public page that overstates the guarantee, rather than waiting for the engine to
 - [B-19](docs/backlog/B-19-nobody-picks-up-a-saga-that-died-mid-pass.md) `[x]` - Nothing picks up a saga left in PROCESSING or COMPENSATING, and a failing compensation has no terminal state
 - [B-20](docs/backlog/B-20-reject-after-an-effect-keeps-it.md) `[x]` - Reject after a step has touched the outside world keeps what that step did
 - [B-21](docs/backlog/B-21-the-chain-is-addressed-by-position.md) `[x]` - A saga's position is an index into a chain assembled at runtime, and nothing notices when the chain changes
+
+**What the writes cost**
+
+- [B-22](docs/backlog/B-22-eleven-updates-rewrite-a-column-that-never-changes.md) `[x]` - Every saga UPDATE rewrites the immutable payload column, and the tables are created with no room for HOT
 
 <!-- END INDEX -->

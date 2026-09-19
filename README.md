@@ -108,6 +108,13 @@ application's decision. It ships no DDL either — the tables describe themselve
 so `MigrationUtils` and the Exposed Gradle plugin generate a schema that matches what the queries
 actually filter on.
 
+One thing a schema generator cannot say: `PetichTable.tuningStatements()` returns an
+`ALTER TABLE … SET (fillfactor = 80)` to run once beside the generated DDL. A saga row is updated at
+every step boundary, and Postgres can keep those updates off the index chain only while the page has
+room for the new version; at the default 100 there is none, and the table and its index bloat for a
+workload that was avoidable. `petich-sqlx4k-postgres` says the same thing as `WITH (fillfactor = 80)`
+in the SQL it hands you, because it states its schema as SQL — same setting, two shapes.
+
 ### ✍️ What it looks like
 
 A saga step is an interceptor: what to do, and how to undo it.
@@ -233,7 +240,9 @@ interceptors comes to 9 writes. The numbers were taken through `pg_stat_user_tab
 depend on the hardware.
 
 This is the price of recoverability: state is written at every step boundary precisely so that a
-process dying between steps never leaves a saga in an unknown position.
+process dying between steps never leaves a saga in an unknown position. Each of those writes is
+narrower than it was: the payload is written once by the insert and never sent again, so the largest
+column in the row is not rewritten — and re-TOASTed — eleven times for a value that never changes.
 
 **And something reads it.** A process that dies mid-pass leaves its saga in `PROCESSING`, one that
 dies mid-rollback leaves it in `COMPENSATING`, and `SuspendedPetichSweeper` now re-drives both
