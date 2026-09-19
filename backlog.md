@@ -192,7 +192,7 @@ the fix is a paragraph and a guard.
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-26](docs/backlog/B-26-the-second-queue-has-no-arbitration.md) `[?]` | findStuck hands out sagas through a second queue that a consumer's claim does not cover | P1 | M | - |
+| [B-26](docs/backlog/B-26-the-second-queue-has-no-arbitration.md) `[ ]` | findStuck hands out sagas through a second queue that a consumer's claim does not cover | P1 | M | - |
 
 ## Closed (25)
 
