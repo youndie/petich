@@ -5,8 +5,8 @@
 [![snapshots](https://reposilite.kotlin.website/api/badge/latest/snapshots/io/github/youndie/petich/petich-core?name=snapshots&color=blue&prefix=v)](https://reposilite.kotlin.website/#/snapshots/io/github/youndie/petich/petich-core)
 
 **a distributed saga engine for Kotlin** — a multi-step operation is described as a chain of
-interceptors; the engine walks it through phases and, when any step fails, undoes exactly what had
-already happened
+interceptors; the engine walks it through phases and, when any step fails, undoes the steps it
+recorded as done
 
 > 🔁 one interceptor → one step forward and one step back
 
@@ -26,7 +26,9 @@ The engine takes on exactly that:
 
 - **order and phases** — `ENRICHMENT → VALIDATION → AUTHORIZATION → EXECUTION → POST_PROCESSING`,
   with steps inside a phase ordered by priority;
-- **compensation** — a failure at step N calls `compensate()` on steps N−1 … 1, in reverse;
+- **compensation** — a failure at step N calls `compensate()` on steps N−1 … 1, in reverse. Step N
+  itself is not among them, and that is a contract rather than an oversight: see **What it asks of
+  an interceptor**;
 - **waiting for a human** — a saga can pause for a confirmation and continue on a later HTTP
   request, holding neither a thread nor a database connection;
 - **a deadline on that wait** — a suspended saga nobody came back to is rolled back by a background
@@ -136,6 +138,44 @@ return InterceptorResult.Suspend(requiredAction = "CONFIRM", ttl = 5.minutes)
 refusal would: typing a one-time code and approving a long-running request live on different time
 scales, and the step knows that, not the engine.
 
+### ⚠️ What it asks of an interceptor
+
+Four rules. They are the engine's side of the bargain stated from the other end, and an interceptor
+that breaks them fails in ways that look like storage faults.
+
+**`intercept()` must be idempotent.** The engine calls it, and only then writes the new position —
+so a call that already happened can happen again. This is not the rare case of a process dying in
+between: an optimistic-lock conflict on that write makes the engine re-read the row and run the same
+step a second time, on a healthy instance, under nothing worse than two requests touching one saga.
+A step whose effect is a remote call wants its own idempotency key, and the money-shaped ones want
+the remote side to honour it.
+
+**`compensate()` must be idempotent too**, for the same reason mirrored: the rollback commits how
+far it has got *after* calling the step, so an interrupted rollback re-compensates the step it was
+on.
+
+**The step that failed compensates nothing.** Rollback starts at N−1, so if step N's effect reached
+the far side and the call came back as a timeout — the ordinary ambiguous failure of a distributed
+system — nothing releases it. The engine cannot tell that case from a call that never landed,
+because it only ever learns that the step did not report success. Until it does something better
+(`B-18` in the backlog), a step whose effect is expensive to leak should make its own attempt
+recoverable: a durable marker written through `PetichSideEffect` in the same transaction as the
+state, or a reservation the far side expires on its own.
+
+**`Reject` does not roll anything back.** Two results refuse a saga and they are not
+interchangeable:
+
+| result | what the engine does | the saga ends as |
+| --- | --- | --- |
+| `Reject(reason)` | nothing else runs; no `compensate()` is called | `REJECTED` |
+| `Compensate(reason)` | steps N−1 … 1 are compensated in reverse | `FAILED` |
+
+`Reject` is for a refusal that comes before anything has happened — a validation, a limit, a
+policy — and it is the wrong answer once any step has touched the outside world, where it silently
+keeps what those steps did. The engine does not currently refuse that combination (`B-20`), so
+today the choice is the interceptor's, and it is the one place in this API where a plausible answer
+is an expensive one.
+
 ### 🚫 What it does not do
 
 - **it does not choose a DBMS and does not create tables** — DDL is the application's, and so are
@@ -159,6 +199,13 @@ depend on the hardware.
 
 This is the price of recoverability: state is written at every step boundary precisely so that a
 process dying between steps never leaves a saga in an unknown position.
+
+**Known is not the same as picked up.** Only `PENDING_SIGNATURE` has a background reader — the
+sweeper above. A process that dies mid-pass leaves its saga in `PROCESSING`, and one that dies
+mid-rollback leaves it in `COMPENSATING`; the engine resumes both correctly the moment somebody calls
+`process()` with that id again, and today nothing in this library calls it. The recovery is paid for
+at every step boundary and wired up by the application. `B-19` in the backlog is the query and the
+worker that would close the gap.
 
 ### 📊 Observability
 
