@@ -53,3 +53,36 @@ val orderPetich = petich<OrderPayload>("order") {
   a `PetichCheck` has no `compensate` to write; the engine contains no unchecked payload cast.
 - Anchors: `petich-core/src/commonMain/kotlin/Petich.kt`,
   `docs/research/research-petich-dsl.md`
+
+## Iteration 1 — 2026-09-19
+
+**The vocabulary and the builder are in; the engine is untouched.** `PetichStep`, `PetichCheck`,
+their contexts, `PetichMember`, `PetichDefinition`, `petich(type) { … }` and `describeChain()`, with
+six cases on both targets. 333 tests, 0 failures.
+
+**A correction to D2, found by konekt before a line of the engine was touched.** D2 said a member
+that both acts and refuses "must be a `PetichStep` that fails". konekt's authorisation holds money,
+refuses on business grounds when the hold moves no row, records the decline and then suspends — one
+member, on a recorded decision of its own. Under D2 as written it could only `fail`, which ends the
+saga `FAILED`: a subscriber told the server broke when they were told they had insufficient funds.
+
+So `reject` is on **both** contexts and `fail` only on a step's. The split does not buy the right to
+refuse; it buys a check having **no `compensate`**, and therefore no place after an effect. The
+research carries the correction where D2 is.
+
+**The outcome mechanism is a context that records, not an exception that unwinds.**
+`ctx.suspendFor(...)`, `ctx.reject(...)` and `ctx.fail(...)` return `Unit` and set an intent the
+engine reads after the member returns. A control-flow exception would be swallowed by the first
+member wrapping its own work in `catch (Exception)` — and by four such sites in the engine itself.
+`return ctx.reject(reason)` reads as the end of a member because it is one, and a member may act and
+then suspend, which is what konekt does.
+
+**What is left, and it is the other half of the acceptance:** the engine walking a definition instead
+of a filtered, sorted list, and with it the disappearance of the unchecked `payload as T` and
+`withPayloadDiagnostics`. That is where the existing 300-odd tests move over, so it is its own
+iteration rather than the tail of this one.
+
+**Trap re-paid:** a comma in a backticked test name is legal on JVM and illegal on Kotlin/Native. It
+is in this repository's notes and it still cost a build, because the names were written before the
+target was thought about.
+
