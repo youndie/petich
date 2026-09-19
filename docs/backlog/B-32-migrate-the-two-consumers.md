@@ -1,7 +1,7 @@
 ---
 id: B-32
 title: "Rewrite konekt's and shashki's sagas in the new model — the acceptance"
-status: open
+status: wip
 priority: P1
 size: L
 stage: stage-9-definition
