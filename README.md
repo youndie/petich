@@ -25,7 +25,8 @@ transaction but actions already performed, in reverse order, and only those that
 The engine takes on exactly that:
 
 - **order and phases** — `ENRICHMENT → VALIDATION → AUTHORIZATION → EXECUTION → POST_PROCESSING`,
-  with steps inside a phase ordered by priority;
+  with steps inside a phase ordered by priority, and ties by name rather than by whatever order a
+  dependency container assembled them in;
 - **compensation** — a failure at step N calls `compensate()` on steps N … 1, in reverse, step N
   included: the engine never learned whether that one's effect landed, so it undoes it too — see
   **What it asks of an interceptor**;
@@ -167,6 +168,21 @@ record.
 Two results are NOT this case, and both keep the old starting point: a step that returns
 `Compensate` reported its outcome and is not undone by the engine, and an expired suspension rolls
 back from the step that suspended, which committed.
+
+**A saga remembers which steps it has run, and refuses to resume against a different chain.** Its
+position is an index into a list filtered by `supports()` and sorted by priority — assembled fresh on
+every pass — so a deploy that adds, removes or re-prioritises a step in the same or an earlier phase
+would otherwise re-point every suspended saga at a different step, and the rollback with it. Each
+write records a fingerprint of the steps already run; a resume that cannot reproduce it stops with a
+message naming both, and runs nothing.
+
+The fingerprint covers that prefix and not the whole chain, so appending a step is an ordinary
+release. The column is nullable and a null is never refused, so the upgrade that introduces the guard
+does not stop the sagas it cannot yet protect — those keep the old behaviour, including its silence.
+`PetichEngine.describeChain(payload)` prints the resolved order for a payload type: log it at
+startup, or snapshot it in a test, and a chain that moved shows up in a diff instead of in a saga.
+`PetichInterceptor.stepKey` is what that order and that fingerprint are made of — the class name by
+default, overridable to survive a rename.
 
 **A `compensate()` that throws stops the rollback below it.** The steps under the one that threw are
 not undone, and the saga stays `COMPENSATING`. That is retried — the whole rollback, not just the
