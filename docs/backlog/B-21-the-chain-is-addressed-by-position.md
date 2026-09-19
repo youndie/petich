@@ -1,7 +1,7 @@
 ---
 id: B-21
 title: "A saga's position is an index into a chain assembled at runtime, and nothing notices when the chain changes"
-status: open
+status: wip
 priority: P1
 size: S/M
 stage: stage-6-recovery

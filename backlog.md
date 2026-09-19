@@ -161,7 +161,7 @@ public page that overstates the guarantee, rather than waiting for the engine to
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-21](docs/backlog/B-21-the-chain-is-addressed-by-position.md) `[ ]` | A saga's position is an index into a chain assembled at runtime, and nothing notices when the chain changes | P1 | S/M | - |
+| [B-21](docs/backlog/B-21-the-chain-is-addressed-by-position.md) `[~]` | A saga's position is an index into a chain assembled at runtime, and nothing notices when the chain changes | P1 | S/M | - |
 | [B-22](docs/backlog/B-22-eleven-updates-rewrite-a-column-that-never-changes.md) `[ ]` | Every saga UPDATE rewrites the immutable payload column, and the tables are created with no room for HOT | P2 | S | - |
 
 ## Closed (20)
