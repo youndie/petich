@@ -61,3 +61,39 @@ state in this engine with no automatic exit, and by default it is also silent.
   `petich-conformance/src/commonMain/kotlin/io/github/youndie/petich/conformance/PetichStoreConformance.kt`,
   `petich-postgres/src/main/kotlin/ExposedPetichRepository.kt`,
   `petich-sqlx4k-postgres/src/commonMain/kotlin/io/github/youndie/petich/sqlx4k/postgres/PostgresPetichStore.kt`
+
+## Iteration 1 — 2026-09-19
+
+**The first half is done**, in the order this item set: a rollback that keeps failing now counts
+its attempts on the saga (`Petich.compensationAttempts`, a column in both stores with a DDL default
+so it can be added by `ALTER` to a table that already holds sagas) and, at
+`PetichEngineConfig.maxCompensationAttempts`, becomes `PetichStatus.COMPENSATION_FAILED` — terminal,
+and its own sentence on a replay rather than folded in with `FAILED`.
+`CompensationFailureHandler.exhausted` supplies the events, committed in the same transaction as
+that status; `PetichEngineMetrics.onCompensationFailure(type, attempt, exhausted)` counts both
+kinds; `requireCompensationHandler` refuses the no-op handler at construction, in the shape
+`requireOutbox` and `requireSideEffects` already use.
+
+Verified: 279 tests, 0 failures, the corpus run against both stores on a real Postgres — nothing
+skipped, which is the thing to check here rather than the count. Proved by mutation: dropping
+`compensation_attempts` from the Exposed update makes the corpus name the rule and print the field.
+
+**What stops the second half, and it is a design question rather than work.** The staleness
+criterion has nothing to filter on: `petiches` has no `updated_at`, so "in `PROCESSING` and
+untouched since" cannot be expressed at all. That is a second column in both stores, an index for
+the query, a corpus rule — and a clock question this repository already has an open issue about.
+Whoever stamps `updated_at` stamps it from their own clock, several replicas write these rows, and
+youndie/petich#20 is the same defect one table over. The next iteration has to answer it before the
+query is written, because a sweeper that trusts a skewed stamp re-drives a saga that a live
+instance is still working on — and the version protects the row, not the effects.
+
+**Two consequences of this half that a consumer meets before the second one exists:**
+
+* `PetichStatus` has a new constant. An instance built before it cannot decode a row that carries
+  it, so the version that knows the name deploys first; and an application matching exhaustively on
+  the enum stops compiling until it handles the case, which is the cheap half of the same warning.
+* A `compensate()` that throws now leaves a **terminal** saga rather than a stuck one. Anything that
+  counted `COMPENSATING` rows as "needs a person" should count `COMPENSATION_FAILED` instead, and
+  anything that treated `isTerminal()` as "nothing more can go wrong here" is now wrong in a new
+  way: it can mean half undone.
+
