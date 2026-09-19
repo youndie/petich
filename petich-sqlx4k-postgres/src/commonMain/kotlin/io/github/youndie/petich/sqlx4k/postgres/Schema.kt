@@ -51,7 +51,11 @@ public fun petichPostgresSchema(
             -- six-step saga makes, and an index containing it would turn each of those into a
             -- non-HOT update on the busiest table here, to serve a query that runs once per poll.
             -- The sweeper reaches its rows through the leading status column of the index below.
-            updated_at BIGINT NOT NULL DEFAULT 0
+            updated_at BIGINT NOT NULL DEFAULT 0,
+            -- The fingerprint of the steps this saga has already run (Petich.chainFingerprint).
+            -- Nullable on purpose: a row written before the column existed carries NULL, and NULL
+            -- is never refused, so an upgrade does not stop the sagas already in flight.
+            chain_fingerprint VARCHAR(64)
         );
         """.trimIndent(),
         // The sweeper's query is "status = PENDING_SIGNATURE and suspended_until <= now", run on

@@ -48,6 +48,11 @@ public class PetichTable(
     // rechecks this from the heap: in a healthy system the non-terminal rows are a handful.
     public val updatedAt: Column<Long> = long("updated_at").default(0L)
 
+    // The fingerprint of the steps this saga has already run (see Petich.chainFingerprint).
+    // Nullable, and that is what makes the upgrade harmless: a row written before this column
+    // existed carries null, and a null is never refused.
+    public val chainFingerprint: Column<String?> = varchar("chain_fingerprint", 64).nullable()
+
     override val primaryKey: PrimaryKey = PrimaryKey(id)
 
     // Declared, not merely recommended in a comment. Exposed's tooling treats a Table as the whole

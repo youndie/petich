@@ -115,6 +115,10 @@ public class PetichStoreConformance {
                             // rule, and a field left at its default cannot tell a store that
                             // writes the column from one that forgot it exists.
                             compensationAttempts = 2,
+                            // Non-default for the same reason as the line above: a null here would
+                            // pass against a store that does not write the column at all, and a
+                            // fingerprint that never comes back is a guard that never fires.
+                            chainFingerprint = "deadbeef",
                             version = 1L,
                         )
                 val applied = subject.repository.update(next)

@@ -93,6 +93,11 @@ public data class Petich(
     // It is what stops a deterministically failing compensate() from being retried for ever once
     // something starts re-driving abandoned sagas (the second half of B-19).
     val compensationAttempts: Int = 0,
+    // A fingerprint of the steps this saga has already run, in order (see PetichEngine's
+    // describeChain for what a chain is). Null on a saga written before this existed and on one
+    // whose engine never computed it; null is never refused, so an upgrade does not stop the sagas
+    // already in flight.
+    val chainFingerprint: String? = null,
 )
 
 // A wall clock for deadlines. Passed in rather than System.currentTimeMillis(): commonMain of a
@@ -176,6 +181,13 @@ public data class PetichEngineConfig(
     // this engine cannot leave on its own, and with the default handler it is also silent - so the
     // first anyone hears of it is a support ticket about a reservation nobody released.
     val requireCompensationHandler: Boolean = false,
+    // Refuse a phase whose steps share a priority for the payload being processed. Off by default:
+    // equal priorities are legal and common, and since the tie is now broken by stepKey rather than
+    // by the order a dependency container assembled, they are no longer ambiguous - only unstated.
+    //
+    // Worth switching on where the order of compensations is reviewed by a person, because a tie
+    // means the order came from a name rather than from a decision.
+    val requireDistinctPriorities: Boolean = false,
 ) {
     init {
         require(maxProcessAttempts > 0) { "maxProcessAttempts must be positive" }
@@ -239,6 +251,16 @@ public sealed interface InterceptorResult {
 public interface PetichInterceptor<T : PetichPayload> {
     public val phase: PetichPhase
     public val priority: Int get() = 0 // Defaults to 0; the higher the number, the earlier it runs
+
+    /**
+     * What this step is called, in the chain and in the fingerprint a saga carries.
+     *
+     * The class's own name by default, which is right until the class is renamed or moved: an
+     * override pins the identity to something a refactoring cannot touch. It is also the tie-break
+     * between two steps of equal priority, so it decides an order that used to be whatever the
+     * dependency container happened to hand over.
+     */
+    public val stepKey: String get() = this::class.simpleName ?: "anonymous"
 
     public fun supports(payload: PetichPayload): Boolean
 
@@ -388,6 +410,18 @@ public sealed interface ExpireResult {
 
     public data object NotExpiredYet : ExpireResult
 
+    /**
+     * The saga's recorded prefix does not match the chain this process assembles, so nothing was
+     * rolled back. Its own answer rather than [NotExpiredYet], because the two need opposite
+     * reactions: one is a saga whose client still has time, the other is a saga that will sit here
+     * expired for ever until somebody looks. A sweeper that folded them together would be silently
+     * doing nothing, which is the state it is hardest to notice from outside.
+     */
+    public data class ChainChanged(
+        val petichId: String,
+        val details: String,
+    ) : ExpireResult
+
     public data object NotFound : ExpireResult
 }
 
@@ -488,6 +522,133 @@ public class PetichEngine(
         }
     }
 
+    /**
+     * The steps of one phase that apply to this payload, in the order they run.
+     *
+     * **The tie-break is [PetichInterceptor.stepKey], not the order the list arrived in.** Kotlin's
+     * sort is stable, so two steps of equal priority used to run in whatever order the dependency
+     * container assembled them — a decision nobody made, taken in a file that has nothing to do with
+     * this saga, and one that changes when a module is registered somewhere else. Ordering by the
+     * name makes it a property of the steps themselves.
+     *
+     * Ties are still worth refusing outright, and [PetichEngineConfig.requireDistinctPriorities]
+     * does that. It cannot be checked at construction, because `supports()` takes a payload
+     * INSTANCE: two steps of one phase and equal priority for payload types that never meet are
+     * legitimate, and only here is it known whether they meet.
+     */
+    private fun chainFor(
+        phase: PetichPhase,
+        payload: PetichPayload,
+    ): List<PetichInterceptor<*>> {
+        val chain =
+            interceptors
+                .filter { it.phase == phase && it.supports(payload) }
+                .sortedWith(compareByDescending<PetichInterceptor<*>> { it.priority }.thenBy { it.stepKey })
+
+        if (config.requireDistinctPriorities) {
+            val collisions =
+                chain
+                    .groupBy { it.priority }
+                    .filterValues { it.size > 1 }
+                    .map { (priority, steps) -> "$priority: ${steps.joinToString { it.stepKey }}" }
+            require(collisions.isEmpty()) {
+                "requireDistinctPriorities is set, and $phase has steps sharing a priority for " +
+                    "${payload::class.simpleName}: ${collisions.joinToString("; ")}"
+            }
+        }
+        return chain
+    }
+
+    /**
+     * The resolved chain for one payload, phase by phase, as text.
+     *
+     * The flow of a single saga is written down nowhere else: to see it, someone has to collect
+     * every interceptor whose `supports()` accepts the payload and sort them, in their head. Numeric
+     * priorities behave like `z-index` as they grow, and the order compensations run in is the
+     * reverse of this — which is a thing to review with eyes, in a payments codebase.
+     *
+     * Print it at startup, or snapshot it in a test: then a chain that changed shows up in a diff
+     * rather than in a saga.
+     */
+    public fun describeChain(payload: PetichPayload): String =
+        PetichPhase.entries.joinToString("\n") { phase ->
+            val steps = chainFor(phase, payload)
+            val body = if (steps.isEmpty()) "-" else steps.joinToString(" -> ") { "${it.stepKey}(${it.priority})" }
+            "$phase: $body"
+        }
+
+    /**
+     * A fingerprint of the steps this saga has ALREADY RUN, in order.
+     *
+     * **The prefix, not the whole chain, and that is the whole design.** A fingerprint over every
+     * step would refuse every saga in flight after any legitimate deploy that appends one, and a
+     * guard that fires on a normal release is switched off in its first week — leaving the silent
+     * case back where it was, with a disabled check in front of it.
+     *
+     * Its own hash rather than [String.hashCode]: this value is written to a database by one process
+     * and compared by another, possibly on a different target, and a hash whose algorithm is not
+     * promised across those is a comparison that fails for a reason nobody can see. FNV-1a is four
+     * lines and the same everywhere.
+     */
+    private fun prefixFingerprint(petich: Petich): String? {
+        val names = mutableListOf<String>()
+        try {
+            for (phase in PetichPhase.entries) {
+                if (phase.ordinal > petich.currentPhase.ordinal) break
+                val steps = chainFor(phase, petich.payload).map { it.stepKey }
+                names += if (phase == petich.currentPhase) steps.take(petich.currentInterceptorIndex) else steps
+            }
+        } catch (e: Exception) {
+            // The chain could not be assembled — a supports() that throws, or a tie refused by
+            // configuration. NO FINGERPRINT, rather than a failure: this is a guard, and a guard
+            // must never be the reason a write does not happen. Every write path goes through here,
+            // including the emergency transition to FAILED that exists precisely for an interceptor
+            // that misbehaves; throwing from here turned that path into an exception escaping
+            // process() (caught by EngineDefectsTest, which is what it is for).
+            //
+            // Nothing is hidden by this: the counter says it happened, and a non-zero rate means
+            // sagas are being persisted with the guard off. A saga left without a fingerprint is
+            // one that will not be refused later — the same position as every saga written before
+            // this existed.
+            metrics.onChainUnavailable(petich.type, e.message ?: e::class.simpleName ?: "unknown")
+            return null
+        }
+
+        var hash = 2166136261u
+        for (char in names.joinToString("|")) {
+            hash = hash xor char.code.toUInt()
+            hash *= 16777619u
+        }
+        return hash.toString(16)
+    }
+
+    /**
+     * The saga's recorded prefix against the chain this process assembles today, or null when they
+     * agree — and null whenever the saga carries no fingerprint, which is how an upgrade leaves
+     * everything already in flight alone.
+     *
+     * Refusing is the whole point. A saga's position is an index into a list filtered by
+     * `supports()` and sorted by priority, and the row stores nothing else: a deploy that adds,
+     * removes or re-prioritises a step in the same or an earlier phase silently re-points every
+     * suspended saga at a DIFFERENT step, and the rollback with it. Stopping loudly is worth far
+     * more than continuing plausibly, and nothing here tries to repair it — repairing would mean
+     * guessing which step the index used to mean.
+     */
+    private fun chainMismatch(petich: Petich): PetichResult? {
+        val recorded = petich.chainFingerprint ?: return null
+        // Null means the chain could not be assembled at all, which is not the same as "it changed"
+        // and must not be reported as it: refusing here would turn a broken supports() into a saga
+        // nobody can touch, on top of the failure it already causes.
+        val current = prefixFingerprint(petich) ?: return null
+        if (recorded == current) return null
+        return PetichResult.SystemFailure(
+            "the interceptor chain changed under saga ${petich.id}: it recorded $recorded for the steps " +
+                "it had run and this process computes $current, so ${petich.currentPhase} index " +
+                "${petich.currentInterceptorIndex} no longer means the same step. Nothing was run. " +
+                "The chain here is:\n${describeChain(petich.payload)}",
+        )
+    }
+
     private suspend fun triggerCompensation(
         petich: Petich,
         reason: String,
@@ -550,10 +711,7 @@ public class PetichEngine(
 
             for (phaseOrdinal in startPhaseOrdinal downTo 0) {
                 val phase = PetichPhase.entries[phaseOrdinal]
-                val phaseInterceptors =
-                    interceptors
-                        .filter { it.phase == phase && it.supports(currentPetich.payload) }
-                        .sortedByDescending { it.priority }
+                val phaseInterceptors = chainFor(phase, currentPetich.payload)
 
                 if (phaseInterceptors.isEmpty()) continue
 
@@ -706,9 +864,17 @@ public class PetichEngine(
                         ExpireResult.NotExpiredYet
                     }
 
+                    // The same refusal as on the forward path, and it matters more here: an
+                    // expiry rolls back without anyone watching, and a rollback walking a chain
+                    // that has changed under it compensates steps that never ran.
                     else -> {
-                        triggerCompensation(petich.copy(suspendedUntilEpochMs = null), EXPIRED_REASON)
-                        ExpireResult.Expired(petichId)
+                        val mismatch = chainMismatch(petich)
+                        if (mismatch is PetichResult.SystemFailure) {
+                            ExpireResult.ChainChanged(petichId, mismatch.details)
+                        } else {
+                            triggerCompensation(petich.copy(suspendedUntilEpochMs = null), EXPIRED_REASON)
+                            ExpireResult.Expired(petichId)
+                        }
                     }
                 }
             }
@@ -791,7 +957,8 @@ public class PetichEngine(
                             },
                     ),
                 )
-            if (updatePetich(updated, outboxEvents, sideEffects)) return updated
+            val stamped = updated.copy(chainFingerprint = prefixFingerprint(updated))
+            if (updatePetich(stamped, outboxEvents, sideEffects)) return stamped
         }
         throw OptimisticLockException()
     }
@@ -819,6 +986,8 @@ public class PetichEngine(
                 .saveOrGet(petich)
                 .copy(resumePayload = petich.resumePayload)
         var currentEnrichedPayload = currentPetich.enrichedPayload
+
+        chainMismatch(currentPetich)?.let { return it }
 
         if (currentPetich.status == PetichStatus.COMPENSATING) {
             return triggerCompensation(currentPetich, "Resuming compensation")
@@ -866,10 +1035,7 @@ public class PetichEngine(
                     currentPetich = currentPetich.copy(currentPhase = phase, currentInterceptorIndex = 0)
                 }
 
-                val phaseInterceptors =
-                    interceptors
-                        .filter { it.phase == phase && it.supports(currentPetich.payload) }
-                        .sortedByDescending { it.priority }
+                val phaseInterceptors = chainFor(phase, currentPetich.payload)
 
                 val runPhase =
                     suspend {
@@ -1022,7 +1188,7 @@ public class PetichEngine(
 
                                 is InterceptorResult.Proceed -> {
                                     successfulInterceptors.add(interceptor)
-                                    val updated =
+                                    val moved =
                                         currentPetich.copy(
                                             currentInterceptorIndex = index + 1,
                                             enrichedPayload = currentEnrichedPayload,
@@ -1033,6 +1199,7 @@ public class PetichEngine(
                                             // motion.
                                             suspendedUntilEpochMs = null,
                                         )
+                                    val updated = moved.copy(chainFingerprint = prefixFingerprint(moved))
                                     if (!updatePetich(
                                             updated,
                                             interceptorResult.outboxEvents,
@@ -1056,7 +1223,7 @@ public class PetichEngine(
             // BEFORE the version increment, so a caller reading result.petich saw something other
             // than what the database holds — the same class of defect already fixed in the
             // Resuspend branch.
-            val completed =
+            val finished =
                 currentPetich.copy(
                     status = PetichStatus.COMPLETED,
                     enrichedPayload = currentEnrichedPayload,
@@ -1067,6 +1234,7 @@ public class PetichEngine(
                     // a stale deadline into the database.
                     suspendedUntilEpochMs = null,
                 )
+            val completed = finished.copy(chainFingerprint = prefixFingerprint(finished))
             if (!repository.update(completed)) throw OptimisticLockException()
             return PetichResult.Success(completed)
         } catch (e: TimeoutCancellationException) {

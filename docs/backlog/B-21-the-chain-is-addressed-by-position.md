@@ -1,7 +1,7 @@
 ---
 id: B-21
 title: "A saga's position is an index into a chain assembled at runtime, and nothing notices when the chain changes"
-status: open
+status: done
 priority: P1
 size: S/M
 stage: stage-6-recovery
@@ -46,3 +46,48 @@ in, which is the DI container's business rather than anybody's decision.
 - Anchors: `petich-core/src/commonMain/kotlin/Petich.kt`,
   `petich-postgres/src/main/kotlin/PetichTable.kt`,
   `petich-sqlx4k-postgres/src/commonMain/kotlin/io/github/youndie/petich/sqlx4k/postgres/Schema.kt`
+
+## Closed 2026-09-19
+
+The prefix fingerprint, in a nullable column, checked on both entry points — a forward pass and an
+expiry, the second mattering more because it rolls back with nobody watching. A mismatch returns
+`SystemFailure` naming both fingerprints and the chain as this process sees it, and runs nothing;
+an expiry gets its own `ExpireResult.ChainChanged`, which the sweeper reports through
+`onWorkerFailure` rather than folding in with "nothing to do here" — such a saga comes back on every
+pass for ever, and a worker that returns quietly each time looks exactly like an idle one.
+
+**Ties are broken by `stepKey`, not refused.** The item said an equal priority should be an error
+where the chain is assembled. Refusing outright breaks at *saga* time rather than at startup, and it
+would break this repository's own fixtures and any consumer that never needed to think about it —
+for an ambiguity that is now gone anyway, since the order no longer depends on the container. So:
+deterministic always, and `PetichEngineConfig.requireDistinctPriorities` for anyone who wants the tie
+named, in the shape `requireOutbox` and `requireCompensationHandler` already use. Neither consumer
+has a tie today: konekt declares one step per phase per payload type and overrides no priority at
+all, shashki overrides two in one phase.
+
+**A test I wrote asserted the wrong thing, and the run said so.** "A saga written before fingerprints
+existed is never refused" asserted it would succeed. It does not: with a null fingerprint the engine
+proceeds onto the *wrong step* and asks for a confirmation the client already gave. That is the old
+behaviour, in full view, and it is what the nullable column costs — refusing there would stop every
+saga in flight at the one release that has not yet protected any of them. The test now asserts
+exactly that, including the wrong step by name, rather than a success that never happens.
+
+**And a defect this change introduced was caught by a test written for something else.** Computing
+the fingerprint on every write made every write depend on `supports()` not throwing — including the
+emergency transition to `FAILED`, which exists precisely for an interceptor that misbehaves.
+`EngineDefectsTest`'s "the transition to FAILED survives a version conflict" turned red, because the
+exception now escaped `process()` entirely. A guard must never be the reason a write does not happen:
+the chain assembly is wrapped, an unassemblable chain yields no fingerprint, and
+`PetichEngineMetrics.onChainUnavailable` says it happened — a non-zero rate there means sagas are
+being persisted with this guard off.
+
+**Not done, and deliberately:** a step key persisted in place of the index. It remains the right end
+state, and it is a schema change plus a migration for rows in flight plus an identity every
+interceptor declares. `stepKey` arrives here as the *input* to the fingerprint with a default, which
+costs a consumer nothing and makes the eventual move cheaper.
+
+**Where it ran:** `./gradlew build` on the Linux box, 305 tests, 0 failures, six new cases on `jvm`
+and `linuxX64`. Two mutations after the change was committed: fingerprinting the whole chain instead
+of the prefix fails the appended-step case and nothing else; dropping the `stepKey` tie-break fails
+the registration-order case and nothing else.
+

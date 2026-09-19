@@ -103,6 +103,10 @@ public class SuspendedPetichSweeper(
     // and a counter: a rate that is normally zero and suddenly is not says that instances are
     // dying mid-saga, which nothing else in this library is in a position to notice.
     private val onRevived: (String) -> Unit = {},
+    // A saga the query offered and the engine then declined to expire: the client answered while
+    // the batch was in flight, or the row had already moved on. Ordinary, and worth counting only
+    // because a rate that is always high means the poll interval is fighting the deadline.
+    private val onNotExpired: (String) -> Unit = {},
     /**
      * Something failed that is not one item's own work: the storage refused a pass, or writing an
      * outcome back did not go through.
@@ -185,9 +189,26 @@ public class SuspendedPetichSweeper(
                 }
                 // The engine makes the decision under its own lock: by now the client may have
                 // answered, making the query results stale (see expireSuspended).
-                if (engine.expireSuspended(petich.id) is ExpireResult.Expired) {
-                    expired++
-                    onExpired(petich.id)
+                when (val outcome = engine.expireSuspended(petich.id)) {
+                    is ExpireResult.Expired -> {
+                        expired++
+                        onExpired(petich.id)
+                    }
+
+                    // Not folded in with "nothing to do here". This saga is past its deadline and
+                    // cannot be rolled back by this build, so it will come back on every pass for
+                    // ever - and a worker returning quietly every time is exactly what an idle one
+                    // looks like.
+                    is ExpireResult.ChainChanged -> {
+                        onWorkerFailure("expire:${petich.id}", IllegalStateException(outcome.details))
+                    }
+
+                    // NotFound, NotSuspended and NotExpiredYet: the query's answer was stale by
+                    // the time the lock was taken, which is the race this path exists to lose
+                    // safely.
+                    else -> {
+                        onNotExpired(petich.id)
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e

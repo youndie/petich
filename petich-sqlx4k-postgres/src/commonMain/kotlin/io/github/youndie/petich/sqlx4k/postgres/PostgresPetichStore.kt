@@ -69,7 +69,7 @@ public class PostgresPetichStore(
                 sql(
                     "INSERT INTO $table ($COLUMNS) VALUES " +
                         "(:id, :type, :phase, :index, :status, :payload, :enriched, :version, " +
-                        ":suspendedUntil, :compensationAttempts, :updatedAt) " +
+                        ":suspendedUntil, :compensationAttempts, :updatedAt, :chainFingerprint) " +
                         "ON CONFLICT (id) DO NOTHING",
                 ).bindState(petich)
                     // The type is written once and never updated: a saga does not change what it
@@ -98,7 +98,8 @@ public class PostgresPetichStore(
                             "payload = :payload, enriched_payload = :enriched, version = :version, " +
                             "suspended_until = :suspendedUntil, " +
                             "compensation_attempts = :compensationAttempts, " +
-                            "updated_at = :updatedAt " +
+                            "updated_at = :updatedAt, " +
+                            "chain_fingerprint = :chainFingerprint " +
                             "WHERE id = :id AND version = :expectedVersion",
                     ).bindState(petich)
                         .bind("expectedVersion", petich.version - 1),
@@ -175,6 +176,7 @@ public class PostgresPetichStore(
             // The store's own stamp rather than a field of the saga - see ExpiringPetichRepository
             // on why it is neither in Petich nor in any index.
             .bind("updatedAt", clock.nowEpochMs())
+            .bind("chainFingerprint", petich.chainFingerprint)
 
     private fun ResultSet.Row.toDomain(): Petich =
         Petich(
@@ -188,6 +190,7 @@ public class PostgresPetichStore(
             version = get("version").asLong(),
             suspendedUntilEpochMs = get("suspended_until").asLongOrNull(),
             compensationAttempts = get("compensation_attempts").asInt(),
+            chainFingerprint = get("chain_fingerprint").asStringOrNull(),
         )
 
     private companion object {
@@ -198,7 +201,7 @@ public class PostgresPetichStore(
          */
         const val COLUMNS =
             "id, type, current_phase, current_interceptor_index, status, payload, enriched_payload, " +
-                "version, suspended_until, compensation_attempts, updated_at"
+                "version, suspended_until, compensation_attempts, updated_at, chain_fingerprint"
 
         /**
          * Polymorphic, because the payload hierarchy is: what is stored carries a discriminator and
