@@ -51,12 +51,21 @@ public enum class PetichStatus {
     REJECTED,
     FAILED,
     COMPENSATING,
+
+    // The rollback ran out of attempts. FAILED means "undone"; this means "undone in part, and
+    // nobody is going to try again" — the difference matters to whoever has to finish it by hand,
+    // and collapsing the two is how a half-rolled-back saga hides among the ordinary failures.
+    //
+    // Rolling deploys: an instance built before this constant existed cannot decode a row carrying
+    // it. Deploy the version that knows the name before anything starts writing it.
+    COMPENSATION_FAILED,
 }
 
 public fun PetichStatus.isTerminal(): Boolean =
     this == PetichStatus.COMPLETED ||
         this == PetichStatus.REJECTED ||
-        this == PetichStatus.FAILED
+        this == PetichStatus.FAILED ||
+        this == PetichStatus.COMPENSATION_FAILED
 
 public data class Petich(
     val id: String,
@@ -77,6 +86,13 @@ public data class Petich(
     // null means "no deadline", which is how every petich behaves until a TTL is configured (see
     // defaultSuspendTtl), so existing behaviour does not change by itself.
     val suspendedUntilEpochMs: Long? = null,
+    // How many times a rollback of this saga has given up. Persisted, because the retries that
+    // matter are separate passes — a re-drive after a crash, not a loop inside one call — and a
+    // counter that lives in memory bounds nothing across them.
+    //
+    // It is what stops a deterministically failing compensate() from being retried for ever once
+    // something starts re-driving abandoned sagas (the second half of B-19).
+    val compensationAttempts: Int = 0,
 )
 
 // A wall clock for deadlines. Passed in rather than System.currentTimeMillis(): commonMain of a
@@ -144,11 +160,28 @@ public data class PetichEngineConfig(
     // that schedules a durable timer from a saga step and gets a repository that cannot store it
     // has lost the timer, not a notification.
     val requireSideEffects: Boolean = false,
+    // How many times a rollback may give up before the saga is marked COMPENSATION_FAILED and left
+    // for a person. Counted across passes, not inside one.
+    //
+    // Three rather than one, because the cause is usually the far side being briefly unavailable
+    // and the whole rollback is retried, not just the step that threw. Not unbounded, because the
+    // other common cause is a compensate() that will never succeed — and retrying that one for ever
+    // is the hot loop this bound exists to prevent.
+    val maxCompensationAttempts: Int = 3,
+    // Refuse to build an engine whose compensation failures go nowhere. false by default, like the
+    // two above and for the same reason: an application that has deliberately chosen to ignore them
+    // must not have to configure that.
+    //
+    // Worth switching on by anything that rolls back money. A failing compensation is the one state
+    // this engine cannot leave on its own, and with the default handler it is also silent - so the
+    // first anyone hears of it is a support ticket about a reservation nobody released.
+    val requireCompensationHandler: Boolean = false,
 ) {
     init {
         require(maxProcessAttempts > 0) { "maxProcessAttempts must be positive" }
         require(maxStateUpdateAttempts > 0) { "maxStateUpdateAttempts must be positive" }
         require(retryJitterMs >= 0) { "retryJitterMs cannot be negative" }
+        require(maxCompensationAttempts > 0) { "maxCompensationAttempts must be positive" }
         require(defaultSuspendTtl == null || defaultSuspendTtl > Duration.ZERO) {
             "defaultSuspendTtl must be positive"
         }
@@ -386,6 +419,11 @@ public class PetichEngine(
                 "SideEffectAwarePetichRepository: work an interceptor asks to have committed with " +
                 "the state change would be dropped, and the saga would complete looking correct."
         }
+        require(!config.requireCompensationHandler || compensationFailureHandler !is NoOpCompensationFailureHandler) {
+            "requireCompensationHandler is set, but the engine was built with the no-op handler: a " +
+                "rollback that gives up would leave the saga half undone and say nothing, and that " +
+                "is the one state it cannot leave on its own."
+        }
         require(!config.requireOutbox || repository is OutboxAwarePetichRepository) {
             "requireOutbox is set, but ${repository::class.simpleName} is not an " +
                 "OutboxAwarePetichRepository: outbox events produced by interceptors would be " +
@@ -497,6 +535,7 @@ public class PetichEngine(
             )
 
         var compensationFailed = false
+        var failedOn: PetichInterceptor<*>? = null
 
         withContext(NonCancellable) {
             val startPhaseOrdinal = currentPetich.currentPhase.ordinal
@@ -551,6 +590,7 @@ public class PetichEngine(
                     } catch (e: Exception) {
                         compensationFailureHandler.handle(e, currentPetich, interceptor)
                         compensationFailed = true
+                        failedOn = interceptor
                         break
                     }
                 }
@@ -565,6 +605,8 @@ public class PetichEngine(
                     currentPetich.enrichedPayload,
                     { it.copy(currentInterceptorIndex = 0, compensatingFromIndex = null) },
                 )
+            } else {
+                recordGivingUp(currentPetich, failedOn)
             }
         }
 
@@ -572,6 +614,50 @@ public class PetichEngine(
             PetichResult.SystemFailure(reason)
         } else {
             PetichResult.Error(reason)
+        }
+    }
+
+    /**
+     * A rollback stopped without finishing. Count the attempt, and at the bound give up for good.
+     *
+     * Before this the engine wrote nothing at all here: the saga stayed COMPENSATING with whatever
+     * position the last successful step had left, no record that a rollback had been tried, and — on
+     * the default handler — in silence. It is the one state this engine cannot leave on its own, so
+     * it is the one that most needs to be countable and, eventually, final.
+     */
+    private suspend fun recordGivingUp(
+        petich: Petich,
+        failedOn: PetichInterceptor<*>?,
+    ) {
+        val attempt = petich.compensationAttempts + 1
+        val exhausted = attempt >= config.maxCompensationAttempts
+        metrics.onCompensationFailure(petich.type, attempt, exhausted)
+
+        // Asked before the write, and only at the bound: an application that announces this is
+        // announcing something final, and the event has to be committed with the status rather
+        // than after it.
+        val events =
+            if (exhausted && failedOn != null) {
+                compensationFailureHandler.exhausted(petich, failedOn, attempt)
+            } else {
+                emptyList()
+            }
+
+        try {
+            forceUpdateStateWithRetry(
+                petich,
+                if (exhausted) PetichStatus.COMPENSATION_FAILED else PetichStatus.COMPENSATING,
+                petich.enrichedPayload,
+                { it.copy(compensationAttempts = attempt) },
+                outboxEvents = events,
+            )
+        } catch (e: OptimisticLockException) {
+            // Swallowed, and deliberately. This is bookkeeping about a rollback that has already
+            // failed; letting it out would turn "the rollback gave up" into an exception thrown from
+            // process(), which is not what the caller is told anywhere else on this path. The saga
+            // stays COMPENSATING — exactly where it was before this method existed — and the counter
+            // above has already fired, so the event is not invisible.
+            metrics.onStateUpdateRetry(petich.type)
         }
     }
 
@@ -732,9 +818,19 @@ public class PetichEngine(
 
         if (currentPetich.status.isTerminal()) {
             return when (currentPetich.status) {
-                PetichStatus.COMPLETED -> PetichResult.Success(currentPetich)
+                PetichStatus.COMPLETED -> {
+                    PetichResult.Success(currentPetich)
+                }
 
-                PetichStatus.REJECTED -> PetichResult.Error("Petich was already rejected")
+                PetichStatus.REJECTED -> {
+                    PetichResult.Error("Petich was already rejected")
+                }
+
+                // Its own sentence rather than the one below: a repeat under the same id must not
+                // tell the caller the saga was rolled back when part of it was not.
+                PetichStatus.COMPENSATION_FAILED -> {
+                    PetichResult.Error("Petich was rolled back only in part and needs a person")
+                }
 
                 // FAILED is as finished an outcome as REJECTED, and a repeat under the same id
                 // must return what the pass that failed it returned. A saga rolled back through
@@ -746,7 +842,9 @@ public class PetichEngine(
                 // SystemFailure keeps its meaning — "this call could not do the work". Here there
                 // is no work by construction: the petich is terminal and the engine has nothing to
                 // do.
-                else -> PetichResult.Error("Petich has already failed")
+                else -> {
+                    PetichResult.Error("Petich has already failed")
+                }
             }
         }
 
@@ -987,6 +1085,26 @@ public interface CompensationFailureHandler {
         petich: Petich,
         interceptor: PetichInterceptor<*>,
     )
+
+    /**
+     * The rollback has given up for the last time and the saga is about to become
+     * [PetichStatus.COMPENSATION_FAILED]: nothing will try again, and what was already undone stays
+     * undone while the rest stays done.
+     *
+     * Whatever this returns is committed in the SAME transaction as that status, through the outbox
+     * (see [OutboxAwarePetichRepository]) — which is the only way to announce this without a dual
+     * write, since the announcement matters precisely when the process is unreliable. The event's
+     * shape is the application's: petich does not know what a half-rolled-back saga means to it, and
+     * a library that invented a payload here would be inventing a wire format for somebody else's
+     * relay.
+     *
+     * Defaulted to nothing, so no existing implementation has to change.
+     */
+    public suspend fun exhausted(
+        petich: Petich,
+        interceptor: PetichInterceptor<*>,
+        attempts: Int,
+    ): List<OutboxEvent> = emptyList()
 }
 
 public class NoOpCompensationFailureHandler : CompensationFailureHandler {

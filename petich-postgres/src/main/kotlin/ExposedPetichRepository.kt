@@ -70,6 +70,7 @@ public class ExposedPetichRepository(
                 it[enrichedPayload] = petich.enrichedPayload
                 it[version] = petich.version
                 it[suspendedUntil] = petich.suspendedUntilEpochMs
+                it[compensationAttempts] = petich.compensationAttempts
             }
             petich
         }
@@ -95,6 +96,7 @@ public class ExposedPetichRepository(
                     it[enrichedPayload] = petich.enrichedPayload
                     it[version] = petich.version
                     it[suspendedUntil] = petich.suspendedUntilEpochMs
+                    it[compensationAttempts] = petich.compensationAttempts
                 }
 
             if (updatedRows > 0 && outboxEvents.isNotEmpty()) {
@@ -138,6 +140,7 @@ public class ExposedPetichRepository(
             enrichedPayload = this[table.enrichedPayload],
             version = this[table.version],
             suspendedUntilEpochMs = this[table.suspendedUntil],
+            compensationAttempts = this[table.compensationAttempts],
         )
 
     // Filtering in SQL rather than in memory: the whole point of this query is to avoid loading

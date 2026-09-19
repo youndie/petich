@@ -30,6 +30,12 @@ public class PetichTable(
     // (status, suspended_until) — declared below rather than described here.
     public val suspendedUntil: Column<Long?> = long("suspended_until").nullable()
 
+    // How many times a rollback of this saga has given up (see Petich.compensationAttempts).
+    // Defaulted in the DDL rather than only in Kotlin: a table that already holds sagas takes this
+    // column through an ALTER, and a NOT NULL column with no default cannot be added to a non-empty
+    // table at all. petich ships no migrations, so the generated statement is what a consumer runs.
+    public val compensationAttempts: Column<Int> = integer("compensation_attempts").default(0)
+
     override val primaryKey: PrimaryKey = PrimaryKey(id)
 
     // Declared, not merely recommended in a comment. Exposed's tooling treats a Table as the whole

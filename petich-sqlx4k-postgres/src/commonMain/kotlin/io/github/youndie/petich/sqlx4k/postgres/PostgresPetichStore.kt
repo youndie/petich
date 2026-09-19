@@ -68,7 +68,8 @@ public class PostgresPetichStore(
             update(
                 sql(
                     "INSERT INTO $table ($COLUMNS) VALUES " +
-                        "(:id, :type, :phase, :index, :status, :payload, :enriched, :version, :suspendedUntil) " +
+                        "(:id, :type, :phase, :index, :status, :payload, :enriched, :version, " +
+                        ":suspendedUntil, :compensationAttempts) " +
                         "ON CONFLICT (id) DO NOTHING",
                 ).bindState(petich)
                     // The type is written once and never updated: a saga does not change what it
@@ -95,7 +96,8 @@ public class PostgresPetichStore(
                         "UPDATE $table SET " +
                             "current_phase = :phase, current_interceptor_index = :index, status = :status, " +
                             "payload = :payload, enriched_payload = :enriched, version = :version, " +
-                            "suspended_until = :suspendedUntil " +
+                            "suspended_until = :suspendedUntil, " +
+                            "compensation_attempts = :compensationAttempts " +
                             "WHERE id = :id AND version = :expectedVersion",
                     ).bindState(petich)
                         .bind("expectedVersion", petich.version - 1),
@@ -148,6 +150,7 @@ public class PostgresPetichStore(
             .bind("enriched", json.encodeToString(ENRICHED, petich.enrichedPayload))
             .bind("version", petich.version)
             .bind("suspendedUntil", petich.suspendedUntilEpochMs)
+            .bind("compensationAttempts", petich.compensationAttempts)
 
     private fun ResultSet.Row.toDomain(): Petich =
         Petich(
@@ -160,6 +163,7 @@ public class PostgresPetichStore(
             enrichedPayload = json.decodeFromString(ENRICHED, get("enriched_payload").asString()),
             version = get("version").asLong(),
             suspendedUntilEpochMs = get("suspended_until").asLongOrNull(),
+            compensationAttempts = get("compensation_attempts").asInt(),
         )
 
     private companion object {
@@ -170,7 +174,7 @@ public class PostgresPetichStore(
          */
         const val COLUMNS =
             "id, type, current_phase, current_interceptor_index, status, payload, enriched_payload, " +
-                "version, suspended_until"
+                "version, suspended_until, compensation_attempts"
 
         /**
          * Polymorphic, because the payload hierarchy is: what is stored carries a discriminator and

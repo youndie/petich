@@ -39,6 +39,22 @@ public interface PetichEngineMetrics {
     ): Unit = Unit
 
     /**
+     * A rollback stopped without finishing. [attempt] counts from one and is kept on the saga, so
+     * it survives a restart; [exhausted] is true on the attempt that gives up for good and leaves
+     * the saga [PetichStatus.COMPENSATION_FAILED].
+     *
+     * Read it as two different questions. A non-zero rate with `exhausted = false` is a far side
+     * that is briefly unavailable — the rollback will be tried again. Anything at all with
+     * `exhausted = true` is a saga that is half undone and that nothing will touch again, which is
+     * the only state in this engine with no automatic way out.
+     */
+    public fun onCompensationFailure(
+        type: String,
+        attempt: Int,
+        exhausted: Boolean,
+    ): Unit = Unit
+
+    /**
      * The saga is waiting on client action. A repeated wait (Resuspend) counts too: from outside
      * it is indistinguishable from the first, and it costs the engine the same.
      */

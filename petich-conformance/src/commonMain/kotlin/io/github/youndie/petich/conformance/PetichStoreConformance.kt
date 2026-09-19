@@ -85,12 +85,30 @@ public class PetichStoreConformance {
                             currentPhase = PetichPhase.EXECUTION,
                             currentInterceptorIndex = 3,
                             suspendedUntilEpochMs = 4_000L,
+                            // Non-zero on purpose. This case is the corpus's "every field lands"
+                            // rule, and a field left at its default cannot tell a store that
+                            // writes the column from one that forgot it exists.
+                            compensationAttempts = 2,
                             version = 1L,
                         )
                 val applied = subject.repository.update(next)
                 val stored = subject.repository.findById("moved")
                 expect(applied && stored == next) {
                     "update returned $applied and left $stored, expected $next"
+                }
+            },
+            case("a rollback that gave up keeps its status and its attempt count") { subject ->
+                // Two things at once, and both are about the INSERT rather than the update above:
+                // COMPENSATION_FAILED is a longer name than any status that existed before, so a
+                // store whose column is too narrow fails here; and the counter has to survive the
+                // first write, not only a later one.
+                val gaveUp =
+                    petich(id = "gave-up", status = PetichStatus.COMPENSATION_FAILED)
+                        .copy(compensationAttempts = 3)
+                subject.repository.saveOrGet(gaveUp)
+                val stored = subject.repository.findById("gave-up")
+                expect(stored == gaveUp) {
+                    "stored $gaveUp, read back $stored"
                 }
             },
             case("an update carrying a stale version is refused and changes nothing") { subject ->

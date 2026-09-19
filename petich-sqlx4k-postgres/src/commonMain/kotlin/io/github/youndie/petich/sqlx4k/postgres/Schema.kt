@@ -37,7 +37,12 @@ public fun petichPostgresSchema(
             payload TEXT NOT NULL,
             enriched_payload TEXT NOT NULL,
             version BIGINT NOT NULL,
-            suspended_until BIGINT
+            suspended_until BIGINT,
+            -- How many times a rollback of this saga has given up (Petich.compensationAttempts).
+            -- DEFAULT 0 so the same column can be added by ALTER to a table that already holds
+            -- sagas: petich ships no migrations, and a NOT NULL column with no default cannot be
+            -- added to a non-empty table at all.
+            compensation_attempts INT NOT NULL DEFAULT 0
         );
         """.trimIndent(),
         // The sweeper's query is "status = PENDING_SIGNATURE and suspended_until <= now", run on

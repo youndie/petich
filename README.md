@@ -166,6 +166,16 @@ Two results are NOT this case, and both keep the old starting point: a step that
 `Compensate` reported its outcome and is not undone by the engine, and an expired suspension rolls
 back from the step that suspended, which committed.
 
+**A `compensate()` that throws stops the rollback below it.** The steps under the one that threw are
+not undone, and the saga stays `COMPENSATING`. That is retried — the whole rollback, not just the
+step — up to `maxCompensationAttempts` separate passes, counted on the saga itself so a restart does
+not reset them; at the bound the saga becomes `COMPENSATION_FAILED`, which is terminal and means
+"undone in part, and nothing will try again". `CompensationFailureHandler.exhausted` is asked for
+events to commit in that same transaction, so the announcement cannot be lost separately from the
+status, and `PetichEngineConfig(requireCompensationHandler = true)` refuses at construction to build
+an engine whose compensation failures go nowhere. This is the one state the engine cannot leave on
+its own; nothing yet re-drives an abandoned saga into it (see the Cost section).
+
 **`Reject` does not roll anything back.** Two results refuse a saga and they are not
 interchangeable:
 
@@ -209,7 +219,9 @@ sweeper above. A process that dies mid-pass leaves its saga in `PROCESSING`, and
 mid-rollback leaves it in `COMPENSATING`; the engine resumes both correctly the moment somebody calls
 `process()` with that id again, and today nothing in this library calls it. The recovery is paid for
 at every step boundary and wired up by the application. `B-19` in the backlog is the query and the
-worker that would close the gap.
+worker that would close the gap; its first half — a bounded, countable, terminal end for a rollback
+that keeps failing — is in, because a worker that re-drives sagas before that exists is a hot loop
+around a `compensate()` that will never succeed.
 
 ### 📊 Observability
 
