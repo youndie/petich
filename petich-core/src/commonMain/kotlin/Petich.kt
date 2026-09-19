@@ -440,7 +440,7 @@ public sealed interface ExpireResult {
 public const val EXPIRED_REASON: String = "Petich expired while waiting for the client"
 
 public class PetichEngine(
-    private val interceptors: List<PetichInterceptor<*>>,
+    private val interceptors: List<PetichInterceptor<*>> = emptyList(),
     private val repository: PetichRepository,
     private val compensationFailureHandler: CompensationFailureHandler = NoOpCompensationFailureHandler(),
     private val config: PetichEngineConfig = PetichEngineConfig(),
@@ -451,6 +451,15 @@ public class PetichEngine(
     // Counters. A no-op by default: existing code pays nothing and changes nothing (see
     // PetichEngineMetrics on why they exist at all).
     private val metrics: PetichEngineMetrics = PetichEngineMetrics.NoOp,
+    /**
+     * Sagas described as definitions, by type. Last in the list so that every existing positional
+     * call still compiles: the two models live side by side until B-33 removes the older one.
+     *
+     * A saga whose `type` has a definition here is walked from it; anything else falls back to the
+     * interceptor list. That is the whole of the switch — the walk below is shared, because B-21
+     * had already reduced "which members run in this phase" to a single function.
+     */
+    private val definitions: List<PetichDefinition<*>> = emptyList(),
 ) {
     init {
         // Deliberately a construction failure and not a warning. A warning about events that will
@@ -532,20 +541,145 @@ public class PetichEngine(
     }
 
     /**
-     * The steps of one phase that apply to this payload, in the order they run.
+     * One member of a phase, whichever model described it.
+     *
+     * The walk below asks four things of a member, and both models can answer them: what it is
+     * called, how it reads in a dump, what running it produced, and what undoing it produced. Two
+     * models meeting at one point is the price of not rewriting three hundred tests in the same
+     * change as the model — and the point disappears with the older arm (B-33).
+     */
+    private interface PetichMemberRun {
+        val stepKey: String
+        val label: String
+
+        suspend fun run(
+            petich: Petich,
+            payload: PetichPayload,
+        ): InterceptorResult?
+
+        suspend fun undo(
+            petich: Petich,
+            payload: PetichPayload,
+        ): List<OutboxEvent>
+    }
+
+    private class InterceptorRun(
+        private val interceptor: PetichInterceptor<*>,
+    ) : PetichMemberRun {
+        override val stepKey: String get() = interceptor.stepKey
+        override val label: String get() = "${interceptor.stepKey}(${interceptor.priority})"
+
+        override suspend fun run(
+            petich: Petich,
+            payload: PetichPayload,
+        ): InterceptorResult? = interceptor.tryIntercept(petich, payload)
+
+        override suspend fun undo(
+            petich: Petich,
+            payload: PetichPayload,
+        ): List<OutboxEvent> = interceptor.tryCompensate(petich, payload)
+    }
+
+    /**
+     * A member of a definition, run through a context that RECORDS its outcome.
+     *
+     * `ctx.reject(...)` maps onto the engine's existing `Reject` and `ctx.fail(...)` onto
+     * `Compensate` — which is the post-B-20 vocabulary read back: both roll back what ran, and they
+     * differ in the name the saga ends under. A member that sets nothing proceeds.
+     */
+    private class DefinitionRun<P : PetichPayload>(
+        private val member: PetichMember<P>,
+    ) : PetichMemberRun {
+        override val stepKey: String get() = member.key
+        override val label: String get() = member.key + if (member.undoes) "" else " (check)"
+
+        override suspend fun run(
+            petich: Petich,
+            payload: PetichPayload,
+        ): InterceptorResult {
+            val context = RecordingContext(petich)
+            // ONE cast, at the boundary where a row meets the definition its type names — rather
+            // than one per member behind a `supports()` that could lie about anyone's payload. It
+            // cannot be removed while a stored payload is polymorphic and a definition is generic;
+            // what changed is that there is a single declared place for it to be wrong.
+
+            @Suppress("UNCHECKED_CAST")
+            val typed = payload as P
+            member.step?.execute(context, typed) ?: member.check?.check(context, typed)
+            return context.outcome()
+        }
+
+        override suspend fun undo(
+            petich: Petich,
+            payload: PetichPayload,
+        ): List<OutboxEvent> {
+            val step = member.step ?: return emptyList()
+
+            @Suppress("UNCHECKED_CAST")
+            val typed = payload as P
+            step.compensate(RecordingContext(petich), typed)
+            return emptyList()
+        }
+    }
+
+    /** What a member said, collected rather than thrown — see PetichMemberContext.suspendFor. */
+    private class RecordingContext(
+        override val petich: Petich,
+    ) : PetichCheckContext,
+        PetichStepContext {
+        private var enriched: EnrichedPayload? = null
+        private var decided: InterceptorResult? = null
+
+        override fun enrich(payload: EnrichedPayload) {
+            enriched = enriched?.merge(payload) ?: payload
+        }
+
+        override fun suspendFor(
+            action: String,
+            ttl: Duration?,
+        ) {
+            decided = InterceptorResult.Suspend(requiredAction = action, enrichedPayload = enriched, ttl = ttl)
+        }
+
+        override fun reject(reason: String) {
+            decided = InterceptorResult.Reject(reason)
+        }
+
+        override fun fail(reason: String) {
+            decided = InterceptorResult.Compensate(reason)
+        }
+
+        fun outcome(): InterceptorResult = decided ?: InterceptorResult.Proceed(enrichedPayload = enriched)
+    }
+
+    private fun definitionFor(type: String?): PetichDefinition<*>? =
+        type?.let { wanted -> definitions.firstOrNull { it.type == wanted } }
+
+    private fun chainFor(
+        phase: PetichPhase,
+        payload: PetichPayload,
+        type: String? = null,
+    ): List<PetichMemberRun> {
+        definitionFor(type)?.let { definition ->
+            return definition.members.filter { it.phase == phase }.map { DefinitionRun(it) }
+        }
+        return interceptorChainFor(phase, payload).map { InterceptorRun(it) }
+    }
+
+    /**
+     * The interceptors of one phase that apply to this payload, in the order they run — the older
+     * model's arm of [chainFor], and the one B-33 removes.
      *
      * **The tie-break is [PetichInterceptor.stepKey], not the order the list arrived in.** Kotlin's
      * sort is stable, so two steps of equal priority used to run in whatever order the dependency
-     * container assembled them — a decision nobody made, taken in a file that has nothing to do with
-     * this saga, and one that changes when a module is registered somewhere else. Ordering by the
-     * name makes it a property of the steps themselves.
+     * container assembled them. Ordering by the name makes it a property of the steps themselves.
      *
      * Ties are still worth refusing outright, and [PetichEngineConfig.requireDistinctPriorities]
      * does that. It cannot be checked at construction, because `supports()` takes a payload
      * INSTANCE: two steps of one phase and equal priority for payload types that never meet are
      * legitimate, and only here is it known whether they meet.
      */
-    private fun chainFor(
+    private fun interceptorChainFor(
         phase: PetichPhase,
         payload: PetichPayload,
     ): List<PetichInterceptor<*>> {
@@ -582,7 +716,7 @@ public class PetichEngine(
     public fun describeChain(payload: PetichPayload): String =
         PetichPhase.entries.joinToString("\n") { phase ->
             val steps = chainFor(phase, payload)
-            val body = if (steps.isEmpty()) "-" else steps.joinToString(" -> ") { "${it.stepKey}(${it.priority})" }
+            val body = if (steps.isEmpty()) "-" else steps.joinToString(" -> ") { it.label }
             "$phase: $body"
         }
 
@@ -604,7 +738,7 @@ public class PetichEngine(
         try {
             for (phase in PetichPhase.entries) {
                 if (phase.ordinal > petich.currentPhase.ordinal) break
-                val steps = chainFor(phase, petich.payload).map { it.stepKey }
+                val steps = chainFor(phase, petich.payload, petich.type).map { it.stepKey }
                 names += if (phase == petich.currentPhase) steps.take(petich.currentInterceptorIndex) else steps
             }
         } catch (e: Exception) {
@@ -713,14 +847,14 @@ public class PetichEngine(
             )
 
         var compensationFailed = false
-        var failedOn: PetichInterceptor<*>? = null
+        var failedOn: String? = null
 
         withContext(NonCancellable) {
             val startPhaseOrdinal = currentPetich.currentPhase.ordinal
 
             for (phaseOrdinal in startPhaseOrdinal downTo 0) {
                 val phase = PetichPhase.entries[phaseOrdinal]
-                val phaseInterceptors = chainFor(phase, currentPetich.payload)
+                val phaseInterceptors = chainFor(phase, currentPetich.payload, currentPetich.type)
 
                 if (phaseInterceptors.isEmpty()) continue
 
@@ -748,7 +882,7 @@ public class PetichEngine(
                         // non-cancellable, while the timeout cancels its own child coroutine.
                         val compensationEvents =
                             withTimeout(config.compensationTimeoutMs(phase)) {
-                                interceptor.tryCompensate(
+                                interceptor.undo(
                                     currentPetich,
                                     currentPetich.payload,
                                 )
@@ -763,9 +897,9 @@ public class PetichEngine(
                                 outboxEvents = compensationEvents,
                             )
                     } catch (e: Exception) {
-                        compensationFailureHandler.handle(e, currentPetich, interceptor)
+                        compensationFailureHandler.handle(e, currentPetich, interceptor.stepKey)
                         compensationFailed = true
-                        failedOn = interceptor
+                        failedOn = interceptor.stepKey
                         break
                     }
                 }
@@ -802,7 +936,7 @@ public class PetichEngine(
      */
     private suspend fun recordGivingUp(
         petich: Petich,
-        failedOn: PetichInterceptor<*>?,
+        failedOn: String?,
     ) {
         val attempt = petich.compensationAttempts + 1
         val exhausted = attempt >= config.maxCompensationAttempts
@@ -1081,12 +1215,11 @@ public class PetichEngine(
                     currentPetich = currentPetich.copy(currentPhase = phase, currentInterceptorIndex = 0)
                 }
 
-                val phaseInterceptors = chainFor(phase, currentPetich.payload)
+                val phaseInterceptors = chainFor(phase, currentPetich.payload, currentPetich.type)
 
                 val runPhase =
                     suspend {
                         var result: PetichResult? = null
-                        val successfulInterceptors = mutableListOf<PetichInterceptor<*>>()
 
                         val startingInterceptorIndex =
                             if (phase == initialPhase) {
@@ -1101,7 +1234,7 @@ public class PetichEngine(
                             val interceptorResult =
                                 try {
                                     withTimeout(config.timeoutMs(phase)) {
-                                        interceptor.tryIntercept(
+                                        interceptor.run(
                                             petich = currentPetich,
                                             payload = currentPetich.payload,
                                         )
@@ -1233,7 +1366,6 @@ public class PetichEngine(
                                 }
 
                                 is InterceptorResult.Proceed -> {
-                                    successfulInterceptors.add(interceptor)
                                     val moved =
                                         currentPetich.copy(
                                             currentInterceptorIndex = index + 1,
@@ -1317,10 +1449,15 @@ public sealed interface PetichResult {
 }
 
 public interface CompensationFailureHandler {
+    /**
+     * [stepKey] rather than the member itself: under a definition a member is identified by the key
+     * declared at its call site, and a handler wants to say WHICH step could not be undone rather
+     * than hold the object that failed to do it. It is also the identity the saga's row carries.
+     */
     public suspend fun handle(
         e: Exception,
         petich: Petich,
-        interceptor: PetichInterceptor<*>,
+        stepKey: String,
     )
 
     /**
@@ -1339,7 +1476,7 @@ public interface CompensationFailureHandler {
      */
     public suspend fun exhausted(
         petich: Petich,
-        interceptor: PetichInterceptor<*>,
+        stepKey: String,
         attempts: Int,
     ): List<OutboxEvent> = emptyList()
 }
@@ -1348,7 +1485,7 @@ public class NoOpCompensationFailureHandler : CompensationFailureHandler {
     override suspend fun handle(
         e: Exception,
         petich: Petich,
-        interceptor: PetichInterceptor<*>,
+        stepKey: String,
     ) {
     }
 }

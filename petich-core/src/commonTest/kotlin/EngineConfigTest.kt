@@ -144,7 +144,7 @@ class EngineConfigTest {
                     override suspend fun handle(
                         e: Exception,
                         petich: Petich,
-                        interceptor: PetichInterceptor<*>,
+                        stepKey: String,
                     ) {
                         handledFailure = e
                     }
