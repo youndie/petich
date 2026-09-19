@@ -1,7 +1,7 @@
 ---
 id: B-29
 title: "What a step did is recorded beside its key, not in the payload everyone shares"
-status: open
+status: wip
 priority: P1
 size: L
 stage: stage-9-definition
