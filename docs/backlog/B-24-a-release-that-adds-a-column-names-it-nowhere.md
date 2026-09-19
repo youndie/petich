@@ -1,7 +1,7 @@
 ---
 id: B-24
 title: "A release that adds a column to the saga table names it nowhere, and the consumer learns it at runtime"
-status: open
+status: wip
 priority: P0
 size: S
 stage: stage-8-upgrade
