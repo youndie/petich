@@ -1,7 +1,7 @@
 ---
 id: B-28
 title: "PetichStep, PetichCheck and a definition that says the order out loud"
-status: open
+status: wip
 priority: P1
 size: L
 stage: stage-9-definition

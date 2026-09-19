@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-28](docs/backlog/B-28-the-types-and-the-builder.md) `[ ]` | PetichStep, PetichCheck and a definition that says the order out loud | P1 | L | - |
+| [B-28](docs/backlog/B-28-the-types-and-the-builder.md) `[~]` | PetichStep, PetichCheck and a definition that says the order out loud | P1 | L | - |
 | [B-29](docs/backlog/B-29-what-a-step-did-belongs-to-that-step.md) `[ ]` | What a step did is recorded beside its key, not in the payload everyone shares | P1 | L | B-28 |
 | [B-32](docs/backlog/B-32-migrate-the-two-consumers.md) `[ ]` | Rewrite konekt's and shashki's sagas in the new model — the acceptance | P1 | L | B-29 |
 | [B-33](docs/backlog/B-33-remove-the-interceptor-model.md) `[ ]` | Remove PetichInterceptor, and do not leave an adapter behind | P1 | M | B-32 |
