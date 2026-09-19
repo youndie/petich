@@ -26,9 +26,9 @@ The engine takes on exactly that:
 
 - **order and phases** — `ENRICHMENT → VALIDATION → AUTHORIZATION → EXECUTION → POST_PROCESSING`,
   with steps inside a phase ordered by priority;
-- **compensation** — a failure at step N calls `compensate()` on steps N−1 … 1, in reverse. Step N
-  itself is not among them, and that is a contract rather than an oversight: see **What it asks of
-  an interceptor**;
+- **compensation** — a failure at step N calls `compensate()` on steps N … 1, in reverse, step N
+  included: the engine never learned whether that one's effect landed, so it undoes it too — see
+  **What it asks of an interceptor**;
 - **waiting for a human** — a saga can pause for a confirmation and continue on a later HTTP
   request, holding neither a thread nor a database connection;
 - **a deadline on that wait** — a suspended saga nobody came back to is rolled back by a background
@@ -154,13 +154,17 @@ the remote side to honour it.
 far it has got *after* calling the step, so an interrupted rollback re-compensates the step it was
 on.
 
-**The step that failed compensates nothing.** Rollback starts at N−1, so if step N's effect reached
-the far side and the call came back as a timeout — the ordinary ambiguous failure of a distributed
-system — nothing releases it. The engine cannot tell that case from a call that never landed,
-because it only ever learns that the step did not report success. Until it does something better
-(`B-18` in the backlog), a step whose effect is expensive to leak should make its own attempt
-recoverable: a durable marker written through `PetichSideEffect` in the same transaction as the
-state, or a reservation the far side expires on its own.
+**`compensate()` may be called for a step that did not happen.** When `intercept()` throws or times
+out, the engine cannot tell an effect that reached the far side from a call that never landed — it
+only ever learns that the step did not report success — so it rolls that step back as well.
+`release` therefore has to tolerate arriving without its `reserve`, and a compensation that instead
+assumes its own step committed will undo something that was never done. The guard is usually the
+evidence the step leaves: undo what the record says happened, and return quietly when there is no
+record.
+
+Two results are NOT this case, and both keep the old starting point: a step that returns
+`Compensate` reported its outcome and is not undone by the engine, and an expired suspension rolls
+back from the step that suspended, which committed.
 
 **`Reject` does not roll anything back.** Two results refuse a saga and they are not
 interchangeable:
