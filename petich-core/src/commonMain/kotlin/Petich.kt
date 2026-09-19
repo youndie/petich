@@ -638,8 +638,16 @@ public class PetichEngine(
 
             @Suppress("UNCHECKED_CAST")
             val typed = payload as P
-            member.step?.execute(context, typed) ?: member.check?.check(context, typed)
-            recorded = context.written()
+            // IN A FINALLY, because the case that matters most is the one where `execute` does not
+            // return. A member that records what it did and then throws is the ambiguous failure
+            // B-18 exists for: its own compensation is called, and without the record it concludes
+            // "the step did not happen" about a step that may well have. Read after the fact, the
+            // record survives however the member left.
+            try {
+                member.step?.execute(context, typed) ?: member.check?.check(context, typed)
+            } finally {
+                recorded = context.written()
+            }
             return context.outcome()
         }
 
@@ -837,6 +845,15 @@ public class PetichEngine(
                 "${petich.currentInterceptorIndex} no longer means the same step. Nothing was run. " +
                 "The chain here is:\n${describeChain(petich.payload)}",
         )
+    }
+
+    /** The saga with whatever [member] wrote folded in, or unchanged when it wrote nothing. */
+    private fun withRecordOf(
+        member: PetichMemberRun,
+        petich: Petich,
+    ): Petich {
+        val written = member.lastRecord() ?: return petich
+        return petich.copy(stepRecords = petich.stepRecords + (member.stepKey to written))
     }
 
     private suspend fun triggerCompensation(
@@ -1292,6 +1309,7 @@ public class PetichEngine(
                                         )
                                     }
                                 } catch (e: TimeoutCancellationException) {
+                                    currentPetich = withRecordOf(interceptor, currentPetich)
                                     result =
                                         triggerCompensation(
                                             currentPetich,
@@ -1303,6 +1321,7 @@ public class PetichEngine(
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
+                                    currentPetich = withRecordOf(interceptor, currentPetich)
                                     result =
                                         triggerCompensation(
                                             currentPetich,
@@ -1320,13 +1339,10 @@ public class PetichEngine(
                             // Folded in BEFORE the outcome is acted on, so that every write below
                             // carries it — including the rollback mark. A member that records and
                             // then fails needs its own record on the way back, and a process that
-                            // dies between the two would otherwise compensate blind.
-                            interceptor.lastRecord()?.let { written ->
-                                currentPetich =
-                                    currentPetich.copy(
-                                        stepRecords = currentPetich.stepRecords + (interceptor.stepKey to written),
-                                    )
-                            }
+                            // dies between the two would otherwise compensate blind. The two catch
+                            // blocks above do the same, because a member that THREW after recording
+                            // is the case this channel was built for.
+                            currentPetich = withRecordOf(interceptor, currentPetich)
 
                             when (interceptorResult) {
                                 null -> {

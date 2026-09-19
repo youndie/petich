@@ -35,6 +35,8 @@ class StepRecordTest {
     private class Reserve(
         private val log: Log,
         private val throwInstead: Boolean = false,
+        private val throwAfterRecording: Boolean = false,
+        private val suspendAfterRecording: Boolean = false,
     ) : PetichStep<OrderPayload> {
         override suspend fun execute(
             ctx: PetichStepContext,
@@ -43,6 +45,10 @@ class StepRecordTest {
             if (throwInstead) error("the answer was lost")
             ctx.record(Reservation("res-for-${payload.sku}"))
             log.entries.add("do:reserve")
+            // The far side took it and the answer did not come back — the case B-18 exists for, and
+            // the one where the record has to survive a member that never returned.
+            if (throwAfterRecording) error("the answer was lost after the reservation was made")
+            if (suspendAfterRecording) ctx.suspendFor("CONFIRM", 5.minutes)
         }
 
         override suspend fun compensate(
@@ -216,6 +222,56 @@ class StepRecordTest {
                 Reservation("res-for-sku-1"),
                 repository.row?.stepRecords?.get("reserve"),
                 "and it is still there when the saga completes",
+            )
+        }
+
+    /**
+     * The case the `finally` in `DefinitionRun` is for, and the one this channel was built around: a
+     * member takes the effect, writes down what it did, and then the call it is inside throws. Its
+     * own compensation is called (B-18) and must see the record — otherwise it concludes "the step
+     * did not happen" about a step that did.
+     */
+    @Test
+    fun `a member that records and then throws is undone with its record in hand`() =
+        runBlocking {
+            val log = Log()
+            val repository = RowRepository()
+            val definition =
+                petich<OrderPayload>("order") {
+                    step("reserve", Reserve(log, throwAfterRecording = true))
+                }
+
+            engineOver(repository, definition).process(petich("p-threw-after"))
+
+            assertEquals(
+                listOf("do:reserve", "undo:reserve:res-for-sku-1"),
+                log.entries,
+                "the compensation had the id its own step wrote before the throw: ${log.entries}",
+            )
+        }
+
+    /**
+     * And the case mutation found by NOT failing: a member that records and then suspends leaves
+     * the record only in memory, so the write that records the wait is the one that has to carry it.
+     */
+    @Test
+    fun `a record made by the member that suspends is committed with the wait`() =
+        runBlocking {
+            val log = Log()
+            val repository = RowRepository()
+            val definition =
+                petich<OrderPayload>("order") {
+                    step("reserve", Reserve(log, suspendAfterRecording = true))
+                    step("charge", Charge(log))
+                }
+
+            val waiting = engineOver(repository, definition).process(petich("p-record-then-wait"))
+
+            assertTrue(waiting is PetichResult.ActionRequired, "expected a suspension: $waiting")
+            assertEquals(
+                Reservation("res-for-sku-1"),
+                repository.row?.stepRecords?.get("reserve"),
+                "the record has to be in the row the saga waits in, not only in the pass that made it",
             )
         }
 }
