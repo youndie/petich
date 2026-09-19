@@ -23,6 +23,12 @@ is the one nobody would notice. A three-way comparison also catches the cheaper 
 column to one store and forgetting the other, which no test can see until both run against one
 database.
 
+AND IT COMPARES THE DECLARATIONS, not only the names. A README that names every column and gets one
+of their types wrong passes a set comparison and hands a consumer an ALTER that builds a column too
+narrow for what the store writes — a failure that surfaces as truncated data rather than as an
+error. The native schema spells each column in SQL and so does the README, so the two texts are
+comparable directly.
+
 WHAT IT DOES NOT CHECK: the `since` column. Which release a column arrived in is history, and this
 script has no access to history that would not be a guess.
 """
@@ -50,6 +56,9 @@ NATIVE_COLUMN = re.compile(r"^\s{12}([a-z_]+) ", re.M)
 # The upgrade table's first cell, which may hold several columns as inline code.
 NOTES_ROW = re.compile(r"^\|\s*((?:`[a-z_]+`(?:,\s*)?)+)\s*\|", re.M)
 NOTES_COLUMN = re.compile(r"`([a-z_]+)`")
+
+# `ADD COLUMN IF NOT EXISTS <name> <everything up to the semicolon>` inside the notes.
+NOTES_ADD = re.compile(r"ADD COLUMN IF NOT EXISTS ([a-z_]+) ([^;`]+);")
 
 
 def read(path):
@@ -86,12 +95,38 @@ def main():
         for column in sorted(right - left):
             problems.append("  {0} has `{1}`, {2} does not".format(rn, column, ln))
 
+    # The declarations, for every column the notes hand over as an ALTER. A column the notes
+    # describe as part of the original table has no statement to compare, and the sagas written
+    # before it existed are the evidence that it was there.
+    native_declarations = {}
+    for line in body.group(1).splitlines():
+        match = re.match(r"^\s{12}([a-z_]+) (.+?),?$", line)
+        if match:
+            native_declarations[match.group(1)] = " ".join(match.group(2).split())
+
+    for column, declaration in NOTES_ADD.findall(read(README)):
+        stated = " ".join(declaration.split())
+        declared = native_declarations.get(column)
+        if declared is None:
+            problems.append(
+                "  the README tells a consumer to add `{0}`, which the native schema does not "
+                "declare".format(column)
+            )
+        elif stated != declared:
+            problems.append(
+                "  `{0}` is `{1}` in the native schema and `{2}` in the README upgrade table: a "
+                "consumer following the README builds a different column".format(
+                    column, declared, stated
+                )
+            )
+
     if problems:
         sys.exit(
             "the saga table is described three ways and they disagree:\n"
             + "\n".join(problems)
-            + "\n\nA column added to the table needs a row in README.md's upgrade table saying what "
-            "a consumer runs, or they find out from a saga that fails."
+            + "\n\nWhat a consumer runs on an existing schema is README.md's upgrade table and "
+            "nothing else, so a column the table does not name, or names differently, is one they "
+            "find out about from a saga that fails."
         )
 
     print(

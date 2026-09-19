@@ -1,7 +1,7 @@
 ---
 id: B-24
 title: "A release that adds a column to the saga table names it nowhere, and the consumer learns it at runtime"
-status: wip
+status: done
 priority: P0
 size: S
 stage: stage-8-upgrade
@@ -42,3 +42,39 @@ to run.
 - Anchors: `README.md`, `petich-postgres/src/main/kotlin/PetichTable.kt`,
   `petich-sqlx4k-postgres/src/commonMain/kotlin/io/github/youndie/petich/sqlx4k/postgres/Schema.kt`,
   `tools/module-table-audit.py`
+
+## Closed 2026-09-19
+
+The README states the saga table column by column with the statement to run on a schema that
+predates each one, and `tools/schema-notes-audit.py` in the gate compares **three** descriptions of
+that table: the Exposed `PetichTable`, the SQL the native module hands over, and the README's own
+row per column. The third is the one nobody would notice going stale; the first two also catch the
+cheaper mistake of adding a column to one store and forgetting the other, which no test can see
+until both run against one database.
+
+**The guard compares the declarations, not only the names**, and that was a hole in its first
+version. A README that names every column and gets one type wrong passes a set comparison and hands
+a consumer an `ALTER` that builds a column too narrow for what the store writes — truncated data
+rather than an error. The native schema spells each column in SQL and so does the README, so the two
+texts are compared directly. Five mutations, all caught with the disagreement named: a column added
+to `PetichTable` alone, a row deleted from the README, a column added to the native schema alone, a
+type widened in the README, and a type changed in the schema.
+
+**What it deliberately does not check** is the `since` column. Which release a column arrived in is
+history, and a script guessing at history is worse than a person writing it down once.
+
+**0.1.0 is called out rather than served.** Both real consumers are on it, and it predates this
+repository's tags and the move to the current coordinates — there is nothing to diff against, so the
+notes say to take the whole table instead of a delta rather than offering statements nobody can
+verify.
+
+**Where the statements come from.** They are the ones applied during the `0.3.0.56` rehearsal
+against konekt and shashki, executed by Flyway against real Postgres in both, after which those
+suites ran 590 and 468 tests green. They are not written from memory, and the type comparison above
+is what keeps them true as the schema moves.
+
+**Still not closed by this**, and left as a sentence rather than a new item: nothing re-runs those
+`ALTER`s inside this repository. The corpus creates its tables fresh, so the upgrade path itself —
+old table, three statements, a working store — is proved by the rehearsal and by the type
+comparison, not by a test here.
+
