@@ -1,7 +1,7 @@
 ---
 id: B-19
 title: "Nothing picks up a saga left in PROCESSING or COMPENSATING, and a failing compensation has no terminal state"
-status: open
+status: wip
 priority: P0
 size: L
 stage: stage-6-recovery
