@@ -42,6 +42,7 @@ import org.testcontainers.utility.DockerImageName
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * The four corpora of :petich-conformance, run against the Exposed store on a real Postgres.
@@ -128,6 +129,36 @@ class ConformanceTest {
         assertTrue(
             options?.contains("fillfactor=80") == true,
             "pg_class reports reloptions = $options for ${petichTable.tableName}",
+        )
+    }
+
+    /**
+     * The bound a consumer asks for, applied against a real database rather than asserted as a
+     * string. A `SET` that Postgres refuses would still look right in a unit test comparing text,
+     * and the statement it precedes is the one that takes an ACCESS EXCLUSIVE lock on the busiest
+     * table here.
+     */
+    @Test
+    fun `a bounded tuning statement still applies, and says what it bounds`() {
+        val statements = petichTable.tuningStatements(lockTimeout = 3.seconds)
+
+        assertEquals(
+            listOf("SET lock_timeout = '3000ms';", "ALTER TABLE ${petichTable.tableName} SET (fillfactor = 80);"),
+            statements,
+            "the bound has to come first, or it bounds nothing",
+        )
+
+        transaction(db) { statements.forEach { exec(it) } }
+
+        val options =
+            transaction(db) {
+                exec("SELECT reloptions FROM pg_class WHERE relname = '${petichTable.tableName}'") { rs ->
+                    if (rs.next()) rs.getString(1) else null
+                }
+            }
+        assertTrue(
+            options?.contains("fillfactor=80") == true,
+            "pg_class reports reloptions = $options after the bounded form",
         )
     }
 

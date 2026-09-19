@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.json.json
+import kotlin.time.Duration
 
 public class PetichTable(
     jsonFormat: Json,
@@ -89,6 +90,26 @@ public class PetichTable(
      * filled from then on, and there are none yet. On a table that already holds sagas it applies to
      * new pages only, and the bloat already there needs a `VACUUM FULL` or a `pg_repack` — which is
      * the application's call and its downtime, not this library's.
+     *
+     * **IT TAKES AN `ACCESS EXCLUSIVE` LOCK ON THIS TABLE.** Briefly — it rewrites a catalogue entry
+     * and not the table — but a statement WAITING for that lock queues every later reader behind it,
+     * and this is the busiest table in the system. On a live database that is a stall, not a
+     * migration, and the stall lasts as long as whatever transaction is holding the table when the
+     * `ALTER` arrives.
+     *
+     * Pass [lockTimeout] to put a bound on that wait: the returned list then opens with
+     * `SET lock_timeout`, and a migration that cannot get the lock in time fails instead of
+     * blocking. Not the default, because `SET` is session-scoped — a tool running several scripts
+     * in one session would carry the bound into the next one, and a library quietly changing a
+     * session setting is worse than one that says nothing. Whether to bound it, and at what, is the
+     * application's decision; this is how it expresses it.
+     *
+     * A consumer whose migrations already require a bound will refuse the unbounded form, which is
+     * how this was found — konekt's own check named it before petich's documentation did.
      */
-    public fun tuningStatements(): List<String> = listOf("ALTER TABLE $tableName SET (fillfactor = 80);")
+    public fun tuningStatements(lockTimeout: Duration? = null): List<String> =
+        buildList {
+            lockTimeout?.let { add("SET lock_timeout = '${it.inWholeMilliseconds}ms';") }
+            add("ALTER TABLE $tableName SET (fillfactor = 80);")
+        }
 }
