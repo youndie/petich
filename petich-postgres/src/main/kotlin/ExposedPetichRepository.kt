@@ -95,7 +95,12 @@ public class ExposedPetichRepository(
                     it[currentPhase] = petich.currentPhase
                     it[currentInterceptorIndex] = petich.currentInterceptorIndex
                     it[status] = petich.status
-                    it[payload] = petich.payload
+                    // payload is NOT here. It is written once, by the insert above, and the engine
+                    // never changes it: a saga does not change what it is. Sending it anyway
+                    // rewrote the largest column in the row on all eleven writes a six-step saga
+                    // makes — and if it is past the TOAST threshold, that is eleven full rewrites
+                    // out of line plus the dead chunks they leave for autovacuum, for a value that
+                    // was identical every time.
                     it[enrichedPayload] = petich.enrichedPayload
                     it[version] = petich.version
                     it[suspendedUntil] = petich.suspendedUntilEpochMs

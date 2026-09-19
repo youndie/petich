@@ -56,7 +56,7 @@ public fun petichPostgresSchema(
             -- Nullable on purpose: a row written before the column existed carries NULL, and NULL
             -- is never refused, so an upgrade does not stop the sagas already in flight.
             chain_fingerprint VARCHAR(64)
-        );
+        ) WITH (fillfactor = 80);
         """.trimIndent(),
         // The sweeper's query is "status = PENDING_SIGNATURE and suspended_until <= now", run on
         // every tick against the busiest table in the system. Declared here for the same reason

@@ -104,8 +104,10 @@ public class PetichStoreConformance {
             },
             case("an update whose version follows the stored one applies, and every field lands") { subject ->
                 subject.repository.saveOrGet(petich(id = "moved"))
+                // The marker is unchanged: the payload is the one field an update must NOT move,
+                // and the rule for that is the next one.
                 val next =
-                    petich(id = "moved", marker = "moved-on")
+                    petich(id = "moved")
                         .copy(
                             status = PetichStatus.PENDING_SIGNATURE,
                             currentPhase = PetichPhase.EXECUTION,
@@ -127,6 +129,22 @@ public class PetichStoreConformance {
                     "update returned $applied and left $stored, expected $next"
                 }
             },
+            case("an update does not change the payload") { subject ->
+                // A saga does not change what it was asked to do, and the engine never tries to:
+                // the payload is written once, by the insert. A store that sends it in every update
+                // rewrites the largest column in the row on all eleven writes a six-step saga makes
+                // — and past the TOAST threshold that is eleven full rewrites out of line, plus the
+                // dead chunks they leave behind, for a value that was identical every time.
+                val initial = petich(id = "immutable", marker = "as-asked")
+                subject.repository.saveOrGet(initial)
+                subject.repository.update(
+                    initial.copy(version = 1L, currentInterceptorIndex = 1, payload = ConformancePayload("rewritten")),
+                )
+                val stored = subject.repository.findById("immutable")
+                expect(stored?.payload == ConformancePayload("as-asked")) {
+                    "the update moved the payload to ${(stored?.payload as? ConformancePayload)?.marker}"
+                }
+            },
             case("a rollback that gave up keeps its status and its attempt count") { subject ->
                 // Two things at once, and both are about the INSERT rather than the update above:
                 // COMPENSATION_FAILED is a longer name than any status that existed before, so a
@@ -142,14 +160,17 @@ public class PetichStoreConformance {
                 }
             },
             case("an update carrying a stale version is refused and changes nothing") { subject ->
+                // The witness is the step index, not the payload: an update does not move the
+                // payload any more (see the rule above), so a store that ignored the version
+                // predicate entirely would leave it unchanged too and pass this by accident.
                 val initial = petich(id = "raced")
                 subject.repository.saveOrGet(initial)
-                subject.repository.update(initial.copy(version = 1L, payload = ConformancePayload("first-writer")))
-                val stale = initial.copy(version = 1L, payload = ConformancePayload("second-writer"))
+                subject.repository.update(initial.copy(version = 1L, currentInterceptorIndex = 1))
+                val stale = initial.copy(version = 1L, currentInterceptorIndex = 9)
                 val applied = subject.repository.update(stale)
                 val stored = subject.repository.findById("raced")
-                expect(!applied && (stored?.payload as? ConformancePayload)?.marker == "first-writer") {
-                    "update with a stale version returned $applied and left ${stored?.payload}"
+                expect(!applied && stored?.currentInterceptorIndex == 1) {
+                    "update with a stale version returned $applied and left index ${stored?.currentInterceptorIndex}"
                 }
             },
             case("an update of an id that does not exist is refused") { subject ->

@@ -72,10 +72,12 @@ public class PostgresPetichStore(
                         ":suspendedUntil, :compensationAttempts, :updatedAt, :chainFingerprint) " +
                         "ON CONFLICT (id) DO NOTHING",
                 ).bindState(petich)
-                    // The type is written once and never updated: a saga does not change what it
-                    // is. sqlx4k refuses a parameter the statement does not mention, which is how
-                    // the corpus found this the first time the two statements shared one binder.
-                    .bind("type", petich.type),
+                    // The type and the payload are written once and never updated: a saga does
+                    // not change what it is, nor what it was asked to do. sqlx4k refuses a
+                    // parameter the statement does not mention, which is how the corpus found this
+                    // the first time the two statements shared one binder.
+                    .bind("type", petich.type)
+                    .bind("payload", json.encodeToString(PAYLOAD, petich.payload)),
             )
             rows(sql("SELECT $COLUMNS FROM $table WHERE id = :id").bind("id", petich.id))
                 .single()
@@ -95,7 +97,10 @@ public class PostgresPetichStore(
                     sql(
                         "UPDATE $table SET " +
                             "current_phase = :phase, current_interceptor_index = :index, status = :status, " +
-                            "payload = :payload, enriched_payload = :enriched, version = :version, " +
+                            // payload is NOT in this list: written once by the insert, never
+                            // changed by the engine, and the largest column in the row (see the
+                            // Exposed store for the arithmetic).
+                            "enriched_payload = :enriched, version = :version, " +
                             "suspended_until = :suspendedUntil, " +
                             "compensation_attempts = :compensationAttempts, " +
                             "updated_at = :updatedAt, " +
@@ -162,13 +167,15 @@ public class PostgresPetichStore(
         return db.rows(query).map { it.toDomain() }
     }
 
-    /** Everything both statements write. The type is not here: only the insert sets it. */
+    /**
+     * Everything both statements write. The type and the payload are not here: only the insert
+     * sets them.
+     */
     private fun Statement.bindState(petich: Petich): Statement =
         bind("id", petich.id)
             .bind("phase", petich.currentPhase.name)
             .bind("index", petich.currentInterceptorIndex)
             .bind("status", petich.status.name)
-            .bind("payload", json.encodeToString(PAYLOAD, petich.payload))
             .bind("enriched", json.encodeToString(ENRICHED, petich.enrichedPayload))
             .bind("version", petich.version)
             .bind("suspendedUntil", petich.suspendedUntilEpochMs)
