@@ -105,6 +105,32 @@ class ConformanceTest {
         }
     }
 
+    /**
+     * The one statement a schema generator cannot produce, run against a real database.
+     *
+     * Without this the tuning is a string in a KDoc: a function nobody calls always works, and a
+     * fill factor that was never applied looks exactly like one that was. The read-back is from
+     * `pg_class`, which is where Postgres says what it actually did rather than what it was asked.
+     */
+    @Test
+    fun `the tuning statement applies and Postgres reports it`() {
+        transaction(db) {
+            petichTable.tuningStatements().forEach { exec(it) }
+        }
+
+        val options =
+            transaction(db) {
+                exec("SELECT reloptions FROM pg_class WHERE relname = '${petichTable.tableName}'") { rs ->
+                    if (rs.next()) rs.getString(1) else null
+                }
+            }
+
+        assertTrue(
+            options?.contains("fillfactor=80") == true,
+            "pg_class reports reloptions = $options for ${petichTable.tableName}",
+        )
+    }
+
     private fun truncate() {
         transaction(db) {
             petichTable.deleteAll()

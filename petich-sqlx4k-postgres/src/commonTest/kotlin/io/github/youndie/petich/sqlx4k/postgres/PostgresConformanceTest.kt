@@ -115,6 +115,31 @@ class PostgresConformanceTest {
         override suspend fun reset() = db.truncate(tables)
     }
 
+    /**
+     * The `WITH (fillfactor = 80)` in the schema this module hands the application, read back from
+     * `pg_class` — which is where Postgres says what it did rather than what it was asked. A
+     * storage parameter in a string that is never executed is indistinguishable from one that is.
+     */
+    @Test
+    fun `the saga table is created with room for the updates that follow`() =
+        runBlocking {
+            prepare()
+            val query =
+                sql("SELECT array_to_string(reloptions, ',') AS opts FROM pg_class WHERE relname = :name")
+                    .bind("name", tables.petiches)
+            val options =
+                db
+                    .rows(query)
+                    .single()
+                    .get("opts")
+                    .asStringOrNull()
+
+            assertTrue(
+                options?.contains("fillfactor=80") == true,
+                "pg_class reports reloptions = $options for ${tables.petiches}",
+            )
+        }
+
     @Test
     fun `the Postgres saga store satisfies every rule of the corpus`() =
         runBlocking {

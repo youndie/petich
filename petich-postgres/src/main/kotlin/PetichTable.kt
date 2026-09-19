@@ -68,4 +68,27 @@ public class PetichTable(
     init {
         index("idx_petiches_status_suspended_until", false, status, suspendedUntil)
     }
+
+    /**
+     * What a schema generator cannot say, as statements to run once, after the table exists.
+     *
+     * **Only the fill factor, and only on this table.** A saga row is updated at every step
+     * boundary — about eleven times for a six-step saga — and Postgres can keep those updates off
+     * the index chain only while the page they live on has room for the new row version. At the
+     * default 100 there is none: each update lands on another page, the table and its index bloat,
+     * and autovacuum is left to clean up after a workload that was avoidable. 80 leaves a fifth of
+     * each page for the versions that follow, which is the range this shape of table wants.
+     *
+     * **This is the asymmetry with `petich-sqlx4k-postgres`, stated rather than smoothed over.**
+     * That module hands the application SQL, so its `CREATE TABLE` carries `WITH (fillfactor = 80)`
+     * and there is nothing else to run. Exposed's `Table` cannot express a storage parameter, so on
+     * this side it is an `ALTER` beside the generated DDL. Same setting, two shapes, because the two
+     * modules state their schema in two different ways.
+     *
+     * On an empty table the `ALTER` and the `WITH` are equivalent: the setting governs how pages are
+     * filled from then on, and there are none yet. On a table that already holds sagas it applies to
+     * new pages only, and the bloat already there needs a `VACUUM FULL` or a `pg_repack` — which is
+     * the application's call and its downtime, not this library's.
+     */
+    public fun tuningStatements(): List<String> = listOf("ALTER TABLE $tableName SET (fillfactor = 80);")
 }
