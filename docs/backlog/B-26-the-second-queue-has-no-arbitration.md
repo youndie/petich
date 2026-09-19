@@ -1,7 +1,7 @@
 ---
 id: B-26
 title: "findStuck hands out sagas through a second queue that a consumer's claim does not cover"
-status: wip
+status: done
 priority: P1
 size: M
 stage: stage-8-upgrade
@@ -161,4 +161,71 @@ parameter's KDoc as a formula already; the heartbeat effect is not, and should b
   rather than retrying it or working it in parallel; the stuck queue's claim moves the row out of its
   own predicate; the expiry queue's claim is the status transition, taken once; no new public
   interface, no new column, no lease table; `ClaimedSweep`'s case is the test of it.
+
+## Closed 2026-09-19
+
+(e), as decided. One write per saga, taken before anything touches it, and the row's own optimistic
+lock decides. No lease table, no new interface, no column, and `ExpireResult.Contended` plus
+`onContended` so the loser is countable rather than silent.
+
+* **Stranded queue** — `update(row.copy(version = version + 1))` in the sweeper. The store re-stamps
+  `updated_at` itself, so the row stops matching the predicate that found it; the lease is
+  `stuckAfter` and there is no second parameter. A replica holding the row from before is refused
+  **before** it calls `intercept()`.
+* **Expiry queue** — the `PENDING_SIGNATURE → COMPENSATING` transition, written with a plain `update`
+  whose `false` is obeyed.
+
+### Three compromises, named rather than swept
+
+**1. This touched the engine, against the instruction the iteration started with.** The claim for
+expired sagas is inside `expireSuspended` (`expireClaimed`), not in the sweeper. Both alternatives
+were worse:
+
+* a version-bump claim in the sweeper leaves the window open, because the write that follows goes
+  through `forceUpdateStateWithRetry`, and that one re-reads and writes again until it wins — two
+  replicas both succeed and both roll back;
+* moving the transition into the sweeper closes it, and loses `ExpireResult`'s whole vocabulary: the
+  expiry reason that reaches `onCompensation`, and the chain-mismatch report from
+  [B-21](B-21-the-chain-is-addressed-by-position.md), both of which live on that path. It would also
+  put the engine's `compensatingFromIndex` arithmetic in the sweeper.
+
+What the instruction was protecting — the retry semantics `Petich.kt:694` defends — is untouched.
+Those retries compete with a live handler, which is what they are for; the arbitration now happens
+before them.
+
+**2. An expiry costs one extra write.** The rollback's own first write records `COMPENSATING` a
+second time, because `triggerCompensation` was left alone. That is the price of the loser stopping
+before a single `compensate()`, and it is paid only on that path. `WriteCountTest`'s scenario does
+not include an expiry, so the number it holds is unchanged.
+
+**3. The gap the decision already named is still there.** A sweeper is arbitrated against another
+sweeper, not against a live, slow handler holding no claim. `stuckAfter > max step time` remains the
+condition, and the README now says why in those words.
+
+### The corpus needed nothing, which was the point
+
+Exclusivity rests on `update`'s version predicate — the rule the corpus already holds every store to
+("an update carrying a stale version is refused and changes nothing") — and the concurrent case is
+`ConcurrentWritersTest`'s ("four writers racing to advance one saga leave exactly one winner"),
+which runs against a real Postgres on `jvm` and `linuxX64`. **The guarantee this item rests on was
+already proved in both stores before the item was written.** That is the difference between (e) and
+the four options it replaced, all of which would have needed a new contract and a new rule.
+
+### Verified
+
+Four cases, on both targets: a loser on each queue, a winner on each. The losing ones assert the
+absence of work — no `compensate()`, no `intercept()`, and the row untouched — which is the rule
+rather than the mechanism. A lost race is reproduced by refusing one write rather than by two
+threads and a hope; a flaky test pretending to be a concurrency test would be worse than none.
+
+Two mutations after the change was committed: ignoring the refused claim on the expiry path fails
+the expiry loser case, and dropping the claim from the stuck sweep fails the stranded loser case.
+Neither touches the other's test. 321 tests, 0 failures, `./gradlew build` on the Linux box.
+
+### What konekt can now delete
+
+`ClaimedSweep`, its `saga_sweep_claim` table and the `V12` migration become redundant: petich
+arbitrates both queues itself, and a claim on top of a claim only narrows a window that is already
+closed. Reported rather than done — youndie/konekt#48 is the open thread there, and that repository
+is not this loop's to edit.
 
