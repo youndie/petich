@@ -246,10 +246,18 @@ B-24 exists because three columns arrived and were named nowhere. Mitigation: th
 wizard re-asking a question — the step is re-entered rather than passed. Hypothesis: it becomes
 `ctx.suspend(again = true)` or a distinct return, and the wizard in konekt is where it is settled.
 
-**Open question 2. What does `step(key) { }` without a compensation mean?** A lambda member is
-convenient for a notification, and it asserts "there is nothing to undo" silently. Hypothesis: it is
-legitimate only after the last effect, and the honest form names it — a separate verb rather than an
-overload. Settled by writing konekt's `AnnounceTopUpInterceptor` in the new model.
+**Open question 2 — settled while writing konekt's announcing member (B-32), and not the way the
+hypothesis guessed.** The guess was that such a member wants a `PetichCheck` or a verb of its own.
+It wants neither: **a member that announces is a `PetichStep` whose `compensate` is empty**, and the
+builder's own ordering rule is what proves it. A check may not follow a step, so a check in
+`POST_PROCESSING` — after every effect — is refused, and refused correctly: a check exists to be able
+to refuse, and refusing there would keep what ran.
+
+The empty `compensate` it is left with is **not** the empty compensate this stage removed. Those were
+validations, written empty to satisfy a type that demanded an undo from something that never did
+anything. This one is a true statement about a member that did act: an announcement committed to the
+outbox is delivered at least once and cannot be un-announced. `= Unit` says so, and there is nothing
+better to write.
 
 **Correction found while implementing B-32 — the model could not announce anything.** The first real
 saga taken from a consumer ends with a member whose entire job is to emit an outbox event in the same
