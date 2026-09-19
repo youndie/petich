@@ -1,7 +1,7 @@
 ---
 id: B-26
 title: "findStuck hands out sagas through a second queue that a consumer's claim does not cover"
-status: question
+status: open
 priority: P1
 size: M
 stage: stage-8-upgrade
@@ -67,3 +67,98 @@ that is not a call this loop makes.
   whichever is chosen, konekt's case is the test of it.
 - Anchors: `petich-core/src/commonMain/kotlin/SuspendedPetichSweeper.kt`,
   `petich-core/src/commonMain/kotlin/Petich.kt`
+
+## Decided 2026-09-19 — the fifth option, and it was checked before it was chosen
+
+**None of the four answered the question before the question.** All of them asked how to cover the
+second queue with an EXTERNAL, OPTIONAL arbiter; the owner asked why the arbiter is external and
+optional at all. A new consumer with two replicas and no decorator gets a doubled `intercept()` in
+silence — and two replicas is an ordinary deployment, so an unarbitrated sweep is correct only on a
+single instance. Exclusivity belongs in the contract rather than in a seam. Under that reading the
+four options solve konekt's problem and leave petich's.
+
+**(e): the saga's own row is the arbiter.** The optimistic lock already there does the arbitrating,
+and no lease table is needed:
+
+* **Stranded sagas.** `findStuck` selects on "not written for longer than N". A CAS `update` that
+  bumps the version — and therefore `updated_at`, which the store stamps itself — before
+  `intercept()` is the claim. The loser's version is stale and it fails the CAS before any effect. A
+  replica reading after the claim no longer matches the predicate. The lease IS `stuckAfter`; there
+  is no second parameter and no DDL, because the column `findStuck` needs exists either way.
+* **Expired sagas.** No lease at all: the `PENDING_SIGNATURE → COMPENSATING` transition under CAS,
+  before the first `compensate()`, is the claim. If the winner dies mid-rollback the saga becomes an
+  ordinary stranded one and the other queue picks it up — two mechanisms collapse into one.
+
+**The whole construction rests on one rule: a sweeper that loses the CAS SKIPS the saga rather than
+retrying it.**
+
+### What the three checks found
+
+1. **The store stamps `updated_at` itself** on insert and on update, from the clock it was given
+   (`ExposedPetichRepository.kt:75`, `:108`; `PostgresPetichStore.kt:185`). It is not in `Petich` at
+   all, so a caller cannot forge it. Better than the option needed.
+2. **A CAS touch needs no new API**: `repository.update(row.copy(version = row.version + 1))` is one,
+   with the version predicate in both stores and `false` for the loser.
+3. **`COMPENSATING` is written before the first `compensate()` — and does not arbitrate.** The place
+   is right (`Petich.kt:698`, ahead of the rollback loop); the mechanism is not. It goes through
+   `forceUpdateStateWithRetry` (`:926`), which re-reads, writes `latest.version + 1`, **never compares
+   the status it read**, and repeats up to a hundred times. A second replica arriving after the winner
+   reads `COMPENSATING` at v+1 and writes `COMPENSATING` at v+2 successfully, then compensates
+   alongside it. That is not a CAS that arbitrates but one that wins at any cost, deliberately: the
+   comment at `:694` says losing the mark would leave the engine compensating a saga the database
+   shows as executing.
+
+### The B-64 hypothesis: supported, and a different function is responsible
+
+Not `processWithRetry` but `forceUpdateStateWithRetry`, which is the shorter path — though
+`processWithRetry` (`:912`) is a second route to the same place and becomes the main one for the
+stuck queue, since its retry re-runs `intercept()`.
+
+**But the window is narrower than "no arbitration at all".** `expireSuspended` re-reads under its own
+lock (`:854`) and answers `NotSuspended` for anything that is no longer `PENDING_SIGNATURE` (`:857`),
+so a replica that arrives after the winner's write is turned away correctly. The race is only "both
+read before either wrote" — narrow per saga, and routinely reached on a batch: two replicas polling
+every 30 seconds take 50 rows each. **So `ClaimedSweep` closed a real window rather than treating a
+symptom.** It cannot simply be deleted — but under (e) it collapses to nothing rather than to one
+implementation.
+
+### What (e) needs that does not exist
+
+**The claim must sit OUTSIDE the retrying layers** — in the sweeper, before `process()` and before
+`expireSuspended`. Then the engine is not touched at all: the loser skips, the winner goes in, and
+the retries inside keep doing what they are for, which is competing with a live handler rather than
+with a second sweeper.
+
+For the expiry queue that means the sweeper makes the `PENDING_SIGNATURE → COMPENSATING` transition
+itself, with a plain non-retrying `update`, and hands the already-claimed saga to the engine. The
+argument at `:694` does **not** apply to that case: it is about losing the mark to an unknown writer,
+and losing it to a second sweeper means the saga is being rolled back anyway. The engine cannot tell
+those two losers apart today, which is exactly why the claim belongs where it can.
+
+### The batch trap dissolves
+
+In (d) and in `ClaimedSweep` the lease on the last saga of a batch drains while the first is being
+worked. In (e) the claim is taken one row at a time immediately before that row is processed, and the
+lease equals `stuckAfter` — the trap has nowhere to live. After "no DDL and no new interfaces", this
+is the strongest argument for (e).
+
+### The corpus needs nothing new, and that is the point
+
+Exclusivity rests on `update`'s version predicate, which the corpus already holds every store to
+("an update carrying a stale version is refused and changes nothing"). Concurrency is explicitly out
+of the corpus's scope — it runs one caller at a time — and the existing home for it is
+`ConcurrentWritersTest` ("four writers racing to advance one saga leave exactly one winner"). What
+this item owes is a test that the SWEEPER's loser skips rather than retries, not a new storage rule.
+
+### Still open after (e)
+
+Arbitration between sweepers does not arbitrate a sweeper against a live, slow handler that holds no
+lease. (e) weakens it — an ordinary pass writes the row at every step boundary, which is a heartbeat
+with one-step granularity — but `stuckAfter > max step time` stays a requirement. It is in the
+parameter's KDoc as a formula already; the heartbeat effect is not, and should be.
+
+- AC (superseding the one above): a second sweeper that loses the claim skips the saga and says so,
+  rather than retrying it or working it in parallel; the stuck queue's claim moves the row out of its
+  own predicate; the expiry queue's claim is the status transition, taken once; no new public
+  interface, no new column, no lease table; `ClaimedSweep`'s case is the test of it.
+
