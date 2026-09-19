@@ -57,8 +57,10 @@ class DefinitionEngineTest {
         }
     }
 
-    private class RowRepository : PetichRepository {
+    /** Outbox-aware, because two of the cases below are about what rides with the write. */
+    private class RowRepository : OutboxAwarePetichRepository {
         var row: Petich? = null
+        val outbox: MutableList<String> = mutableListOf()
 
         override suspend fun findById(id: String): Petich? = row?.takeIf { it.id == id }
 
@@ -69,13 +71,24 @@ class DefinitionEngineTest {
             return petich
         }
 
-        override suspend fun update(petich: Petich): Boolean {
+        override suspend fun update(
+            petich: Petich,
+            outboxEvents: List<OutboxEvent>,
+        ): Boolean {
             val existing = row ?: return false
             if (petich.version != existing.version + 1) return false
             row = petich
+            outboxEvents.forEach { outbox.add(it.id) }
             return true
         }
     }
+
+    private fun event(id: String) =
+        object : OutboxEvent {
+            override val id = id
+            override val type = "test.event"
+            override val payload = "{}"
+        }
 
     private fun petich(id: String) =
         Petich(
@@ -225,6 +238,68 @@ class DefinitionEngineTest {
                 listOf("do:reserve", "do:charge", "undo:charge", "undo:reserve"),
                 log.entries,
                 "the member that threw is undone first - the engine never learned whether it acted",
+            )
+        }
+
+    /**
+     * Found by migrating the first real consumer (B-32): a definition member could not announce
+     * anything. konekt's top-up saga ends with a step whose whole job is to emit an event in the
+     * same write as the state change, and the model had no way to say it.
+     */
+    @Test
+    fun `a member announces in the write that records what it did`() =
+        runBlocking {
+            val log = Log()
+            val repository = RowRepository()
+            val definition =
+                petich<OrderPayload>("order") {
+                    step("charge", Acts("charge", log))
+                    announce("notify", Acts("notify", log) { ctx -> ctx.emit(event("order-completed")) })
+                }
+
+            val result = engineFor(definition, repository).process(petich("p-announced"))
+
+            assertTrue(result is PetichResult.Success, "expected a completed saga: $result")
+            assertEquals(listOf("order-completed"), repository.outbox, "the event rides with the write")
+        }
+
+    /**
+     * And from a compensation, which is what `compensateWithEvents` was for: a rollback that has to
+     * be announced is announced by the member that did the undoing, in the write that records it.
+     */
+    @Test
+    fun `a compensation announces what it undid`() =
+        runBlocking {
+            val log = Log()
+            val repository = RowRepository()
+            val undoing =
+                object : PetichStep<OrderPayload> {
+                    override suspend fun execute(
+                        ctx: PetichStepContext,
+                        payload: OrderPayload,
+                    ) {
+                        log.entries.add("do:reserve")
+                    }
+
+                    override suspend fun compensate(
+                        ctx: PetichStepContext,
+                        payload: OrderPayload,
+                    ) {
+                        log.entries.add("undo:reserve")
+                        ctx.emit(event("reservation-released"))
+                    }
+                }
+            val definition =
+                petich<OrderPayload>("order") {
+                    step("reserve", undoing)
+                    step("charge", Acts("charge", log) { ctx -> ctx.fail("the provider is down") })
+                }
+
+            engineFor(definition, repository).process(petich("p-announced-undo"))
+
+            assertTrue(
+                repository.outbox.contains("reservation-released"),
+                "the rollback said so, in its own write: ${repository.outbox}",
             )
         }
 }

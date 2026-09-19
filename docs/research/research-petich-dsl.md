@@ -251,6 +251,20 @@ convenient for a notification, and it asserts "there is nothing to undo" silentl
 legitimate only after the last effect, and the honest form names it — a separate verb rather than an
 overload. Settled by writing konekt's `AnnounceTopUpInterceptor` in the new model.
 
+**Correction found while implementing B-32 — the model could not announce anything.** The first real
+saga taken from a consumer ends with a member whose entire job is to emit an outbox event in the same
+write as the state change, and `PetichMemberContext` had no way to say it. Two more of the same kind
+were behind it: a **compensation** that announces what it undid (konekt overrides
+`compensateWithEvents` for exactly that), and a `PetichSideEffect` attached to a member's write. All
+three were expressible in the interceptor model and none in the definition model, because the
+outcomes were designed around what a member *decides* and not around what it wants *committed
+alongside*. `ctx.emit` and `ctx.attach` close it. **This is what an acceptance item is for**: it took
+one saga of three members to find, and no amount of reading the design would have.
+
+One asymmetry inherited rather than introduced: `InterceptorResult.Suspend` carries side effects and
+**not** outbox events, so a member that announces and then suspends loses the announcement. That was
+true before this stage and is not made worse by it; it is worth an item of its own.
+
 **Open question 3. Is the phase list still five?** The phases came from a banking pipeline
 (`ENRICHMENT → VALIDATION → AUTHORIZATION → EXECUTION → POST_PROCESSING`). With order given by the
 definition, a phase is only an insertion point for globals and a timeout table. Hypothesis: they

@@ -118,6 +118,22 @@ public interface PetichMemberContext {
     public fun recordedValue(): PetichStepRecord?
 
     /**
+     * Announce something, committed in the SAME write as the state change this member produces — the
+     * outbox, and the reason "the work happened but the notification never went out" is structurally
+     * impossible here.
+     *
+     * Available from a compensation too: a rollback that must be announced — "the reservation was
+     * released" — is announced by the member that did the releasing, in the write that records it.
+     */
+    public fun emit(event: OutboxEvent)
+
+    /**
+     * Work that must be committed with this member's state change and which the engine deliberately
+     * cannot interpret — a durable timer, most concretely. See [PetichSideEffect].
+     */
+    public fun attach(effect: PetichSideEffect)
+
+    /**
      * Stop and wait for a separate `resume` call, for [ttl] or for the engine's blanket deadline.
      *
      * **It records the intent and returns**; it does not throw. A control-flow exception here would
