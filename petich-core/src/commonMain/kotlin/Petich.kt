@@ -214,6 +214,19 @@ public interface PetichInterceptor<T : PetichPayload> {
         payload: T,
     ): InterceptorResult
 
+    /**
+     * Undo what [intercept] did. Two things are asked of an implementation, and both are the
+     * engine's behaviour rather than advice:
+     *
+     * **It may be called for a step that did not happen.** When [intercept] throws or times out
+     * the engine cannot tell an effect that landed from one that never did, so it compensates that
+     * step as well: `release` may arrive without a `reserve`, and must be a no-op rather than a
+     * failure. Before this, the failed step was skipped and an effect that had reached the far side
+     * was left behind.
+     *
+     * **It must be idempotent.** The rollback commits how far it has got AFTER calling this, so a
+     * rollback interrupted between the two resumes on the same step.
+     */
     public suspend fun compensate(
         petich: Petich,
         payload: T,
@@ -441,9 +454,36 @@ public class PetichEngine(
         petich: Petich,
         reason: String,
         isSystemFailure: Boolean = false,
+        // The step at currentInterceptorIndex was entered and never reported an outcome: it threw
+        // or it timed out. Then it is part of the rollback, and this is the whole of B-18.
+        //
+        // The index only advances after a committed Proceed, so without this flag the rollback
+        // starts one below the step that failed and that step compensates nothing. That is correct
+        // only if a failed intercept() means nothing happened, which for a remote call it does not:
+        // the reservation reaching the far side while the answer is lost is the ordinary failure of
+        // a distributed system, and the engine sees exactly what it sees when the call never landed.
+        // It cannot tell the two apart, so it rolls back the one that might have happened — and the
+        // price is paid in the contract instead: compensate() may be called for a step that did not
+        // happen (see PetichInterceptor.compensate).
+        //
+        // NOT set for InterceptorResult.Compensate. That is a reported outcome — the step is alive
+        // and said what it wants; a step that did work and then decided to roll back has its own
+        // body to undo it in. Ambiguity is what this flag is about, and there is none there.
+        //
+        // NOT set for an expired suspension either, where currentInterceptorIndex already points
+        // PAST the step that suspended (the Suspend branch stores index + 1). Adding to it there
+        // would compensate a step that was never entered.
+        stepOutcomeUnknown: Boolean = false,
     ): PetichResult {
         metrics.onCompensation(petich.type, reason)
-        val compensateFromIdx = petich.compensatingFromIndex ?: petich.currentInterceptorIndex
+        // The field means "one past the next step to compensate", and it means that for every
+        // writer and for the reader below — including a rollback resumed from storage, which takes
+        // this branch's `?:` never, because its value was persisted by the loop further down. That
+        // is what keeps a resumed rollback from compensating the same step twice: the meaning of
+        // the number does not depend on who wrote it.
+        val compensateFromIdx =
+            petich.compensatingFromIndex
+                ?: (petich.currentInterceptorIndex + if (stepOutcomeUnknown) 1 else 0)
         // Via forceUpdateStateWithRetry rather than a plain update with the result discarded:
         // the "rollback started" mark is the most important write of the whole scenario. Losing it
         // to a version conflict would leave the engine compensating a petich that the database
@@ -472,7 +512,13 @@ public class PetichEngine(
 
                 val startIndex =
                     if (phaseOrdinal == startPhaseOrdinal) {
-                        compensateFromIdx - 1
+                        // Coerced, because this number can now equal the phase's size — the last
+                        // step of a phase failing is the ordinary way to get there — and because a
+                        // number read back from storage was computed against the chain as it was
+                        // assembled then. A deploy that shortens a phase would otherwise index past
+                        // the end and crash the rollback, which is the one pass that must not throw.
+                        // Landing on the wrong step is a separate defect with its own item (B-21).
+                        (compensateFromIdx - 1).coerceAtMost(phaseInterceptors.size - 1)
                     } else {
                         phaseInterceptors.size - 1
                     }
@@ -748,6 +794,7 @@ public class PetichEngine(
                                             currentPetich,
                                             e.message ?: "Timeout",
                                             isSystemFailure = true,
+                                            stepOutcomeUnknown = true,
                                         )
                                     break
                                 } catch (e: CancellationException) {
@@ -758,6 +805,7 @@ public class PetichEngine(
                                             currentPetich,
                                             e.message ?: "System Error",
                                             isSystemFailure = true,
+                                            stepOutcomeUnknown = true,
                                         )
                                     break
                                 }
