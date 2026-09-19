@@ -1,7 +1,7 @@
 ---
 id: B-23
 title: "The write count the README sells the engine on is measured by nothing"
-status: open
+status: wip
 priority: P3
 size: S
 stage: stage-7-write-cost
