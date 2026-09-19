@@ -21,6 +21,32 @@ public interface ExpiringPetichRepository : PetichRepository {
         nowEpochMs: Long,
         limit: Int,
     ): List<Petich>
+
+    /**
+     * Sagas in [status] that nothing has written since [notTouchedSinceEpochMs] — the ones a
+     * process died in the middle of. One status per call rather than a set, because both stores
+     * express that as a plain equality and a list parameter is the kind of thing one of them binds
+     * differently from the other.
+     *
+     * **The stamp it filters on is the store's own**, written on every insert and update from the
+     * clock the store was given; it is not part of [Petich], exactly as `outbox_events.created_at`
+     * is not part of an outbox event. Several replicas write it from their own clocks, which is
+     * youndie/petich#20 one table over: the skew is seconds and the threshold below is minutes, so
+     * it changes nothing here — but it is the reason the threshold is a formula rather than a
+     * constant.
+     *
+     * **Deliberately not indexed on that stamp.** A saga row is updated at every step boundary, and
+     * an index containing a column that changes on every write makes every one of those writes a
+     * non-HOT update — eleven per saga, on the busiest table in the system, to serve a query that
+     * runs once per poll. The leading `status` column of the index the sweeper already needs is
+     * enough to reach the handful of rows in a non-terminal state; the stamp is rechecked from the
+     * heap.
+     */
+    public suspend fun findStuck(
+        status: PetichStatus,
+        notTouchedSinceEpochMs: Long,
+        limit: Int,
+    ): List<Petich>
 }
 
 // Background sweeping of suspended petiches: poll -> expireSuspended, once per pollInterval.
@@ -47,6 +73,24 @@ public class SuspendedPetichSweeper(
     private val clock: PetichClock,
     private val pollInterval: Duration = 30.seconds,
     private val batchSize: Int = 50,
+    /**
+     * How long a saga must sit untouched in PROCESSING or COMPENSATING before this worker re-drives
+     * it. `null` — the default — leaves that half switched off, so an application that adopts this
+     * version changes nothing by upgrading.
+     *
+     * **The number is a formula, not a taste.** There is no lease and no owner column: nothing
+     * distinguishes a saga whose process died from one a live instance is slowly working on, and
+     * the optimistic version protects the row rather than the effects — two instances re-driving
+     * one saga both call `intercept()`, and only one of them loses the write. So this must exceed
+     * the longest a healthy pass can take:
+     *
+     *     stuckAfter > max(PetichEngineConfig.phaseTimeoutsMs ∪ compensationTimeoutsMs)
+     *
+     * Both tables are per-application, which is why no default here could be right. A minute
+     * chosen by feel is wrong in somebody's configuration, and wrong in the direction that runs a
+     * payment twice.
+     */
+    private val stuckAfter: Duration? = null,
     // Called for every petich that actually expired — an application needs this to notify the
     // client ("the confirmation window has passed") or to record a metric. A failure in the
     // handler does not undo the rollback: by that point it has already happened.
@@ -55,6 +99,10 @@ public class SuspendedPetichSweeper(
     // means someone introduced a new petich type and forgot to register it here, and such petiches
     // will pile up expired forever.
     private val onUnowned: (Petich) -> Unit = {},
+    // Called for every saga picked up after the process that was running it died. Worth a log line
+    // and a counter: a rate that is normally zero and suddenly is not says that instances are
+    // dying mid-saga, which nothing else in this library is in a position to notice.
+    private val onRevived: (String) -> Unit = {},
     /**
      * Something failed that is not one item's own work: the storage refused a pass, or writing an
      * outcome back did not go through.
@@ -72,6 +120,7 @@ public class SuspendedPetichSweeper(
             while (isActive) {
                 try {
                     sweep()
+                    sweepStuck()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -83,6 +132,45 @@ public class SuspendedPetichSweeper(
                 delay(pollInterval)
             }
         }
+
+    /**
+     * Re-drive sagas a process died in the middle of. The engine already resumes both an
+     * interrupted pass and an interrupted rollback correctly the moment [PetichEngine.process] is
+     * called with that id; until this existed, nothing called it.
+     *
+     * It does not decide anything itself — it hands the saga back to its engine and lets the engine
+     * re-read, re-lock and continue. A rollback that keeps failing is bounded by
+     * `PetichEngineConfig.maxCompensationAttempts` and ends in `COMPENSATION_FAILED`, which is
+     * terminal and therefore never returned here again; without that bound this method would be a
+     * loop around a `compensate()` that cannot succeed, which is why it was written second.
+     */
+    public suspend fun sweepStuck(): Int {
+        val after = stuckAfter ?: return 0
+        val threshold = clock.nowEpochMs() - after.inWholeMilliseconds
+        var revived = 0
+        for (status in listOf(PetichStatus.PROCESSING, PetichStatus.COMPENSATING)) {
+            repository.findStuck(status, threshold, batchSize).forEach { petich ->
+                try {
+                    val engine = engineFor(petich)
+                    if (engine == null) {
+                        onUnowned(petich)
+                        return@forEach
+                    }
+                    engine.process(petich)
+                    revived++
+                    onRevived(petich.id)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Same rule as the batch above: one saga that cannot be carried on must not
+                    // cost the rest of the batch its sweep, and a saga that fails this way on every
+                    // pass must not do it in silence.
+                    onWorkerFailure("stuck:${petich.id}", e)
+                }
+            }
+        }
+        return revived
+    }
 
     // Separate from start: a single pass can be invoked by hand — from a test or an admin
     // endpoint — without spawning a coroutine or waiting out the interval.

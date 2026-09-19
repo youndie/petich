@@ -8,6 +8,7 @@ import io.github.youndie.petich.Petich
 import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichRepository
+import io.github.youndie.petich.PetichStatus
 import io.github.youndie.petich.SimpleEnrichedPayload
 import io.github.youndie.petich.conformance.ConformancePayload
 import io.github.youndie.petich.conformance.Finding
@@ -204,6 +205,12 @@ class ConformanceTest {
             limit: Int,
         ): List<Petich> = store.findExpired(nowEpochMs, limit)
 
+        override suspend fun findStuck(
+            status: PetichStatus,
+            notTouchedSinceEpochMs: Long,
+            limit: Int,
+        ): List<Petich> = store.findStuck(status, notTouchedSinceEpochMs, limit)
+
         override suspend fun update(
             petich: Petich,
             outboxEvents: List<OutboxEvent>,
@@ -225,6 +232,12 @@ class ConformanceTest {
             nowEpochMs: Long,
             limit: Int,
         ): List<Petich> = store.findExpired(nowEpochMs, limit)
+
+        override suspend fun findStuck(
+            status: PetichStatus,
+            notTouchedSinceEpochMs: Long,
+            limit: Int,
+        ): List<Petich> = store.findStuck(status, notTouchedSinceEpochMs, limit)
 
         override suspend fun update(
             petich: Petich,

@@ -193,6 +193,47 @@ public class PetichStoreConformance {
                 val found = repository.findExpired(nowEpochMs = 2_000L, limit = 10)
                 expect(found.isEmpty()) { "findExpired(2000) returned ${found.map { it.id }}" }
             },
+            case("a saga in the status asked for is found stuck") { subject ->
+                val repository = subject.repository as? ExpiringPetichRepository ?: return@case null
+                repository.saveOrGet(petich(id = "stuck-1"))
+                // Long.MAX_VALUE means "whenever it was written, it was before now", which is the
+                // one threshold that holds whatever clock the store was given.
+                val found = repository.findStuck(PetichStatus.PROCESSING, Long.MAX_VALUE, limit = 10)
+                expect(found.map { it.id } == listOf("stuck-1")) {
+                    "findStuck(PROCESSING) returned ${found.map { it.id }}"
+                }
+            },
+            case("a saga in another status is not stuck in this one") { subject ->
+                val repository = subject.repository as? ExpiringPetichRepository ?: return@case null
+                repository.saveOrGet(petich(id = "done-1", status = PetichStatus.COMPLETED))
+                val found = repository.findStuck(PetichStatus.PROCESSING, Long.MAX_VALUE, limit = 10)
+                expect(found.none { it.id == "done-1" }) {
+                    "findStuck(PROCESSING) returned ${found.map { it.id }}"
+                }
+            },
+            case("a write moves the stamp findStuck filters on") { subject ->
+                val repository = subject.repository as? ExpiringPetichRepository ?: return@case null
+                // The point of this rule, and the reason it is not covered by the two above: a store
+                // that never writes the column at all still answers them, because a column left at
+                // its DDL default is older than any threshold. Here the threshold is 1 ms after the
+                // epoch, so only a row carrying a real stamp is excluded — and a store that forgot
+                // the column in its UPDATE hands its saga to the sweeper while a live instance is
+                // working on it. (A store whose clock reads 0 or 1 would fail this; none can, since
+                // the same clock stamps the outbox rows a relay orders by.)
+                val initial = petich(id = "stamped")
+                repository.saveOrGet(initial)
+                repository.update(initial.copy(version = 1L, currentInterceptorIndex = 1))
+                val found = repository.findStuck(PetichStatus.PROCESSING, notTouchedSinceEpochMs = 1L, limit = 10)
+                expect(found.none { it.id == "stamped" }) {
+                    "findStuck(since = 1) returned ${found.map { it.id }}, so the row carries no stamp of its own"
+                }
+            },
+            case("findStuck returns no more than the limit asked for") { subject ->
+                val repository = subject.repository as? ExpiringPetichRepository ?: return@case null
+                repeat(3) { repository.saveOrGet(petich(id = "many-stuck-$it")) }
+                val found = repository.findStuck(PetichStatus.PROCESSING, Long.MAX_VALUE, limit = 2)
+                expect(found.size == 2) { "findStuck(limit = 2) returned ${found.size} rows" }
+            },
             case("findExpired returns no more than the limit asked for") { subject ->
                 val repository = subject.repository as? ExpiringPetichRepository ?: return@case null
                 repeat(5) { index ->

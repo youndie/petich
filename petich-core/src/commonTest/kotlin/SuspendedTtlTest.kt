@@ -79,6 +79,15 @@ private class TtlRepository : ExpiringPetichRepository {
             .filter { it.status == PetichStatus.PENDING_SIGNATURE }
             .filter { (it.suspendedUntilEpochMs ?: Long.MAX_VALUE) <= nowEpochMs }
             .take(limit)
+
+    // This double keeps no stamp of its own: the sweeper's stuck half is off unless stuckAfter is
+    // set, and these tests are about deadlines. A double that answered something here would be
+    // inventing an answer the tests never ask for.
+    override suspend fun findStuck(
+        status: PetichStatus,
+        notTouchedSinceEpochMs: Long,
+        limit: Int,
+    ): List<Petich> = emptyList()
 }
 
 private fun petich(id: String = "p-1") =

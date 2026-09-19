@@ -42,7 +42,16 @@ public fun petichPostgresSchema(
             -- DEFAULT 0 so the same column can be added by ALTER to a table that already holds
             -- sagas: petich ships no migrations, and a NOT NULL column with no default cannot be
             -- added to a non-empty table at all.
-            compensation_attempts INT NOT NULL DEFAULT 0
+            compensation_attempts INT NOT NULL DEFAULT 0,
+            -- When the row was last written, from the clock the store was given. DEFAULT 0 so the
+            -- column can be added by ALTER to a table that already holds sagas; every write from
+            -- this store sets it.
+            --
+            -- There is deliberately NO index on it. It changes on every one of the eleven writes a
+            -- six-step saga makes, and an index containing it would turn each of those into a
+            -- non-HOT update on the busiest table here, to serve a query that runs once per poll.
+            -- The sweeper reaches its rows through the leading status column of the index below.
+            updated_at BIGINT NOT NULL DEFAULT 0
         );
         """.trimIndent(),
         // The sweeper's query is "status = PENDING_SIGNATURE and suspended_until <= now", run on
