@@ -1,7 +1,7 @@
 ---
 id: B-27
 title: "0.3.0 goes to Central before the redesign starts"
-status: open
+status: dropped
 priority: P0
 size: XS
 stage: stage-9-definition
@@ -27,3 +27,34 @@ so anything unreleased now stays unreleased for as long as the rewrite takes.
 - AC: `io.github.youndie.petich` 0.3.0 is resolvable from Central, `tools/native-consumer-probe.py`
   says RESOLVED against it, and the tag names the tree the bundle was built from.
 - Anchors: `gradle.properties`, `tools/native-consumer-probe.py`, `README.md`
+
+## Dropped 2026-09-19 — publishing would pin a model that is about to be deleted
+
+The owner refused it, and the refusal is better than the item's own argument.
+
+**A version on Central cannot be rewritten or taken back** — this repository's own release decision,
+written when 0.2.0 went out. Publishing 0.3.0 would put the interceptor model there permanently, one
+release before [B-33](B-33-remove-the-interceptor-model.md) removes it: anyone picking it up in the
+interval gets an API with a one-release life, and the reason they would find it at all is that we
+put it there.
+
+The item argued that the published version should not be the one carrying the defects. That is true
+and it is outweighed. 0.2.0 has **no consumers outside this portfolio**, and the two inside it are
+ours and resolve snapshots — konekt and shashki are being fixed against `0.3.0.56` and later without
+Central being involved at any point.
+
+**What this costs, stated rather than glossed:** the five fixes of stages 6 and 7 reach Central only
+with the new model, so for as long as `stage-9-definition` runs, the published petich is one in which
+a failed step is never compensated and a refusal keeps what earlier steps did. That is acceptable
+only because the audience is a shop window rather than a user.
+
+**What it changes downstream:** the next publication is the redesigned API, so the upgrade notes
+built by [B-24](B-24-a-release-that-adds-a-column-names-it-nowhere.md) will describe a jump from
+0.2.0 to that, not to 0.3.0. The per-column `since` values stay correct — the columns did arrive in
+0.3.0, and `0.3.0.x` snapshots are real and resolvable — but nothing on Central will ever show that
+step.
+
+**Kept as a file rather than deleted**, so the same proposal is refused in ten seconds the next time
+it comes up: "release what is ready before starting the rewrite" is the obvious move, and it is wrong
+here for a reason that is not obvious.
+

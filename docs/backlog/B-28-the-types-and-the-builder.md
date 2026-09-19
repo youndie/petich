@@ -5,7 +5,6 @@ status: open
 priority: P1
 size: L
 stage: stage-9-definition
-blocked_by: [B-27]
 ---
 
 # B-28 — the flow of one saga, written where it can be read
@@ -41,6 +40,9 @@ val orderPetich = petich<OrderPayload>("order") {
   and the only reason `withPayloadDiagnostics` exists to rename the resulting `ClassCastException`.
   Naming the payload once on the definition deletes both. The price is that a step cannot serve two
   payload types; nothing in either consumer does.
+- **[B-27](B-27-release-0-3-0-before-the-redesign.md) was dropped**, so nothing waits on a Central
+  release: publishing 0.3.0 would have pinned the interceptor model there one release before
+  [B-33](B-33-remove-the-interceptor-model.md) deletes it.
 - **Does not cover:** the per-step record ([B-29](B-29-what-a-step-did-belongs-to-that-step.md)),
   globals ([B-30](B-30-globals-inline-in-the-chain.md)), the registry
   ([B-31](B-31-the-engine-knows-which-definition-owns-a-saga.md)) or removing the old model
