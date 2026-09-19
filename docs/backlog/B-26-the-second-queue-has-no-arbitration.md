@@ -1,7 +1,7 @@
 ---
 id: B-26
 title: "findStuck hands out sagas through a second queue that a consumer's claim does not cover"
-status: open
+status: wip
 priority: P1
 size: M
 stage: stage-8-upgrade
