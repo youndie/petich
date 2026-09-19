@@ -14,6 +14,7 @@ import io.github.youndie.petich.conformance.ConformancePayload
 import io.github.youndie.petich.conformance.Finding
 import io.github.youndie.petich.conformance.IdempotencyStoreConformance
 import io.github.youndie.petich.conformance.IdempotencyStoreSubject
+import io.github.youndie.petich.conformance.MovableClock
 import io.github.youndie.petich.conformance.OutboxStoreConformance
 import io.github.youndie.petich.conformance.OutboxStoreSubject
 import io.github.youndie.petich.conformance.PetichStoreConformance
@@ -92,7 +93,11 @@ class ConformanceTest {
     private val idempotencyTable = IdempotencyKeysTable()
     private val scheduleTable = ScheduledJobsTable()
 
-    private val store = ExposedPetichRepository(db, petichTable, outboxTable)
+    // Movable, because one rule of the corpus is about what an UPDATE stamps and cannot be asked
+    // while time stands still.
+    private val movableClock = MovableClock()
+
+    private val store = ExposedPetichRepository(db, petichTable, outboxTable, movableClock)
 
     init {
         transaction(db) {
@@ -126,6 +131,8 @@ class ConformanceTest {
     private inner class ExposedPetichSubject(
         override val repository: PetichRepository = store,
     ) : PetichStoreSubject {
+        override val clock = movableClock
+
         override suspend fun reset() = truncate()
 
         // Read from the table rather than through fetchPending: two rules are about rows that must

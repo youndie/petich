@@ -4,14 +4,40 @@ import io.github.youndie.petich.ExpiringPetichRepository
 import io.github.youndie.petich.OutboxAwarePetichRepository
 import io.github.youndie.petich.OutboxEvent
 import io.github.youndie.petich.Petich
+import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichRepository
 import io.github.youndie.petich.PetichStatus
 import io.github.youndie.petich.outbox.OutboxRecord
 
+/**
+ * The clock a subject's store stamps its rows from, which the corpus can move.
+ *
+ * One rule below cannot be written without it: whether an UPDATE re-stamps the row is invisible
+ * while time stands still, because the stamp the INSERT wrote is already in the past. A store that
+ * forgets the column in its update then answers every question correctly until a process dies — and
+ * then hands a live instance's saga to the sweeper.
+ */
+public class MovableClock(
+    private var now: Long = 1_000L,
+) : PetichClock {
+    override fun nowEpochMs(): Long = now
+
+    public fun advanceBy(ms: Long) {
+        now += ms
+    }
+}
+
 /** What the corpus is run against: one store, plus a way to look at the outbox it may own. */
 public interface PetichStoreSubject : ConformanceSubject {
     public val repository: PetichRepository
+
+    /**
+     * The clock the store under test was built with. Not defaulted: a subject that cannot supply
+     * one would silently skip the rule that needs it, and a check that cannot find its subject
+     * scores as a pass.
+     */
+    public val clock: MovableClock
 
     /**
      * Every outbox row the store currently holds, or `null` when this store has no outbox at all.
@@ -211,21 +237,26 @@ public class PetichStoreConformance {
                     "findStuck(PROCESSING) returned ${found.map { it.id }}"
                 }
             },
-            case("a write moves the stamp findStuck filters on") { subject ->
+            case("an update re-stamps the row, so a saga being worked on is not called stuck") { subject ->
                 val repository = subject.repository as? ExpiringPetichRepository ?: return@case null
-                // The point of this rule, and the reason it is not covered by the two above: a store
-                // that never writes the column at all still answers them, because a column left at
-                // its DDL default is older than any threshold. Here the threshold is 1 ms after the
-                // epoch, so only a row carrying a real stamp is excluded — and a store that forgot
-                // the column in its UPDATE hands its saga to the sweeper while a live instance is
-                // working on it. (A store whose clock reads 0 or 1 would fail this; none can, since
-                // the same clock stamps the outbox rows a relay orders by.)
+                // The rule the other three cannot express. A store that stamps on INSERT and forgets
+                // the column in its UPDATE answers all of them correctly — the stamp it wrote is
+                // already in the past — and then, in production, hands the sweeper a saga a live
+                // instance is in the middle of. Only moving the clock between the two writes tells
+                // them apart.
                 val initial = petich(id = "stamped")
                 repository.saveOrGet(initial)
+                val afterInsert = subject.clock.nowEpochMs()
+                subject.clock.advanceBy(10_000L)
                 repository.update(initial.copy(version = 1L, currentInterceptorIndex = 1))
-                val found = repository.findStuck(PetichStatus.PROCESSING, notTouchedSinceEpochMs = 1L, limit = 10)
+                val found =
+                    repository.findStuck(
+                        PetichStatus.PROCESSING,
+                        notTouchedSinceEpochMs = afterInsert + 1,
+                        limit = 10,
+                    )
                 expect(found.none { it.id == "stamped" }) {
-                    "findStuck(since = 1) returned ${found.map { it.id }}, so the row carries no stamp of its own"
+                    "findStuck returned ${found.map { it.id }}: the update left the stamp where the insert put it"
                 }
             },
             case("findStuck returns no more than the limit asked for") { subject ->

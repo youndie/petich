@@ -2,13 +2,13 @@ package io.github.youndie.petich.sqlx4k.postgres
 
 import io.github.smyrgeorge.sqlx4k.impl.extensions.asInt
 import io.github.youndie.petich.EnrichedPayload
-import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.SimpleEnrichedPayload
 import io.github.youndie.petich.conformance.ConformancePayload
 import io.github.youndie.petich.conformance.Finding
 import io.github.youndie.petich.conformance.IdempotencyStoreConformance
 import io.github.youndie.petich.conformance.IdempotencyStoreSubject
+import io.github.youndie.petich.conformance.MovableClock
 import io.github.youndie.petich.conformance.OutboxStoreConformance
 import io.github.youndie.petich.conformance.OutboxStoreSubject
 import io.github.youndie.petich.conformance.PetichStoreConformance
@@ -50,7 +50,9 @@ class PostgresConformanceTest {
                 }
         }
 
-    private val clock = PetichClock { 1_000L }
+    // Movable rather than fixed: the corpus asks what an UPDATE stamps, which is invisible unless
+    // the clock can move between two writes.
+    private val clock = MovableClock()
 
     private val store =
         PostgresPetichStore(db, json, clock, table = tables.petiches, outboxTable = tables.outbox)
@@ -62,6 +64,8 @@ class PostgresConformanceTest {
 
     private inner class PetichSubject : PetichStoreSubject {
         override val repository = store
+
+        override val clock = this@PostgresConformanceTest.clock
 
         override suspend fun reset() = db.truncate(tables)
 
