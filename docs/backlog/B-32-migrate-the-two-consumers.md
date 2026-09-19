@@ -68,3 +68,40 @@ so it waits for a clean tree.
 
 **Next:** konekt's three sagas — top-up first, since its step is the one with a record to make.
 
+
+## Iteration 2 — 2026-09-20
+
+**An engine handed a saga whose type matches no definition ran zero members across five phases and
+wrote `COMPLETED`.** The caller was told the work succeeded, the money never moved, and every
+assertion anyone naturally writes about the result passed. konekt's type constant reads `top_up`; the
+definition, spelled by hand, read `topup`. Nothing in the model made the two meet, and the engine's
+answer to "no member applies" was the same as its answer to "every member succeeded". Closed in
+`72e0c49` — a saga no member of any phase applies to now fails terminally and names the types the
+engine does know. **This is the second defect this stage owes to migrating a consumer rather than to
+its own suite**, and the first that the suite could not have found: a test writes the type it
+declared.
+
+**The README hands one DDL to two stores that type the column differently.** `step_records TEXT NOT
+NULL DEFAULT '{}'` is the native store's spelling; konekt is an Exposed consumer, where
+`PetichTable` declares `json()`. Its schema guard caught the **default** and said nothing about the
+**type** — Exposed's migration statements compare defaults, not types — and
+`tools/schema-notes-audit.py` cannot catch it either, because it reads names from `PetichTable` and
+compares declarations only between the two SQL-spelled sources. Filed as B-34 rather than folded in:
+konekt is verified without it, and the payload columns carry the same divergence with eleven months
+of shipped rows behind them.
+
+**A consumer's house rules are part of what a migration costs.** konekt forbids `/* */` in production
+sources, because its clock-usage guard strips line comments only and the ban is what keeps that
+shortcut from rotting. The migrated file was written in KDoc and failed a test that has nothing to do
+with sagas. Discoverable only by running the consumer's own suite — reading its code would not have
+shown it.
+
+**Done here:** konekt's top-up saga runs on the definition model (`TopUpSteps.kt` replaces
+`TopUpInterceptors.kt`), `Credited : PetichStepRecord` replaces the ledger lookup behind
+youndie/konekt#48, `ValidateTopUp` is a `PetichCheck` with no `compensate` to write, `AnnounceTopUp`
+uses `ctx.emit`, and V13 migrates the four 0.3.0/0.4.0 columns. konekt's full build is green — 47
+test classes on `:server` alone.
+
+**Next:** konekt's purchase saga, whose `HoldFundsInterceptor` holds money and suspends in one step —
+the member the new types have to earn their keep on. Then its tariff saga, then shashki, whose tree
+was still carrying another session's work at the start of this iteration.
