@@ -1,7 +1,7 @@
 ---
 id: B-25
 title: "The fill-factor statement takes an ACCESS EXCLUSIVE lock on the busiest table and does not say so"
-status: open
+status: wip
 priority: P2
 size: XS
 stage: stage-8-upgrade

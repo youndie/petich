@@ -193,7 +193,7 @@ the fix is a paragraph and a guard.
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
 | [B-26](docs/backlog/B-26-the-second-queue-has-no-arbitration.md) `[?]` | findStuck hands out sagas through a second queue that a consumer's claim does not cover | P1 | M | - |
-| [B-25](docs/backlog/B-25-the-tuning-statement-takes-a-lock-it-does-not-mention.md) `[ ]` | The fill-factor statement takes an ACCESS EXCLUSIVE lock on the busiest table and does not say so | P2 | XS | - |
+| [B-25](docs/backlog/B-25-the-tuning-statement-takes-a-lock-it-does-not-mention.md) `[~]` | The fill-factor statement takes an ACCESS EXCLUSIVE lock on the busiest table and does not say so | P2 | XS | - |
 | [B-23](docs/backlog/B-23-nothing-checks-the-write-count.md) `[ ]` | The write count the README sells the engine on is measured by nothing | P3 | S | - |
 
 ## Closed (23)
