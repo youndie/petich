@@ -103,6 +103,11 @@ public class SuspendedPetichSweeper(
     // and a counter: a rate that is normally zero and suddenly is not says that instances are
     // dying mid-saga, which nothing else in this library is in a position to notice.
     private val onRevived: (String) -> Unit = {},
+    // A saga another replica claimed first, on either queue. Expected wherever more than one
+    // instance runs, and worth counting for one reason: zero of these on a multi-instance
+    // deployment means the claim is not doing anything, which is what an arbiter that quietly
+    // stopped working looks like from outside.
+    private val onContended: (String) -> Unit = {},
     // A saga the query offered and the engine then declined to expire: the client answered while
     // the batch was in flight, or the row had already moved on. Ordinary, and worth counting only
     // because a rate that is always high means the poll interval is fighting the deadline.
@@ -160,6 +165,25 @@ public class SuspendedPetichSweeper(
                         onUnowned(petich)
                         return@forEach
                     }
+
+                    // THE CLAIM, and it is one write. Bumping the version re-stamps `updated_at` —
+                    // the store does that itself on every write — so the row stops matching the
+                    // "not touched since" predicate that found it, and the next replica to query
+                    // does not see it at all. A replica that already holds the row holds a stale
+                    // version and is refused here, BEFORE it calls a single intercept().
+                    //
+                    // The lease is `stuckAfter` and there is no second parameter: whatever the
+                    // winner does next writes the row again at every step boundary, and if the
+                    // winner dies the row goes stale again on its own.
+                    //
+                    // The loser SKIPS. It does not retry, which is the whole rule this rests on:
+                    // the engine's own retries exist to win against a live handler, and a sweeper
+                    // that borrowed them would be two rollbacks of one saga.
+                    if (!repository.update(petich.copy(version = petich.version + 1))) {
+                        onContended(petich.id)
+                        return@forEach
+                    }
+
                     engine.process(petich)
                     revived++
                     onRevived(petich.id)
@@ -199,6 +223,14 @@ public class SuspendedPetichSweeper(
                     // cannot be rolled back by this build, so it will come back on every pass for
                     // ever - and a worker returning quietly every time is exactly what an idle one
                     // looks like.
+                    // The claim went to another replica. Ordinary on more than one instance, and
+                    // counted rather than silent: a rate that is always high means the poll
+                    // interval is shorter than the work, and every replica is paying for a query
+                    // whose answer another one is already acting on.
+                    is ExpireResult.Contended -> {
+                        onContended(petich.id)
+                    }
+
                     is ExpireResult.ChainChanged -> {
                         onWorkerFailure("expire:${petich.id}", IllegalStateException(outcome.details))
                     }
