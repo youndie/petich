@@ -176,7 +176,9 @@ What the rehearsal caught that reading the diff did not:
 * **A green rehearsal is not a clean bill.** konekt's top-up suite passes because no test makes the
   payment gateway *throw* — it covers the declined path, which B-18 did not change. The hole B-18
   opened in `TopUpInterceptors.kt:82` is real and invisible from here — reported as
-  youndie/konekt#48, with a fix shape taken from that repository's own ledger invariant.
+  youndie/konekt#48 and youndie/shashki#13, each with a fix shape taken from that repository's own
+  records — the ledger entry in one, the charge id in the other. **Both consumers were green**: the
+  paths are the ones their suites do not exercise.
 
 The first of these is why 0.3.0 does not go to Central yet:
 [B-24](docs/backlog/B-24-a-release-that-adds-a-column-names-it-nowhere.md) is a release blocker, and
