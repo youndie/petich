@@ -121,6 +121,7 @@ that difference is stated here, column by column, so it can be copied into your 
 | `compensation_attempts` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS compensation_attempts INT NOT NULL DEFAULT 0;` |
 | `updated_at` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0;` |
 | `chain_fingerprint` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS chain_fingerprint VARCHAR(64);` |
+| `step_records` | 0.4.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS step_records TEXT NOT NULL DEFAULT '{}';` |
 
 Every one of the 0.3.0 columns carries a default or is nullable, so each `ALTER` is a catalogue
 change rather than a table rewrite — and none of them stops a saga written by the previous version

@@ -55,7 +55,12 @@ public fun petichPostgresSchema(
             -- The fingerprint of the steps this saga has already run (Petich.chainFingerprint).
             -- Nullable on purpose: a row written before the column existed carries NULL, and NULL
             -- is never refused, so an upgrade does not stop the sagas already in flight.
-            chain_fingerprint VARCHAR(64)
+            chain_fingerprint VARCHAR(64),
+            -- What each member recorded about what it did, by that member's key
+            -- (Petich.stepRecords). DEFAULT '{}' so the column can be added by ALTER to a table
+            -- that already holds sagas, and so a row written before it existed reads back as
+            -- "nobody recorded anything" rather than as NULL.
+            step_records TEXT NOT NULL DEFAULT '{}'
         ) WITH (fillfactor = 80);
         """.trimIndent(),
         // The sweeper's query is "status = PENDING_SIGNATURE and suspended_until <= now", run on

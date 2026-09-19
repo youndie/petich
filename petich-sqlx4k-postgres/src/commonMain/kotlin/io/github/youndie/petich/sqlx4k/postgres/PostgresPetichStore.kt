@@ -15,7 +15,10 @@ import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichStatus
+import io.github.youndie.petich.PetichStepRecord
 import kotlinx.serialization.PolymorphicSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
 /**
@@ -69,7 +72,8 @@ public class PostgresPetichStore(
                 sql(
                     "INSERT INTO $table ($COLUMNS) VALUES " +
                         "(:id, :type, :phase, :index, :status, :payload, :enriched, :version, " +
-                        ":suspendedUntil, :compensationAttempts, :updatedAt, :chainFingerprint) " +
+                        ":suspendedUntil, :compensationAttempts, :updatedAt, :chainFingerprint, " +
+                        ":stepRecords) " +
                         "ON CONFLICT (id) DO NOTHING",
                 ).bindState(petich)
                     // The type and the payload are written once and never updated: a saga does
@@ -104,7 +108,8 @@ public class PostgresPetichStore(
                             "suspended_until = :suspendedUntil, " +
                             "compensation_attempts = :compensationAttempts, " +
                             "updated_at = :updatedAt, " +
-                            "chain_fingerprint = :chainFingerprint " +
+                            "chain_fingerprint = :chainFingerprint, " +
+                            "step_records = :stepRecords " +
                             "WHERE id = :id AND version = :expectedVersion",
                     ).bindState(petich)
                         .bind("expectedVersion", petich.version - 1),
@@ -184,6 +189,7 @@ public class PostgresPetichStore(
             // on why it is neither in Petich nor in any index.
             .bind("updatedAt", clock.nowEpochMs())
             .bind("chainFingerprint", petich.chainFingerprint)
+            .bind("stepRecords", json.encodeToString(RECORDS, petich.stepRecords))
 
     private fun ResultSet.Row.toDomain(): Petich =
         Petich(
@@ -198,6 +204,7 @@ public class PostgresPetichStore(
             suspendedUntilEpochMs = get("suspended_until").asLongOrNull(),
             compensationAttempts = get("compensation_attempts").asInt(),
             chainFingerprint = get("chain_fingerprint").asStringOrNull(),
+            stepRecords = json.decodeFromString(RECORDS, get("step_records").asString()),
         )
 
     private companion object {
@@ -208,7 +215,8 @@ public class PostgresPetichStore(
          */
         const val COLUMNS =
             "id, type, current_phase, current_interceptor_index, status, payload, enriched_payload, " +
-                "version, suspended_until, compensation_attempts, updated_at, chain_fingerprint"
+                "version, suspended_until, compensation_attempts, updated_at, chain_fingerprint, " +
+                "step_records"
 
         /**
          * Polymorphic, because the payload hierarchy is: what is stored carries a discriminator and
@@ -217,5 +225,12 @@ public class PostgresPetichStore(
          */
         val PAYLOAD = PolymorphicSerializer(PetichPayload::class)
         val ENRICHED = PolymorphicSerializer(EnrichedPayload::class)
+
+        /**
+         * The records, by member key. Polymorphic in the value for the same reason the payload is:
+         * what is stored carries a discriminator, and the `Json` handed in has to have the
+         * subclasses registered or the first saga that records anything fails at the write.
+         */
+        val RECORDS = MapSerializer(String.serializer(), PolymorphicSerializer(PetichStepRecord::class))
     }
 }

@@ -74,6 +74,7 @@ public class ExposedPetichRepository(
                 it[compensationAttempts] = petich.compensationAttempts
                 it[updatedAt] = clock.nowEpochMs()
                 it[chainFingerprint] = petich.chainFingerprint
+                it[stepRecords] = petich.stepRecords
             }
             petich
         }
@@ -107,6 +108,7 @@ public class ExposedPetichRepository(
                     it[compensationAttempts] = petich.compensationAttempts
                     it[updatedAt] = clock.nowEpochMs()
                     it[chainFingerprint] = petich.chainFingerprint
+                    it[stepRecords] = petich.stepRecords
                 }
 
             if (updatedRows > 0 && outboxEvents.isNotEmpty()) {
@@ -152,6 +154,7 @@ public class ExposedPetichRepository(
             suspendedUntilEpochMs = this[table.suspendedUntil],
             compensationAttempts = this[table.compensationAttempts],
             chainFingerprint = this[table.chainFingerprint],
+            stepRecords = this[table.stepRecords],
         )
 
     // Filtering in SQL rather than in memory: the whole point of this query is to avoid loading

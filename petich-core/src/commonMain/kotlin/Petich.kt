@@ -17,6 +17,26 @@ import kotlin.time.Duration
 @Serializable
 public abstract class PetichPayload
 
+/**
+ * What a step did, in its own words, kept beside the key of the step that did it.
+ *
+ * **It exists so that a compensation can tell "the step did not happen" from "the step happened and
+ * produced nothing".** Until now the only channel from an action to its undo was [EnrichedPayload],
+ * a map merged across every member of the saga — so a compensation asking for a charge id and
+ * finding none could not tell which of the two it was looking at, and had to guess. One of those
+ * guesses is a live money defect in a service built on this engine (youndie/shashki#13), where the
+ * fallback taken when the id was absent refunded a hold belonging to a different settlement.
+ *
+ * It is the evidence [PetichStep.compensate] needs in order to be safe for a step that never ran —
+ * which B-18 put into the contract and left every implementation to arrange for itself.
+ *
+ * `@SerialName` on every subclass, for the reason [SimpleEnrichedPayload] gives: the discriminator
+ * is the storage format, and without a short name it is the fully qualified class name, so moving a
+ * module renders already-persisted records unreadable.
+ */
+@Serializable
+public abstract class PetichStepRecord
+
 @Serializable
 public abstract class ResumePayload
 
@@ -98,6 +118,10 @@ public data class Petich(
     // whose engine never computed it; null is never refused, so an upgrade does not stop the sagas
     // already in flight.
     val chainFingerprint: String? = null,
+    // What each member recorded about what it did, by that member's key (see PetichStepRecord).
+    // Empty until something is recorded, and a member reads only its own: the shared map this
+    // replaces is exactly what made "absent" and "nothing to say" one observation.
+    val stepRecords: Map<String, PetichStepRecord> = emptyMap(),
 )
 
 // A wall clock for deadlines. Passed in rather than System.currentTimeMillis(): commonMain of a
@@ -561,6 +585,9 @@ public class PetichEngine(
             petich: Petich,
             payload: PetichPayload,
         ): List<OutboxEvent>
+
+        /** What the last [run] recorded, if anything. Always null for the older model. */
+        fun lastRecord(): PetichStepRecord?
     }
 
     private class InterceptorRun(
@@ -578,6 +605,8 @@ public class PetichEngine(
             petich: Petich,
             payload: PetichPayload,
         ): List<OutboxEvent> = interceptor.tryCompensate(petich, payload)
+
+        override fun lastRecord(): PetichStepRecord? = null
     }
 
     /**
@@ -590,6 +619,10 @@ public class PetichEngine(
     private class DefinitionRun<P : PetichPayload>(
         private val member: PetichMember<P>,
     ) : PetichMemberRun {
+        private var recorded: PetichStepRecord? = null
+
+        override fun lastRecord(): PetichStepRecord? = recorded
+
         override val stepKey: String get() = member.key
         override val label: String get() = member.key + if (member.undoes) "" else " (check)"
 
@@ -597,7 +630,7 @@ public class PetichEngine(
             petich: Petich,
             payload: PetichPayload,
         ): InterceptorResult {
-            val context = RecordingContext(petich)
+            val context = RecordingContext(petich, member.key)
             // ONE cast, at the boundary where a row meets the definition its type names — rather
             // than one per member behind a `supports()` that could lie about anyone's payload. It
             // cannot be removed while a stored payload is polymorphic and a definition is generic;
@@ -606,6 +639,7 @@ public class PetichEngine(
             @Suppress("UNCHECKED_CAST")
             val typed = payload as P
             member.step?.execute(context, typed) ?: member.check?.check(context, typed)
+            recorded = context.written()
             return context.outcome()
         }
 
@@ -617,7 +651,10 @@ public class PetichEngine(
 
             @Suppress("UNCHECKED_CAST")
             val typed = payload as P
-            step.compensate(RecordingContext(petich), typed)
+            // The context a compensation gets is built from the SAGA AS STORED, so `recorded()`
+            // answers with what this member wrote when it ran — or null, which is what a step that
+            // never ran looks like from inside its own undo.
+            step.compensate(RecordingContext(petich, member.key), typed)
             return emptyList()
         }
     }
@@ -625,10 +662,20 @@ public class PetichEngine(
     /** What a member said, collected rather than thrown — see PetichMemberContext.suspendFor. */
     private class RecordingContext(
         override val petich: Petich,
+        private val key: String,
     ) : PetichCheckContext,
         PetichStepContext {
         private var enriched: EnrichedPayload? = null
         private var decided: InterceptorResult? = null
+        private var written: PetichStepRecord? = null
+
+        override fun record(value: PetichStepRecord) {
+            written = value
+        }
+
+        override fun recordedValue(): PetichStepRecord? = written ?: petich.stepRecords[key]
+
+        fun written(): PetichStepRecord? = written
 
         override fun enrich(payload: EnrichedPayload) {
             enriched = enriched?.merge(payload) ?: payload
@@ -1122,6 +1169,11 @@ public class PetichEngine(
                     latest.copy(
                         status = status,
                         enrichedPayload = enrichedPayload,
+                        // From the petich the caller holds rather than from the row just read: a
+                        // member records in memory and the write that carries its position is the
+                        // one that must carry the record too. Taking it from `latest` would drop
+                        // what the member just wrote, which is the whole point of the channel.
+                        stepRecords = petich.stepRecords,
                         version = latest.version + 1,
                         // The deadline lives exactly as long as the petich waits for the client.
                         // Clearing it only in the Proceed branch is not enough: an interceptor that
@@ -1263,6 +1315,17 @@ public class PetichEngine(
 
                             interceptorResult?.enrichedPayload?.let {
                                 currentEnrichedPayload = currentEnrichedPayload.merge(it)
+                            }
+
+                            // Folded in BEFORE the outcome is acted on, so that every write below
+                            // carries it — including the rollback mark. A member that records and
+                            // then fails needs its own record on the way back, and a process that
+                            // dies between the two would otherwise compensate blind.
+                            interceptor.lastRecord()?.let { written ->
+                                currentPetich =
+                                    currentPetich.copy(
+                                        stepRecords = currentPetich.stepRecords + (interceptor.stepKey to written),
+                                    )
                             }
 
                             when (interceptorResult) {

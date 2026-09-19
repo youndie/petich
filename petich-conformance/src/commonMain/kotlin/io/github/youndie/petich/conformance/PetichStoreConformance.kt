@@ -121,12 +121,34 @@ public class PetichStoreConformance {
                             // pass against a store that does not write the column at all, and a
                             // fingerprint that never comes back is a guard that never fires.
                             chainFingerprint = "deadbeef",
+                            // Non-default for the same reason as the two above: an empty map here
+                            // would pass against a store that never writes the column, and a
+                            // record that does not come back is a compensation guessing again.
+                            stepRecords = mapOf("charge" to ConformanceRecord("charge-7")),
                             version = 1L,
                         )
                 val applied = subject.repository.update(next)
                 val stored = subject.repository.findById("moved")
                 expect(applied && stored == next) {
                     "update returned $applied and left $stored, expected $next"
+                }
+            },
+            case("a record survives beside the key of the member that wrote it") { subject ->
+                // The channel B-29 exists for: a compensation asks what its own step did and has to
+                // be able to tell "nothing recorded" from "recorded something". A store that keeps
+                // the map but loses the keys would answer the second when the truth is the first.
+                val recorded =
+                    petich(id = "recorded").copy(
+                        stepRecords =
+                            mapOf(
+                                "reserve" to ConformanceRecord("res-1"),
+                                "charge" to ConformanceRecord("chg-2"),
+                            ),
+                    )
+                subject.repository.saveOrGet(recorded)
+                val stored = subject.repository.findById("recorded")
+                expect(stored?.stepRecords == recorded.stepRecords) {
+                    "stored ${recorded.stepRecords}, read back ${stored?.stepRecords}"
                 }
             },
             case("an update does not change the payload") { subject ->
