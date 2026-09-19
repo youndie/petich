@@ -161,7 +161,7 @@ public page that overstates the guarantee, rather than waiting for the engine to
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-22](docs/backlog/B-22-eleven-updates-rewrite-a-column-that-never-changes.md) `[ ]` | Every saga UPDATE rewrites the immutable payload column, and the tables are created with no room for HOT | P2 | S | - |
+| [B-22](docs/backlog/B-22-eleven-updates-rewrite-a-column-that-never-changes.md) `[~]` | Every saga UPDATE rewrites the immutable payload column, and the tables are created with no room for HOT | P2 | S | - |
 
 ## Closed (21)
 

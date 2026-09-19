@@ -1,7 +1,7 @@
 ---
 id: B-22
 title: "Every saga UPDATE rewrites the immutable payload column, and the tables are created with no room for HOT"
-status: open
+status: wip
 priority: P2
 size: S
 stage: stage-7-write-cost
