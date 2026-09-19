@@ -28,5 +28,8 @@ Once both consumers run on definitions, the old surface is dead weight: `PetichI
   [B-24](B-24-a-release-that-adds-a-column-names-it-nowhere.md) is where a consumer will look.
 
 - AC: no reference to `PetichInterceptor` or `InterceptorResult` remains in the sources or the
-  documents; the engine holds no unchecked cast; the README describes one model.
+  documents; the README describes one model; **the engine holds exactly one unchecked payload cast**
+  — moved here from [B-28](B-28-the-types-and-the-builder.md), which could not meet it: the
+  interceptor arm *is* a cast per member, and even without it one remains where a polymorphic stored
+  payload meets a generic definition. One declared place is the honest target, and "none" was not.
 - Anchors: `petich-core/src/commonMain/kotlin/Petich.kt`, `README.md`

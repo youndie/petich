@@ -128,8 +128,20 @@ Why:
 
 - 1.1: 44% of compensations exist only to satisfy the type;
 - 1.2: refusing without rolling back after an effect becomes unrepresentable rather than guarded;
-- the price: a step that both acts and refuses must be a `PetichStep` that fails — which is what it
-  already is.
+- the price: a step that both acts and refuses must be a `PetichStep`.
+
+**Correction found while implementing B-28.** The line above said such a step "fails", and that is
+wrong. konekt's `HoldFundsInterceptor` holds a subscriber's money, **refuses on business grounds if
+the hold does not move a row**, records the decline, creates a pending entitlement and then suspends
+— one member, deliberately. Under the sentence as written it could only `fail`, which rolls back and
+ends `FAILED`: a subscriber told the server broke when they were told they had insufficient funds.
+
+So **`reject` belongs to both contexts, and `fail` only to a step.** What the split actually buys is
+not the right to refuse — it is that a check has **no `compensate`**, and therefore cannot be placed
+where a refusal would have to undo something. The builder's ordering rule is what enforces that, and
+[D3](#d3-the-verb-places-the-step-the-type-names-its-role-they-are-different-axes) is where it lives.
+B-20's separation holds underneath: both refusals roll back what ran, and they differ in the name the
+saga ends under.
 
 ### D3. The verb places the step; the type names its role. They are different axes
 

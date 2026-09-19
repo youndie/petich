@@ -85,14 +85,14 @@ class CompensationGivesUpTest {
         override suspend fun handle(
             e: Exception,
             petich: Petich,
-            interceptor: PetichInterceptor<*>,
+            stepKey: String,
         ) {
             handled++
         }
 
         override suspend fun exhausted(
             petich: Petich,
-            interceptor: PetichInterceptor<*>,
+            stepKey: String,
             attempts: Int,
         ): List<OutboxEvent> {
             exhaustedAt = attempts
