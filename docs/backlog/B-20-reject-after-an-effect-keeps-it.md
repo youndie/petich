@@ -1,7 +1,7 @@
 ---
 id: B-20
 title: "Reject after a step has touched the outside world keeps what that step did"
-status: open
+status: wip
 priority: P1
 size: S/M
 stage: stage-6-recovery
