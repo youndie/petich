@@ -108,6 +108,34 @@ application's decision. It ships no DDL either — the tables describe themselve
 so `MigrationUtils` and the Exposed Gradle plugin generate a schema that matches what the queries
 actually filter on.
 
+#### Upgrading a schema that already holds sagas
+
+A fresh install takes the whole table from the generator (`MigrationUtils`) or from
+`petichPostgresSchema()`. An existing one needs the difference, and since petich ships no migrations
+that difference is stated here, column by column, so it can be copied into your own migration.
+
+| column | since | what to run on an older schema |
+| --- | --- | --- |
+| `id`, `type`, `current_phase`, `current_interceptor_index`, `status`, `payload`, `enriched_payload`, `version` | 0.2.0 or earlier | part of the original table |
+| `suspended_until` | 0.2.0 or earlier | part of the original table |
+| `compensation_attempts` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS compensation_attempts INT NOT NULL DEFAULT 0;` |
+| `updated_at` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0;` |
+| `chain_fingerprint` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS chain_fingerprint VARCHAR(64);` |
+
+Every one of the 0.3.0 columns carries a default or is nullable, so each `ALTER` is a catalogue
+change rather than a table rewrite — and none of them stops a saga written by the previous version
+from being read by this one. **Until they exist, every saga fails**: the store selects the columns by
+name, so the first write reports `column petiches.compensation_attempts does not exist` and nothing
+in that message names petich or a version.
+
+**A consumer on 0.1.0 should take the whole table rather than a delta.** 0.1.0 predates this
+repository's tags and the move to the `io.github.youndie.petich` coordinates, so there is nothing to
+diff against and no statement here can be verified for it.
+
+The `ALTER`s above take a brief `ACCESS EXCLUSIVE` lock, as does
+`PetichTable.tuningStatements()` — see below. If your migrations bound how long they wait for a
+lock, these belong under the same bound.
+
 One thing a schema generator cannot say: `PetichTable.tuningStatements()` returns an
 `ALTER TABLE … SET (fillfactor = 80)` to run once beside the generated DDL. A saga row is updated at
 every step boundary, and Postgres can keep those updates off the index chain only while the page has
