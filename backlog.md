@@ -161,7 +161,7 @@ public page that overstates the guarantee, rather than waiting for the engine to
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-18](docs/backlog/B-18-the-failed-step-compensates-nothing.md) `[?]` | The step that failed is never compensated, and the ambiguous failure is the common case | P0 | M | - |
+| [B-18](docs/backlog/B-18-the-failed-step-compensates-nothing.md) `[~]` | The step that failed is never compensated, and the ambiguous failure is the common case | P0 | M | - |
 | [B-19](docs/backlog/B-19-nobody-picks-up-a-saga-that-died-mid-pass.md) `[ ]` | Nothing picks up a saga left in PROCESSING or COMPENSATING, and a failing compensation has no terminal state | P0 | L | B-18 |
 | [B-20](docs/backlog/B-20-reject-after-an-effect-keeps-it.md) `[ ]` | Reject after a step has touched the outside world keeps what that step did | P1 | S/M | - |
 | [B-21](docs/backlog/B-21-the-chain-is-addressed-by-position.md) `[ ]` | A saga's position is an index into a chain assembled at runtime, and nothing notices when the chain changes | P1 | S/M | - |

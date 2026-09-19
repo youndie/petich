@@ -1,7 +1,7 @@
 ---
 id: B-18
 title: "The step that failed is never compensated, and the ambiguous failure is the common case"
-status: question
+status: wip
 priority: P0
 size: M
 stage: stage-6-recovery
@@ -52,3 +52,9 @@ refuses or throws, the first call's effect is already orphaned.
   new contract before the version that carries it is published.
 - Anchors: `petich-core/src/commonMain/kotlin/Petich.kt`,
   `petich-core/src/commonTest/kotlin/io/github/youndie/petich/StockMovePetichEngineTest.kt`
+
+## Decided 2026-09-19
+
+**The owner took the first option: the failed step is compensated.** `compensate()` may from now
+on be called for a step that did not happen, and the two consumers on 0.2.0 are reviewed against
+that rather than edited from here.
