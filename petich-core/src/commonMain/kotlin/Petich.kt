@@ -662,8 +662,11 @@ public class PetichEngine(
             // The context a compensation gets is built from the SAGA AS STORED, so `recorded()`
             // answers with what this member wrote when it ran — or null, which is what a step that
             // never ran looks like from inside its own undo.
-            step.compensate(RecordingContext(petich, member.key), typed)
-            return emptyList()
+            val context = RecordingContext(petich, member.key)
+            step.compensate(context, typed)
+            // A compensation may announce what it undid, in the write that records the undoing —
+            // which is what `compensateWithEvents` was for in the model this replaces.
+            return context.emitted()
         }
     }
 
@@ -676,6 +679,18 @@ public class PetichEngine(
         private var enriched: EnrichedPayload? = null
         private var decided: InterceptorResult? = null
         private var written: PetichStepRecord? = null
+        private val events = mutableListOf<OutboxEvent>()
+        private val effects = mutableListOf<PetichSideEffect>()
+
+        override fun emit(event: OutboxEvent) {
+            events += event
+        }
+
+        override fun attach(effect: PetichSideEffect) {
+            effects += effect
+        }
+
+        fun emitted(): List<OutboxEvent> = events.toList()
 
         override fun record(value: PetichStepRecord) {
             written = value
@@ -704,7 +719,27 @@ public class PetichEngine(
             decided = InterceptorResult.Compensate(reason)
         }
 
-        fun outcome(): InterceptorResult = decided ?: InterceptorResult.Proceed(enrichedPayload = enriched)
+        /**
+         * What the member decided, carrying whatever it asked to have committed alongside.
+         *
+         * The events and effects ride on the outcomes that produce a write of their own. A refusal
+         * or a fault leads to a rollback whose writes are the compensations', so anything announced
+         * there belongs to the member that did the undoing rather than to this one.
+         */
+        fun outcome(): InterceptorResult =
+            when (val decision = decided) {
+                null -> {
+                    InterceptorResult.Proceed(enriched, events.toList(), effects.toList())
+                }
+
+                is InterceptorResult.Suspend -> {
+                    decision.copy(sideEffects = effects.toList())
+                }
+
+                else -> {
+                    decision
+                }
+            }
     }
 
     private fun definitionFor(type: String?): PetichDefinition<*>? =
