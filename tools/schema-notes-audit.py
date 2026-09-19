@@ -47,7 +47,14 @@ README = os.path.join(ROOT, "README.md")
 
 # A column declaration and nothing else. The looser "anything in quotes" would also match the index
 # name declared in the same file, which is how a guard starts reporting a column that is not one.
-EXPOSED_COLUMN = re.compile(r"^\s+public val \w+: Column<[^>]+> =\s*\w+[^(\n]*\(\"([a-z_]+)\"", re.M)
+#
+# `Column<.+?>` and not `Column<[^>]+>`: the second cannot see a column whose type has a generic of
+# its own, and the first column with one — `Column<Map<String, PetichStepRecord>>` — was reported as
+# missing from a file that declares it. A guard that goes partially blind names the wrong subject,
+# which is worse than one that fails: the obvious repair is to edit the document it accuses.
+EXPOSED_COLUMN = re.compile(
+    r"^\s+public val \w+: Column<.+?>\s*=\s*\w+[^(\n]*\(\"([a-z_]+)\"", re.M
+)
 
 # The body of the CREATE TABLE for the sagas, up to its closing paren.
 NATIVE_TABLE = re.compile(r"CREATE TABLE IF NOT EXISTS \$petiches \((.*?)\n        \)", re.S)

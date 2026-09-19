@@ -5,8 +5,10 @@ import io.github.youndie.petich.Petich
 import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichStatus
+import io.github.youndie.petich.PetichStepRecord
 import io.github.youndie.petich.SimpleEnrichedPayload
 import io.github.youndie.petich.conformance.ConformancePayload
+import io.github.youndie.petich.conformance.ConformanceRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -41,6 +43,7 @@ class ConcurrentWritersTest {
                 SerializersModule {
                     polymorphic(PetichPayload::class) { subclass(ConformancePayload::class) }
                     polymorphic(EnrichedPayload::class) { subclass(SimpleEnrichedPayload::class) }
+                    polymorphic(PetichStepRecord::class) { subclass(ConformanceRecord::class) }
                 }
         }
 

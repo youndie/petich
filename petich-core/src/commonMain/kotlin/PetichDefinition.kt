@@ -99,6 +99,25 @@ public interface PetichMemberContext {
     public fun enrich(payload: EnrichedPayload)
 
     /**
+     * Write down what this member did, to be committed with the position it advances to and read
+     * back by this member's own compensation.
+     *
+     * Scoped to the member on purpose: a record is evidence about one action. What the saga carries
+     * FORWARD is [enrich], a different channel with a different lifetime and a different reader —
+     * and conflating the two is what left a compensation unable to tell "it did not happen" from
+     * "it happened and had nothing to say".
+     */
+    public fun record(value: PetichStepRecord)
+
+    /**
+     * What this member recorded when it ran, or `null` if it recorded nothing — which, inside a
+     * compensation, is what "this step did not happen" looks like.
+     *
+     * Prefer the reified [recorded] below at a call site; this is what it reads.
+     */
+    public fun recordedValue(): PetichStepRecord?
+
+    /**
      * Stop and wait for a separate `resume` call, for [ttl] or for the engine's blanket deadline.
      *
      * **It records the intent and returns**; it does not throw. A control-flow exception here would
@@ -237,3 +256,19 @@ public fun <P : PetichPayload> petich(
     require(type.isNotBlank()) { "a definition was declared with a blank type" }
     return PetichDefinitionBuilder<P>(type).apply(declare).build()
 }
+
+/**
+ * What this member recorded, if it is of the type asked for.
+ *
+ * ```kotlin
+ * override suspend fun compensate(ctx: PetichStepContext, payload: OrderPayload) {
+ *     val done = ctx.recorded<Reservation>() ?: return   // the step never ran
+ *     stock.release(done.id)
+ * }
+ * ```
+ *
+ * A safe cast rather than an unchecked one: a record read back from storage was written by an
+ * earlier version of the step, and a type that has since changed should read as absent rather than
+ * bring the rollback down.
+ */
+public inline fun <reified T : PetichStepRecord> PetichMemberContext.recorded(): T? = recordedValue() as? T

@@ -4,6 +4,7 @@ import io.github.youndie.petich.EnrichedPayload
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichStatus
+import io.github.youndie.petich.PetichStepRecord
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.Table
@@ -53,6 +54,13 @@ public class PetichTable(
     // Nullable, and that is what makes the upgrade harmless: a row written before this column
     // existed carries null, and a null is never refused.
     public val chainFingerprint: Column<String?> = varchar("chain_fingerprint", 64).nullable()
+
+    // What each member recorded about what it did, by that member's key (see Petich.stepRecords).
+    // Defaulted to an empty object so the column can be added by ALTER to a table that already
+    // holds sagas, and so a row written before it existed reads back as "nobody recorded anything"
+    // rather than as null - which a compensation would have to special-case.
+    public val stepRecords: Column<Map<String, PetichStepRecord>> =
+        json<Map<String, PetichStepRecord>>("step_records", jsonFormat).default(emptyMap())
 
     override val primaryKey: PrimaryKey = PrimaryKey(id)
 

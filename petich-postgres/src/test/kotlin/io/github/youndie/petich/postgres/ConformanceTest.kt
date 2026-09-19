@@ -9,8 +9,10 @@ import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichRepository
 import io.github.youndie.petich.PetichStatus
+import io.github.youndie.petich.PetichStepRecord
 import io.github.youndie.petich.SimpleEnrichedPayload
 import io.github.youndie.petich.conformance.ConformancePayload
+import io.github.youndie.petich.conformance.ConformanceRecord
 import io.github.youndie.petich.conformance.Finding
 import io.github.youndie.petich.conformance.IdempotencyStoreConformance
 import io.github.youndie.petich.conformance.IdempotencyStoreSubject
@@ -86,6 +88,7 @@ class ConformanceTest {
                 SerializersModule {
                     polymorphic(PetichPayload::class) { subclass(ConformancePayload::class) }
                     polymorphic(EnrichedPayload::class) { subclass(SimpleEnrichedPayload::class) }
+                    polymorphic(PetichStepRecord::class) { subclass(ConformanceRecord::class) }
                 }
         }
 

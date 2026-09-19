@@ -3,8 +3,10 @@ package io.github.youndie.petich.sqlx4k.postgres
 import io.github.smyrgeorge.sqlx4k.impl.extensions.asInt
 import io.github.youndie.petich.EnrichedPayload
 import io.github.youndie.petich.PetichPayload
+import io.github.youndie.petich.PetichStepRecord
 import io.github.youndie.petich.SimpleEnrichedPayload
 import io.github.youndie.petich.conformance.ConformancePayload
+import io.github.youndie.petich.conformance.ConformanceRecord
 import io.github.youndie.petich.conformance.Finding
 import io.github.youndie.petich.conformance.IdempotencyStoreConformance
 import io.github.youndie.petich.conformance.IdempotencyStoreSubject
@@ -47,6 +49,7 @@ class PostgresConformanceTest {
                 SerializersModule {
                     polymorphic(PetichPayload::class) { subclass(ConformancePayload::class) }
                     polymorphic(EnrichedPayload::class) { subclass(SimpleEnrichedPayload::class) }
+                    polymorphic(PetichStepRecord::class) { subclass(ConformanceRecord::class) }
                 }
         }
 

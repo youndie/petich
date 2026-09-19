@@ -177,6 +177,13 @@ Why:
 - the price: a column or a JSON field per saga, and a serializer the application registers. Storage
   changes are not free here — see [B-24](../backlog/B-24-a-release-that-adds-a-column-names-it-nowhere.md).
 
+**Sharpened while implementing B-29.** The decision says the record is committed with the position
+the member advances to, which is right and not enough: **the case that matters most is the member
+that records and then does not return.** A step that takes the effect, writes down what it did and
+then throws is the ambiguous failure B-18 exists for — its own compensation is called, and a record
+read only after `execute` returns is a record that is never there when it is most needed. It is read
+in a `finally` and folded in by the failure paths as well as the ordinary one.
+
 ### D5. A definition is a value, and the engine keeps a registry of them by type
 
 Decision: `petich<P>("order") { … }` returns a `PetichDefinition<P>`; the engine holds definitions
