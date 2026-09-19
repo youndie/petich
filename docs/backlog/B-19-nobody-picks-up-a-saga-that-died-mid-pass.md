@@ -1,7 +1,7 @@
 ---
 id: B-19
 title: "Nothing picks up a saga left in PROCESSING or COMPENSATING, and a failing compensation has no terminal state"
-status: open
+status: done
 priority: P0
 size: L
 stage: stage-6-recovery
@@ -61,3 +61,81 @@ state in this engine with no automatic exit, and by default it is also silent.
   `petich-conformance/src/commonMain/kotlin/io/github/youndie/petich/conformance/PetichStoreConformance.kt`,
   `petich-postgres/src/main/kotlin/ExposedPetichRepository.kt`,
   `petich-sqlx4k-postgres/src/commonMain/kotlin/io/github/youndie/petich/sqlx4k/postgres/PostgresPetichStore.kt`
+
+## Iteration 1 — 2026-09-19
+
+**The first half is done**, in the order this item set: a rollback that keeps failing now counts
+its attempts on the saga (`Petich.compensationAttempts`, a column in both stores with a DDL default
+so it can be added by `ALTER` to a table that already holds sagas) and, at
+`PetichEngineConfig.maxCompensationAttempts`, becomes `PetichStatus.COMPENSATION_FAILED` — terminal,
+and its own sentence on a replay rather than folded in with `FAILED`.
+`CompensationFailureHandler.exhausted` supplies the events, committed in the same transaction as
+that status; `PetichEngineMetrics.onCompensationFailure(type, attempt, exhausted)` counts both
+kinds; `requireCompensationHandler` refuses the no-op handler at construction, in the shape
+`requireOutbox` and `requireSideEffects` already use.
+
+Verified: 279 tests, 0 failures, the corpus run against both stores on a real Postgres — nothing
+skipped, which is the thing to check here rather than the count. Proved by mutation: dropping
+`compensation_attempts` from the Exposed update makes the corpus name the rule and print the field.
+
+**What stops the second half, and it is a design question rather than work.** The staleness
+criterion has nothing to filter on: `petiches` has no `updated_at`, so "in `PROCESSING` and
+untouched since" cannot be expressed at all. That is a second column in both stores, an index for
+the query, a corpus rule — and a clock question this repository already has an open issue about.
+Whoever stamps `updated_at` stamps it from their own clock, several replicas write these rows, and
+youndie/petich#20 is the same defect one table over. The next iteration has to answer it before the
+query is written, because a sweeper that trusts a skewed stamp re-drives a saga that a live
+instance is still working on — and the version protects the row, not the effects.
+
+**Two consequences of this half that a consumer meets before the second one exists:**
+
+* `PetichStatus` has a new constant. An instance built before it cannot decode a row that carries
+  it, so the version that knows the name deploys first; and an application matching exhaustively on
+  the enum stops compiling until it handles the case, which is the cheap half of the same warning.
+* A `compensate()` that throws now leaves a **terminal** saga rather than a stuck one. Anything that
+  counted `COMPENSATING` rows as "needs a person" should count `COMPENSATION_FAILED` instead, and
+  anything that treated `isTerminal()` as "nothing more can go wrong here" is now wrong in a new
+  way: it can mean half undone.
+
+## Closed 2026-09-19
+
+The second half. `ExpiringPetichRepository.findStuck(status, notTouchedSinceEpochMs, limit)` in both
+stores, a stamp written on every insert and update from the clock each store was given, and
+`SuspendedPetichSweeper.sweepStuck()` handing what it finds back to the engine — which has always
+resumed an interrupted pass and an interrupted rollback correctly and, until now, was never asked to.
+
+**The stamp is not in `Petich` and not in any index**, and the second is the load-bearing decision.
+It changes on all eleven writes a six-step saga makes, so an index containing it would turn every one
+of them into a non-HOT update on the busiest table in the system, to serve a query that runs once per
+poll — the exact cost [B-22](B-22-eleven-updates-rewrite-a-column-that-never-changes.md) is about,
+arriving through the back door. The sweeper reaches its rows through the leading `status` column of
+the index that already exists and rechecks the stamp from the heap; in a healthy system the
+non-terminal rows are a handful. Keeping it out of the domain follows the precedent of
+`outbox_events.created_at`, which is the store's business and not an event's.
+
+**The clock question the previous iteration stopped on answered itself by precedent.** B-10 already
+decided this shape for the outbox stamp: the store takes a `PetichClock`, the platform read lives in
+one place, and the server-side default stays youndie/petich#20's subject. Replica skew is seconds
+and the threshold is minutes, so it changes nothing here — but it is why the threshold is documented
+as a formula over the two per-application timeout tables rather than as a number.
+
+**A rule of the corpus claimed more than it checked, and the mutation caught it.** The first version
+of "a write moves the stamp" passed with `updated_at` removed from the Exposed UPDATE entirely: the
+stamp the INSERT wrote is already in the past, so the store answered every question correctly while
+being exactly broken enough to hand the sweeper a saga a live instance was working on. The subject
+now supplies a `MovableClock` — **not defaulted**, so a store cannot skip the rule by not having one
+— and the rule moves time between the two writes. Re-mutated afterwards: the corpus names the rule.
+
+**Where it ran:** `./gradlew build` on the Linux box; 287 tests, 0 failures, the corpus against both
+stores on a real Postgres on `jvm` and `linuxX64` with nothing skipped. Four new sweeper cases on
+both targets, including the two negative controls that matter — a saga younger than the threshold is
+left alone, and the whole half stays off until `stuckAfter` is set.
+
+**What this deliberately does not do.** There is still no lease: two instances sweeping one table can
+both re-drive the same saga, and only one loses the version race while both call `intercept()`. The
+formula bounds the window, the idempotency contract from
+[B-18](B-18-the-failed-step-compensates-nothing.md) covers the rest, and a lease is the item to open
+when someone runs more sweepers than engines. Nothing orders the query either — the sweeper takes a
+batch, not the oldest batch, because ordering by an unindexed column would sort every match on every
+poll.
+

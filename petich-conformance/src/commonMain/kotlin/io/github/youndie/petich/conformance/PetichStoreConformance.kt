@@ -4,14 +4,40 @@ import io.github.youndie.petich.ExpiringPetichRepository
 import io.github.youndie.petich.OutboxAwarePetichRepository
 import io.github.youndie.petich.OutboxEvent
 import io.github.youndie.petich.Petich
+import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichRepository
 import io.github.youndie.petich.PetichStatus
 import io.github.youndie.petich.outbox.OutboxRecord
 
+/**
+ * The clock a subject's store stamps its rows from, which the corpus can move.
+ *
+ * One rule below cannot be written without it: whether an UPDATE re-stamps the row is invisible
+ * while time stands still, because the stamp the INSERT wrote is already in the past. A store that
+ * forgets the column in its update then answers every question correctly until a process dies — and
+ * then hands a live instance's saga to the sweeper.
+ */
+public class MovableClock(
+    private var now: Long = 1_000L,
+) : PetichClock {
+    override fun nowEpochMs(): Long = now
+
+    public fun advanceBy(ms: Long) {
+        now += ms
+    }
+}
+
 /** What the corpus is run against: one store, plus a way to look at the outbox it may own. */
 public interface PetichStoreSubject : ConformanceSubject {
     public val repository: PetichRepository
+
+    /**
+     * The clock the store under test was built with. Not defaulted: a subject that cannot supply
+     * one would silently skip the rule that needs it, and a check that cannot find its subject
+     * scores as a pass.
+     */
+    public val clock: MovableClock
 
     /**
      * Every outbox row the store currently holds, or `null` when this store has no outbox at all.
@@ -85,12 +111,30 @@ public class PetichStoreConformance {
                             currentPhase = PetichPhase.EXECUTION,
                             currentInterceptorIndex = 3,
                             suspendedUntilEpochMs = 4_000L,
+                            // Non-zero on purpose. This case is the corpus's "every field lands"
+                            // rule, and a field left at its default cannot tell a store that
+                            // writes the column from one that forgot it exists.
+                            compensationAttempts = 2,
                             version = 1L,
                         )
                 val applied = subject.repository.update(next)
                 val stored = subject.repository.findById("moved")
                 expect(applied && stored == next) {
                     "update returned $applied and left $stored, expected $next"
+                }
+            },
+            case("a rollback that gave up keeps its status and its attempt count") { subject ->
+                // Two things at once, and both are about the INSERT rather than the update above:
+                // COMPENSATION_FAILED is a longer name than any status that existed before, so a
+                // store whose column is too narrow fails here; and the counter has to survive the
+                // first write, not only a later one.
+                val gaveUp =
+                    petich(id = "gave-up", status = PetichStatus.COMPENSATION_FAILED)
+                        .copy(compensationAttempts = 3)
+                subject.repository.saveOrGet(gaveUp)
+                val stored = subject.repository.findById("gave-up")
+                expect(stored == gaveUp) {
+                    "stored $gaveUp, read back $stored"
                 }
             },
             case("an update carrying a stale version is refused and changes nothing") { subject ->
@@ -174,6 +218,52 @@ public class PetichStoreConformance {
                 )
                 val found = repository.findExpired(nowEpochMs = 2_000L, limit = 10)
                 expect(found.isEmpty()) { "findExpired(2000) returned ${found.map { it.id }}" }
+            },
+            case("a saga in the status asked for is found stuck") { subject ->
+                val repository = subject.repository as? ExpiringPetichRepository ?: return@case null
+                repository.saveOrGet(petich(id = "stuck-1"))
+                // Long.MAX_VALUE means "whenever it was written, it was before now", which is the
+                // one threshold that holds whatever clock the store was given.
+                val found = repository.findStuck(PetichStatus.PROCESSING, Long.MAX_VALUE, limit = 10)
+                expect(found.map { it.id } == listOf("stuck-1")) {
+                    "findStuck(PROCESSING) returned ${found.map { it.id }}"
+                }
+            },
+            case("a saga in another status is not stuck in this one") { subject ->
+                val repository = subject.repository as? ExpiringPetichRepository ?: return@case null
+                repository.saveOrGet(petich(id = "done-1", status = PetichStatus.COMPLETED))
+                val found = repository.findStuck(PetichStatus.PROCESSING, Long.MAX_VALUE, limit = 10)
+                expect(found.none { it.id == "done-1" }) {
+                    "findStuck(PROCESSING) returned ${found.map { it.id }}"
+                }
+            },
+            case("an update re-stamps the row, so a saga being worked on is not called stuck") { subject ->
+                val repository = subject.repository as? ExpiringPetichRepository ?: return@case null
+                // The rule the other three cannot express. A store that stamps on INSERT and forgets
+                // the column in its UPDATE answers all of them correctly — the stamp it wrote is
+                // already in the past — and then, in production, hands the sweeper a saga a live
+                // instance is in the middle of. Only moving the clock between the two writes tells
+                // them apart.
+                val initial = petich(id = "stamped")
+                repository.saveOrGet(initial)
+                val afterInsert = subject.clock.nowEpochMs()
+                subject.clock.advanceBy(10_000L)
+                repository.update(initial.copy(version = 1L, currentInterceptorIndex = 1))
+                val found =
+                    repository.findStuck(
+                        PetichStatus.PROCESSING,
+                        notTouchedSinceEpochMs = afterInsert + 1,
+                        limit = 10,
+                    )
+                expect(found.none { it.id == "stamped" }) {
+                    "findStuck returned ${found.map { it.id }}: the update left the stamp where the insert put it"
+                }
+            },
+            case("findStuck returns no more than the limit asked for") { subject ->
+                val repository = subject.repository as? ExpiringPetichRepository ?: return@case null
+                repeat(3) { repository.saveOrGet(petich(id = "many-stuck-$it")) }
+                val found = repository.findStuck(PetichStatus.PROCESSING, Long.MAX_VALUE, limit = 2)
+                expect(found.size == 2) { "findStuck(limit = 2) returned ${found.size} rows" }
             },
             case("findExpired returns no more than the limit asked for") { subject ->
                 val repository = subject.repository as? ExpiringPetichRepository ?: return@case null

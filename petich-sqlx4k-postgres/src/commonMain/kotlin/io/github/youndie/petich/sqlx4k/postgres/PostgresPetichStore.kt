@@ -68,7 +68,8 @@ public class PostgresPetichStore(
             update(
                 sql(
                     "INSERT INTO $table ($COLUMNS) VALUES " +
-                        "(:id, :type, :phase, :index, :status, :payload, :enriched, :version, :suspendedUntil) " +
+                        "(:id, :type, :phase, :index, :status, :payload, :enriched, :version, " +
+                        ":suspendedUntil, :compensationAttempts, :updatedAt) " +
                         "ON CONFLICT (id) DO NOTHING",
                 ).bindState(petich)
                     // The type is written once and never updated: a saga does not change what it
@@ -95,7 +96,9 @@ public class PostgresPetichStore(
                         "UPDATE $table SET " +
                             "current_phase = :phase, current_interceptor_index = :index, status = :status, " +
                             "payload = :payload, enriched_payload = :enriched, version = :version, " +
-                            "suspended_until = :suspendedUntil " +
+                            "suspended_until = :suspendedUntil, " +
+                            "compensation_attempts = :compensationAttempts, " +
+                            "updated_at = :updatedAt " +
                             "WHERE id = :id AND version = :expectedVersion",
                     ).bindState(petich)
                         .bind("expectedVersion", petich.version - 1),
@@ -138,6 +141,26 @@ public class PostgresPetichStore(
         return db.rows(query).map { it.toDomain() }
     }
 
+    /**
+     * The sagas a process died in the middle of. No ORDER BY: the sweeper wants a batch, not the
+     * oldest batch, and ordering by a column with no index would sort every match on every poll.
+     */
+    override suspend fun findStuck(
+        status: PetichStatus,
+        notTouchedSinceEpochMs: Long,
+        limit: Int,
+    ): List<Petich> {
+        val query =
+            sql(
+                "SELECT $COLUMNS FROM $table " +
+                    "WHERE status = :status AND updated_at < :threshold " +
+                    "LIMIT :limit",
+            ).bind("status", status.name)
+                .bind("threshold", notTouchedSinceEpochMs)
+                .bind("limit", limit)
+        return db.rows(query).map { it.toDomain() }
+    }
+
     /** Everything both statements write. The type is not here: only the insert sets it. */
     private fun Statement.bindState(petich: Petich): Statement =
         bind("id", petich.id)
@@ -148,6 +171,10 @@ public class PostgresPetichStore(
             .bind("enriched", json.encodeToString(ENRICHED, petich.enrichedPayload))
             .bind("version", petich.version)
             .bind("suspendedUntil", petich.suspendedUntilEpochMs)
+            .bind("compensationAttempts", petich.compensationAttempts)
+            // The store's own stamp rather than a field of the saga - see ExpiringPetichRepository
+            // on why it is neither in Petich nor in any index.
+            .bind("updatedAt", clock.nowEpochMs())
 
     private fun ResultSet.Row.toDomain(): Petich =
         Petich(
@@ -160,6 +187,7 @@ public class PostgresPetichStore(
             enrichedPayload = json.decodeFromString(ENRICHED, get("enriched_payload").asString()),
             version = get("version").asLong(),
             suspendedUntilEpochMs = get("suspended_until").asLongOrNull(),
+            compensationAttempts = get("compensation_attempts").asInt(),
         )
 
     private companion object {
@@ -170,7 +198,7 @@ public class PostgresPetichStore(
          */
         const val COLUMNS =
             "id, type, current_phase, current_interceptor_index, status, payload, enriched_payload, " +
-                "version, suspended_until"
+                "version, suspended_until, compensation_attempts, updated_at"
 
         /**
          * Polymorphic, because the payload hierarchy is: what is stored carries a discriminator and

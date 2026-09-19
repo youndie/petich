@@ -30,6 +30,24 @@ public class PetichTable(
     // (status, suspended_until) — declared below rather than described here.
     public val suspendedUntil: Column<Long?> = long("suspended_until").nullable()
 
+    // How many times a rollback of this saga has given up (see Petich.compensationAttempts).
+    // Defaulted in the DDL rather than only in Kotlin: a table that already holds sagas takes this
+    // column through an ALTER, and a NOT NULL column with no default cannot be added to a non-empty
+    // table at all. petich ships no migrations, so the generated statement is what a consumer runs.
+    public val compensationAttempts: Column<Int> = integer("compensation_attempts").default(0)
+
+    // When this row was last written, from the clock the store was given. Not part of Petich: the
+    // engine has no use for it and a domain field would have to be carried, compared and kept in
+    // step by every caller — exactly as outbox_events.created_at is the store's business and not
+    // an OutboxEvent's.
+    //
+    // NOT INDEXED, and that is the decision rather than an omission. It changes on every one of the
+    // eleven writes a six-step saga makes, so an index containing it would make every one of them a
+    // non-HOT update on the busiest table in the system, to serve a query that runs once per poll.
+    // The sweeper reaches its rows through the leading `status` column of the index below and
+    // rechecks this from the heap: in a healthy system the non-terminal rows are a handful.
+    public val updatedAt: Column<Long> = long("updated_at").default(0L)
+
     override val primaryKey: PrimaryKey = PrimaryKey(id)
 
     // Declared, not merely recommended in a comment. Exposed's tooling treats a Table as the whole

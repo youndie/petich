@@ -12,6 +12,7 @@ import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.isNotNull
+import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.batchInsert
@@ -70,6 +71,8 @@ public class ExposedPetichRepository(
                 it[enrichedPayload] = petich.enrichedPayload
                 it[version] = petich.version
                 it[suspendedUntil] = petich.suspendedUntilEpochMs
+                it[compensationAttempts] = petich.compensationAttempts
+                it[updatedAt] = clock.nowEpochMs()
             }
             petich
         }
@@ -95,6 +98,8 @@ public class ExposedPetichRepository(
                     it[enrichedPayload] = petich.enrichedPayload
                     it[version] = petich.version
                     it[suspendedUntil] = petich.suspendedUntilEpochMs
+                    it[compensationAttempts] = petich.compensationAttempts
+                    it[updatedAt] = clock.nowEpochMs()
                 }
 
             if (updatedRows > 0 && outboxEvents.isNotEmpty()) {
@@ -138,6 +143,7 @@ public class ExposedPetichRepository(
             enrichedPayload = this[table.enrichedPayload],
             version = this[table.version],
             suspendedUntilEpochMs = this[table.suspendedUntil],
+            compensationAttempts = this[table.compensationAttempts],
         )
 
     // Filtering in SQL rather than in memory: the whole point of this query is to avoid loading
@@ -153,6 +159,23 @@ public class ExposedPetichRepository(
                     (table.status eq PetichStatus.PENDING_SIGNATURE) and
                         table.suspendedUntil.isNotNull() and
                         (table.suspendedUntil lessEq nowEpochMs)
+                }.limit(limit)
+                .map { it.toDomain() }
+        }
+
+    // The same shape as findExpired and for the same reason: the sifting belongs in SQL. What is
+    // deliberately NOT here is an ORDER BY - the sweeper takes a batch, not the oldest batch, and
+    // ordering by a column with no index would sort the whole match on every poll.
+    override suspend fun findStuck(
+        status: PetichStatus,
+        notTouchedSinceEpochMs: Long,
+        limit: Int,
+    ): List<Petich> =
+        dbQuery {
+            table
+                .selectAll()
+                .where {
+                    (table.status eq status) and (table.updatedAt less notTouchedSinceEpochMs)
                 }.limit(limit)
                 .map { it.toDomain() }
         }
