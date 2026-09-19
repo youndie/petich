@@ -178,19 +178,22 @@ status, and `PetichEngineConfig(requireCompensationHandler = true)` refuses at c
 an engine whose compensation failures go nowhere. This is the one state the engine cannot leave on
 its own; nothing yet re-drives an abandoned saga into it (see the Cost section).
 
-**`Reject` does not roll anything back.** Two results refuse a saga and they are not
-interchangeable:
+**Both ways of refusing a saga undo what ran.** They differ in the name the saga ends under, not in
+whether the work comes back:
 
 | result | what the engine does | the saga ends as |
 | --- | --- | --- |
-| `Reject(reason)` | nothing else runs; no `compensate()` is called | `REJECTED` |
-| `Compensate(reason)` | steps N−1 … 1 are compensated in reverse | `FAILED` |
+| `Reject(reason)` | steps N−1 … 1 are compensated in reverse | `REJECTED` — a business refusal |
+| `Compensate(reason)` | the same | `FAILED` — a fault |
 
-`Reject` is for a refusal that comes before anything has happened — a validation, a limit, a
-policy — and it is the wrong answer once any step has touched the outside world, where it silently
-keeps what those steps did. The engine does not currently refuse that combination (`B-20`), so
-today the choice is the interceptor's, and it is the one place in this API where a plausible answer
-is an expensive one.
+Pick by what the client should be told, which is the question an interceptor can answer about
+itself. `Reject` used to compensate nothing, which was right for a validation refusing before
+anything had happened and silent theft after a step had touched the outside world — and telling
+those apart needs to know whether an *earlier* step had an effect, which is knowledge about somebody
+else's steps. The engine has it; the interceptor does not.
+
+In both cases the refusing step itself is not undone: unlike a step that threw, it reported its
+outcome, and what it reported is that it declined to act.
 
 ### 🚫 What it does not do
 

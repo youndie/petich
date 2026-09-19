@@ -512,6 +512,14 @@ public class PetichEngine(
         // PAST the step that suspended (the Suspend branch stores index + 1). Adding to it there
         // would compensate a step that was never entered.
         stepOutcomeUnknown: Boolean = false,
+        // What the saga becomes once the rollback finishes. FAILED for a fault; REJECTED when the
+        // rollback is there because a step refused the saga on business grounds.
+        //
+        // The two are told apart on a replay under the same id, so they cannot be collapsed: a
+        // client repeating a request that was refused must be told it was refused, not that the
+        // server broke. Undoing the work and naming the outcome are separate questions, and only
+        // the first one was ever missing.
+        terminalStatus: PetichStatus = PetichStatus.FAILED,
     ): PetichResult {
         metrics.onCompensation(petich.type, reason)
         // The field means "one past the next step to compensate", and it means that for every
@@ -601,7 +609,7 @@ public class PetichEngine(
             if (!compensationFailed) {
                 forceUpdateStateWithRetry(
                     currentPetich,
-                    PetichStatus.FAILED,
+                    terminalStatus,
                     currentPetich.enrichedPayload,
                     { it.copy(currentInterceptorIndex = 0, compensatingFromIndex = null) },
                 )
@@ -918,12 +926,27 @@ public class PetichEngine(
                                 }
 
                                 is InterceptorResult.Reject -> {
-                                    forceUpdateStateWithRetry(
-                                        currentPetich,
-                                        PetichStatus.REJECTED,
-                                        currentEnrichedPayload,
-                                    )
-                                    result = PetichResult.Error(interceptorResult.reason)
+                                    // A refusal UNDOES WHAT RAN, and still ends REJECTED.
+                                    //
+                                    // It used to write REJECTED and stop, compensating nothing —
+                                    // correct for a validation that refuses before anything has
+                                    // happened, and silent theft after a step has touched the
+                                    // outside world. Choosing correctly required the interceptor to
+                                    // know whether an EARLIER step had an effect, which is
+                                    // knowledge about other people's steps that it does not have:
+                                    // it declares a phase and a supports(), and the chain it lands
+                                    // in is assembled elsewhere. The engine does know the position,
+                                    // so the engine decides.
+                                    //
+                                    // The rejecting step itself is not undone: unlike a step that
+                                    // threw, it reported its outcome, and what it reports is that
+                                    // it declined to act.
+                                    result =
+                                        triggerCompensation(
+                                            currentPetich,
+                                            interceptorResult.reason,
+                                            terminalStatus = PetichStatus.REJECTED,
+                                        )
                                     break
                                 }
 
