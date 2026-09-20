@@ -1,7 +1,7 @@
 ---
 id: B-32
 title: "Rewrite konekt's and shashki's sagas in the new model — the acceptance"
-status: wip
+status: done
 priority: P1
 size: L
 stage: stage-9-definition
@@ -231,3 +231,53 @@ already declares it.
 **Next:** B-36, then shashki's two sagas — settlement first, since `CaptureStep` is the named site
 where a ledger lookup becomes `ctx.recorded() ?: return`. The order saga has two EXECUTION members
 ordered by priority 10 and 0, which is the pair that becomes declaration order.
+
+## Iteration 6 — 2026-09-20 — closed
+
+**Both consumers run on definitions and neither references the interceptor model.** konekt since
+iteration 4; shashki now, both sagas. What the acceptance found, in the order it found it:
+
+**The engine's payoff reached konekt.** Three engines qualified by saga type, with the sweeper
+dispatching `get(named(saga.type))`, collapsed to one — the workaround its own composition root had
+described. The cost named rather than discovered: petich's phase timeouts are per engine, so the
+raised `EXECUTION` bound now covers all three sagas. Right way round here, and a consumer whose two
+saga types need different bounds still needs two engines.
+
+**shashki jumped from petich 0.1.0 to 0.4.0.77** — three minors — in three compile errors rather
+than a rewrite, because the interceptor model was still there. V5 took the four columns, spelling the
+new one `JSON` per B-34 because shashki is an Exposed consumer.
+
+**Four library gaps, each found by a member that did not fit, each fixed rather than worked around:**
+
+| what did not fit | what it produced |
+| --- | --- |
+| a span named after the step's phase, asserted by a test | B-36: a member can read its own key |
+| a cascade that must keep the next answer for itself | B-37: `resuspendFor` beside `suspendFor` |
+| an announcement on a suspending member | B-35 (iteration 3) |
+| a saga whose type matched no member reported COMPLETED | #78 (iteration 2) |
+
+**And one that no amount of reading would have found: two generic lists erase to the same type.**
+`single<List<PetichInterceptor<*>>>` beside `single<List<PetichDefinition<*>>>` compiles, and Koin
+hands out whichever it saw last — so a definition arrived where an interceptor was wanted and the
+first ride answered 500. The fix in shashki is to build the definitions at the one line that needs
+them rather than bind them; the lesson is that a model whose two halves are generic containers is a
+model a DI container cannot tell apart. Worth knowing before B-33 removes one of them, which removes
+the problem.
+
+**What the migration said about the model, as distinct from its defects:**
+
+- **Two of shashki's five settlement members and two of its six order members were checks**, and
+  every one of them had said so in its own comment — "Nothing to undo: arithmetic", "rejects rather
+  than compensates". The old model could only say it by overriding `compensate` with an empty body,
+  which is the same sentence a member that genuinely acted and had nothing to give back would write.
+- **`record` and `enrich` are different channels and both consumers needed both.** shashki's capture
+  records the charge id its own undo reads; its hold stays in the enriched payload, because
+  `SettleRideUseCase` and the ride's repository read it long after the saga finished. The tariff saga
+  records nothing at all and is right to — its undo cancels a row keyed by the saga's own id.
+- **Two EXECUTION members at `priority = 10` and `priority = 0` became two adjacent lines.** That is
+  the clearest single thing the model bought.
+
+**Verified through the real path:** konekt green from clean with every task re-run; shashki green
+from clean at 336 tests across 75 classes. Mutations: dropping shashki's `Charged` record fails *a
+tip that dies before its payout gives the money back*; turning `resuspendFor` into a plain suspend
+fails both cascade tests.
