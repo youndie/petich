@@ -118,22 +118,6 @@ public interface PetichMemberContext {
     public fun recordedValue(): PetichStepRecord?
 
     /**
-     * Announce something, committed in the SAME write as the state change this member produces — the
-     * outbox, and the reason "the work happened but the notification never went out" is structurally
-     * impossible here.
-     *
-     * Available from a compensation too: a rollback that must be announced — "the reservation was
-     * released" — is announced by the member that did the releasing, in the write that records it.
-     */
-    public fun emit(event: OutboxEvent)
-
-    /**
-     * Work that must be committed with this member's state change and which the engine deliberately
-     * cannot interpret — a durable timer, most concretely. See [PetichSideEffect].
-     */
-    public fun attach(effect: PetichSideEffect)
-
-    /**
      * Stop and wait for a separate `resume` call, for [ttl] or for the engine's blanket deadline.
      *
      * **It records the intent and returns**; it does not throw. A control-flow exception here would
@@ -160,11 +144,45 @@ public interface PetichMemberContext {
     public fun reject(reason: String)
 }
 
-/** What a check may do: decide, wait, or refuse. It cannot fail the saga, having nothing to undo. */
+/**
+ * What a check may do: decide, wait, or refuse. It cannot fail the saga, having nothing to undo —
+ * and it cannot announce, for the same reason.
+ *
+ * **A check has no compensation to carry its word** (B-35). Announcing belongs to a member that
+ * acted: what rides on a write is what that member did, and a check's whole contribution is whether
+ * the saga continues. A check that refuses leaves nothing behind that could carry an announcement,
+ * so the model does not let it produce one — rather than accepting it and dropping it, which is what
+ * it used to do.
+ */
 public interface PetichCheckContext : PetichMemberContext
 
-/** What a step may do, and the one thing a check may not: report a fault. */
+/** What a step may do, and the things a check may not: announce, attach, and report a fault. */
 public interface PetichStepContext : PetichMemberContext {
+    /**
+     * Announce something, committed in the same write as the state change this member produces —
+     * the outbox, and the reason "the work happened but the notification never went out" is
+     * structurally impossible here.
+     *
+     * **On `Proceed` and on `suspendFor`, and not on a refusal** (B-35). Both of those commit
+     * forward progress and the announcement rides with it. `reject` and `fail` begin a rollback, and
+     * petich will not announce work it is in the middle of undoing — what it does instead is count
+     * the announcement through `PetichEngineMetrics.onAnnouncementDiscarded`, so a member that
+     * announces and then refuses is a line on a graph rather than an event nobody ever sees.
+     *
+     * Available from a compensation too, and that is where a rollback's word belongs: "the
+     * reservation was released" is announced by the member that did the releasing, in the write that
+     * records it.
+     */
+    public fun emit(event: OutboxEvent)
+
+    /**
+     * Work that must be committed with this member's state change and which the engine deliberately
+     * cannot interpret — a durable timer, most concretely. See [PetichSideEffect].
+     *
+     * Carried on the same outcomes as [emit].
+     */
+    public fun attach(effect: PetichSideEffect)
+
     /**
      * Something went wrong that is not a business decision. Whatever ran is rolled back and the saga
      * ends `FAILED`.

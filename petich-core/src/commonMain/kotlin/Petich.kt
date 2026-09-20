@@ -251,6 +251,12 @@ public sealed interface InterceptorResult {
         // event. A durable timer belongs here more than anywhere else: "wait until this instant" is
         // precisely the step whose timer must not go missing while its state commits.
         val sideEffects: List<PetichSideEffect> = emptyList(),
+        // AND THE ANNOUNCEMENT, which this half of the pair was missing until B-35. A suspension is
+        // a real, committed write — the saga row goes to PENDING_SIGNATURE — so "we are holding
+        // your funds, confirm within five minutes" is an announcement with a write to ride on. The
+        // side effects got a field when somebody hit the gap; the events did not, and in the
+        // definition model `ctx.emit` before `ctx.suspendFor` compiled, ran, and disappeared.
+        val outboxEvents: List<OutboxEvent> = emptyList(),
     ) : InterceptorResult
 
     public data class Resuspend(
@@ -588,6 +594,15 @@ public class PetichEngine(
 
         /** What the last [run] recorded, if anything. Always null for the older model. */
         fun lastRecord(): PetichStepRecord?
+
+        /**
+         * How much the last [run] asked to have committed and lost by then refusing (B-35).
+         *
+         * Always zero for the older model, where an interceptor returning `Reject` had no channel
+         * to ask through in the first place — which is exactly how this was introduced without
+         * anybody noticing: the new model accepts what the old one could not express.
+         */
+        fun discardedAnnouncements(): Int = 0
     }
 
     private class InterceptorRun(
@@ -620,8 +635,11 @@ public class PetichEngine(
         private val member: PetichMember<P>,
     ) : PetichMemberRun {
         private var recorded: PetichStepRecord? = null
+        private var discarded = 0
 
         override fun lastRecord(): PetichStepRecord? = recorded
+
+        override fun discardedAnnouncements(): Int = discarded
 
         override val stepKey: String get() = member.key
         override val label: String get() = member.key + if (member.undoes) "" else " (check)"
@@ -648,7 +666,11 @@ public class PetichEngine(
             } finally {
                 recorded = context.written()
             }
-            return context.outcome()
+            val outcome = context.outcome()
+            // AFTER outcome(), which is where the decision and what was asked for meet. Read before
+            // it, this would always answer zero.
+            discarded = context.discarded()
+            return outcome
         }
 
         override suspend fun undo(
@@ -681,6 +703,7 @@ public class PetichEngine(
         private var written: PetichStepRecord? = null
         private val events = mutableListOf<OutboxEvent>()
         private val effects = mutableListOf<PetichSideEffect>()
+        private var discardedAnnouncements = 0
 
         override fun emit(event: OutboxEvent) {
             events += event
@@ -733,13 +756,29 @@ public class PetichEngine(
                 }
 
                 is InterceptorResult.Suspend -> {
-                    decision.copy(sideEffects = effects.toList())
+                    decision.copy(sideEffects = effects.toList(), outboxEvents = events.toList())
                 }
 
                 else -> {
+                    // A REFUSAL CARRIES NOTHING, and it is now counted rather than silent. `reject`
+                    // and `fail` both begin a rollback, and petich will not announce work it is in
+                    // the middle of undoing. A rollback's own word belongs to the compensations,
+                    // which may announce freely — but the REFUSING member's compensation does not
+                    // run, so anything it emitted has no owner at all. That is what this counts.
+                    discardedAnnouncements = events.size + effects.size
                     decision
                 }
             }
+
+        /**
+         * How much this member asked to have committed and lost by then refusing.
+         *
+         * Zero on every other outcome. Deliberately not folded into
+         * `PetichEngineMetrics.onDroppedEvents`, whose own documentation calls that one a mistake
+         * "reached by accident rather than by decision" — a repository with no outbox at all. This
+         * is the decision, and one counter meaning both would answer neither question.
+         */
+        fun discarded(): Int = discardedAnnouncements
     }
 
     private fun definitionFor(type: String?): PetichDefinition<*>? =
@@ -1403,6 +1442,21 @@ public class PetichEngine(
                             // is the case this channel was built for.
                             currentPetich = withRecordOf(interceptor, currentPetich)
 
+                            // Beside the record fold and for the same reason: this is the one point
+                            // where the member's decision and everything it asked to have committed
+                            // are both in hand. A member that announced and then refused is counted
+                            // here rather than disappearing (B-35). The two catch blocks above do
+                            // not need it: a member that THREW never reported an outcome, so it
+                            // never reached the fold that discards.
+                            val discarded = interceptor.discardedAnnouncements()
+                            if (discarded > 0) {
+                                metrics.onAnnouncementDiscarded(
+                                    currentPetich.type,
+                                    interceptor.stepKey,
+                                    discarded,
+                                )
+                            }
+
                             when (interceptorResult) {
                                 null -> {
                                     continue
@@ -1458,6 +1512,7 @@ public class PetichEngine(
                                                 )
                                             },
                                             sideEffects = interceptorResult.sideEffects,
+                                            outboxEvents = interceptorResult.outboxEvents,
                                         )
                                     result =
                                         PetichResult.ActionRequired(

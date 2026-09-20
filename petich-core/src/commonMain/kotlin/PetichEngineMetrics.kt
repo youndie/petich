@@ -115,5 +115,24 @@ public interface PetichEngineMetrics {
         count: Int,
     ): Unit = Unit
 
+    /**
+     * What a member asked to have committed and lost by then refusing the saga (B-35).
+     *
+     * **Not the same question as [onDroppedEvents]**, which counts a repository that cannot store an
+     * outbox at all — a wiring mistake, "reached by accident rather than by decision". This is the
+     * decision: `reject` and `fail` both begin a rollback, and petich does not announce work it is
+     * undoing. A rollback's own word belongs to the compensations, which may announce freely — but
+     * the REFUSING member's compensation does not run, so what it emitted has no owner and nothing
+     * else in the system would ever say so.
+     *
+     * A non-zero line here is a member written as though announcing and refusing could be done in
+     * one breath. It names the step key, because which member it is, is the whole finding.
+     */
+    public fun onAnnouncementDiscarded(
+        type: String,
+        stepKey: String,
+        count: Int,
+    ): Unit = Unit
+
     public object NoOp : PetichEngineMetrics
 }
