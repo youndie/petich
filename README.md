@@ -241,6 +241,14 @@ down, an encoder that chokes — the saga still completes and the failure is cou
 not go is the answer this type exists to refuse. What the member asked to have committed before it
 threw still rides with the saga.
 
+**A counter is not a trace anybody can query**, though, and if the throw landed before `ctx.emit`
+there is no event either: the saga completes, its state is correct, and the consumer at the other end
+never learns. `AnnouncementFailureHandler` is where you say what should be said instead — whatever it
+returns is committed **by the announcement's own write**, so it is one transaction and costs nothing
+extra, and it follows every rule any other outbox event follows. The shape is yours: petich does not
+know what an unannounced saga means to your system, and a library that invented a payload here would
+be inventing a wire format for somebody else's relay.
+
 A member that needs confirmation suspends — the saga stops and waits for a separate `resume` call:
 
 <!-- readme-probe: statements -->

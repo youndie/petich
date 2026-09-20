@@ -681,6 +681,40 @@ default.
 the only implementation in the portfolio — shashki's `RefusingMetrics` — overrides one unrelated
 method.
 
+### D15. A failed announcement leaves the database, in the write the member was making anyway
+
+Decision: `AnnouncementFailureHandler.failed(petich, stepKey, reason)` returns outbox events, and
+petich emits them through the member's own context so they ride with that member's commit. Defaulted
+to nothing.
+
+Why:
+
+- **D12 left a counter as the only trace**, and if the exception landed before `ctx.emit` there is no
+  event either: the saga completes, its state is correct, and the consumer never learns. Not late.
+  Never;
+- **the repository has made the opposite argument twice in the same words.**
+  `PetichEngineConfig.requireOutbox` refuses at wiring time rather than counting at runtime, because
+  "the write succeeds, the saga completes, its state is correct, and every assertion anybody
+  naturally makes about that run passes"; `CompensationFailureHandler.exhausted` exists so a rollback
+  that gave up leaves the database, committed with the status. A failed announcement was the same
+  shape with neither;
+- **rejected: an event of petich's own.** The argument is `exhausted`'s, unchanged: petich does not
+  know what an unannounced saga means to the system it lives in, and a library that invented a
+  payload here would be inventing a wire format for somebody else's relay.
+
+**The implementation is smaller than the item assumed, and that is the finding.** The item proposed
+attaching the event to "the same final commit that completes the saga" — and the completion write is
+`repository.update(completed)`, the overload that carries no events, so that would have meant routing
+it through `updatePetich` and changing the one status write that deliberately bypasses
+`forceUpdateStateWithRetry`. None of that is needed: an announcement that throws still **proceeds**,
+and the Proceed branch already commits through the outbox-aware path. Emitting through the member's
+own context puts the fact in the write the member was making anyway.
+
+**So there is no new rule for this event, which is the point.** It is dropped and counted by
+`onDroppedEvents` on a repository that cannot store an outbox, and `requireOutbox` refuses that
+wiring at construction — exactly as for any other event. The item asked which of those two should
+happen; the answer is that neither is decided here, because both were decided already.
+
 ---
 
 ## 4. What happens next
