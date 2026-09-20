@@ -68,3 +68,11 @@ so it waits for a clean tree.
 
 **Next:** konekt's three sagas — top-up first, since its step is the one with a record to make.
 
+
+## Handover from B-31 — 2026-09-20
+
+**konekt's sweeper and timer-sink wiring must lose `engineFor`.** B-31 replaced it with one engine
+that answers `owns` for itself, and renamed `onUnowned` to `onUnknownType`. konekt is edited only in
+this item's iterations, so the change waits here rather than being made from B-31's branch. It is
+also where konekt's two engines over one saga table — the workaround its own composition root
+describes — stop being necessary.
