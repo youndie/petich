@@ -1,7 +1,7 @@
 ---
 id: B-47
 title: "The idempotency rule and resuspendFor contradict each other"
-status: open
+status: wip
 priority: P1
 size: S
 stage: stage-10-review

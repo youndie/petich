@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-47](docs/backlog/B-47-a-key-per-member-meets-a-member-that-acts-twice.md) `[ ]` | The idempotency rule and resuspendFor contradict each other | P1 | S | - |
+| [B-47](docs/backlog/B-47-a-key-per-member-meets-a-member-that-acts-twice.md) `[~]` | The idempotency rule and resuspendFor contradict each other | P1 | S | - |
 | [B-48](docs/backlog/B-48-the-far-side-may-not-cancel-by-your-name.md) `[ ]` | The rule assumes the far side can cancel by the caller's name, and often it cannot | P1 | M | - |
 | [B-50](docs/backlog/B-50-an-announcement-can-run-twice.md) `[ ]` | An announcement is re-run after a crash and nothing says it must tolerate that | P1 | M | - |
 | [B-46](docs/backlog/B-46-nothing-compiles-the-readme.md) `[ ]` | Nothing compiles the README, so its examples rot silently | P2 | M | - |
