@@ -1,7 +1,7 @@
 ---
 id: B-49
 title: "A failed announcement leaves a counter and nothing else"
-status: open
+status: wip
 priority: P2
 size: S
 stage: stage-10-review

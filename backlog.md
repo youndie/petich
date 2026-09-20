@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-49](docs/backlog/B-49-a-failed-announcement-never-leaves-the-database.md) `[ ]` | A failed announcement leaves a counter and nothing else | P2 | S | - |
+| [B-49](docs/backlog/B-49-a-failed-announcement-never-leaves-the-database.md) `[~]` | A failed announcement leaves a counter and nothing else | P2 | S | - |
 
 ## Closed (49)
 
