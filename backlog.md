@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-33](docs/backlog/B-33-remove-the-interceptor-model.md) `[ ]` | Remove PetichInterceptor, and do not leave an adapter behind | P1 | M | B-32 |
+| [B-33](docs/backlog/B-33-remove-the-interceptor-model.md) `[~]` | Remove PetichInterceptor, and do not leave an adapter behind | P1 | M | B-32 |
 
 ## Closed (36)
 

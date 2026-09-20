@@ -1,7 +1,7 @@
 ---
 id: B-33
 title: "Remove PetichInterceptor, and do not leave an adapter behind"
-status: open
+status: wip
 priority: P1
 size: M
 stage: stage-9-definition
@@ -33,3 +33,42 @@ Once both consumers run on definitions, the old surface is dead weight: `PetichI
   interceptor arm *is* a cast per member, and even without it one remains where a polymorphic stored
   payload meets a generic definition. One declared place is the honest target, and "none" was not.
 - Anchors: `petich-core/src/commonMain/kotlin/Petich.kt`, `README.md`
+
+## Iteration 1 — 2026-09-20
+
+**Every production source in the repository compiles with the interceptor model gone.** Removed:
+`PetichInterceptor` and its `phase`, `priority`, `supports`, `tryIntercept`, `tryCompensate`,
+`withPayloadDiagnostics`; the engine's `interceptors` parameter; `InterceptorRun`;
+`interceptorChainFor` and the fallback arm of `chainFor`. `InterceptorResult` is gone as a name — it
+was the engine's own vocabulary by the end, not a consumer's, so it is now `internal MemberOutcome`.
+
+**`chainFor` has no fallback any more, and that is the one behavioural change.** A saga whose type
+has no definition used to walk the interceptor list; there is no list. It walks nothing, and
+`doProcess` refuses it by name rather than completing it — which is exactly what #78 was cut for, now
+carrying a case it was not written for.
+
+**`tools/native-consumer-probe` moved with them.** It is a real consumer of the published surface,
+not a test, and leaving it on the old model would have left the artifact nobody runs the one thing
+still proving the old model works.
+
+**What is left is tests, and only tests: 502 compile errors across 28 files.** They are not
+mechanical in the way the count suggests — each encodes a guarantee, and translating one badly is how
+a green suite comes to mean less than it did:
+
+`AccessScoringPetichEngineTest`, `BadgeIssuancePetichEngineTest`, `StockMovePetichEngineTest` (the
+three corpus fixtures, ~34 references each), `ChainFingerprintTest`, `CompensationFailureTest`,
+`CompensationGivesUpTest`, `ConcurrentProcessTest`, `EngineConfigTest`, `EngineDefectsTest`,
+`FailedStepCompensationTest`, `InterceptorPriorityTest`, `OutboxEventTest`, `PetichTest`,
+`RejectRollsBackTest`, `ResumeInterceptorTest`, `ResuspendTest`, `SideEffectTest`, `StuckSweepTest`,
+`SuspendedTtlTest`, `SweepClaimTest`, `TerminalReplayTest`, `TimeoutTest`, `VersionConflictTest`,
+`WriteCountTest`, plus `OneTransactionTest` and `SagaTimerSinkTest` in chronik and
+`PetichRoutingTest` in ktor.
+
+**Two of those names are the work rather than a rename.** `InterceptorPriorityTest` tests a concept
+that no longer exists — priority — and `ResumeInterceptorTest` and `ResuspendTest` cover ground
+`ReaskAtTheSameMemberTest` now covers from the other side. Each needs a decision about whether what it
+asserts still has a subject, not a search and replace. That is the judgement this iteration stopped
+short of rather than rushed.
+
+**Not yet done from the AC:** the README still describes both models, and the unchecked-cast count
+has not been verified as exactly one.
