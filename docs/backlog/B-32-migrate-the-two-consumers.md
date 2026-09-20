@@ -102,11 +102,11 @@ youndie/konekt#48, `ValidateTopUp` is a `PetichCheck` with no `compensate` to wr
 uses `ctx.emit`, and V13 migrates the four 0.3.0/0.4.0 columns. konekt's full build is green — 47
 test classes on `:server` alone.
 
-**First thing next iteration, before any new work:** `72e0c49` is a correctness fix every consumer
-needs and it is parked on this long-lived branch, so every later item branches from a `main` without
-it. It touches only `Petich.kt`, `DefinitionEngineTest.kt` and the research — cherry-pick it onto its
-own branch, merge it on green, and rebase this one. Holding a shipped fix hostage to an unfinished
-migration is the cost of having committed it here.
+**Done 2026-09-20:** that fix is out of this branch and on `main` as `383068c` (#78), so every later
+item branches from a `main` that has it. Its test was re-checked by mutation on the way out — guard
+disabled, `DefinitionEngineTest` reported `type=ordr, status=COMPLETED`, the defect verbatim. The
+lesson to keep is the one that put it here: a correctness fix committed onto a long-lived migration
+branch is a fix nobody else gets until the migration finishes.
 
 **Next:** konekt's purchase saga, whose `HoldFundsInterceptor` holds money and suspends in one step —
 the member the new types have to earn their keep on. Then its tariff saga, then shashki, whose tree
