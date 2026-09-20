@@ -1,7 +1,7 @@
 ---
 id: B-46
 title: "Nothing compiles the README, so its examples rot silently"
-status: open
+status: wip
 priority: P2
 size: M
 stage: stage-10-review
