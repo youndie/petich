@@ -122,7 +122,7 @@ class ReaskAtTheSameMemberTest {
                         ),
                 )
 
-            val first = engine.process(petich("p-1"))
+            val first = engine.process(row("p-1"))
             assertTrue(first is PetichResult.ActionRequired, "the first offer waits: $first")
 
             engine.process(repository.row!!)
@@ -158,7 +158,7 @@ class ReaskAtTheSameMemberTest {
                         ),
                 )
 
-            val first = engine.process(petich("p-2"))
+            val first = engine.process(row("p-2"))
             assertTrue(first is PetichResult.ActionRequired, "it waits: $first")
 
             engine.process(repository.row!!)
@@ -170,7 +170,7 @@ class ReaskAtTheSameMemberTest {
             )
         }
 
-    private fun petich(id: String) =
+    private fun row(id: String) =
         Petich(
             id = id,
             type = "order",

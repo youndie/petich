@@ -83,19 +83,32 @@ class OutboxEventTest {
         }
     }
 
+    private fun engineOf(
+        repository: PetichRepository,
+        metrics: PetichEngineMetrics = PetichEngineMetrics.NoOp,
+        config: PetichEngineConfig = PetichEngineConfig(),
+        vararg members: Pair<String, PetichStep<TestPayload>>,
+    ) = PetichEngine(
+        repository = repository,
+        config = config,
+        metrics = metrics,
+        definitions =
+            listOf(
+                petich<TestPayload>("type") {
+                    members.forEach { (key, member) -> step(key, member) }
+                },
+            ),
+    )
+
     private fun proceedingInterceptor(events: List<OutboxEvent>) =
-        object : PetichInterceptor<TestPayload> {
-            override val phase = PetichPhase.EXECUTION
-
-            override fun supports(payload: PetichPayload) = true
-
-            override suspend fun intercept(
-                petich: Petich,
+        object : PetichStep<TestPayload> {
+            override suspend fun execute(
+                ctx: PetichStepContext,
                 payload: TestPayload,
-            ): InterceptorResult = InterceptorResult.Proceed(outboxEvents = events)
+            ) = events.forEach { ctx.emit(it) }
 
             override suspend fun compensate(
-                petich: Petich,
+                ctx: PetichStepContext,
                 payload: TestPayload,
             ) {
             }
@@ -115,25 +128,21 @@ class OutboxEventTest {
         runBlocking {
             val event = FakeOutboxEvent(id = "evt-1")
             val interceptor =
-                object : PetichInterceptor<TestPayload> {
-                    override val phase = PetichPhase.EXECUTION
-
-                    override fun supports(payload: PetichPayload) = true
-
-                    override suspend fun intercept(
-                        petich: Petich,
+                object : PetichStep<TestPayload> {
+                    override suspend fun execute(
+                        ctx: PetichStepContext,
                         payload: TestPayload,
-                    ): InterceptorResult = InterceptorResult.Proceed(outboxEvents = listOf(event))
+                    ) = ctx.emit(event)
 
                     override suspend fun compensate(
-                        petich: Petich,
+                        ctx: PetichStepContext,
                         payload: TestPayload,
                     ) {
                     }
                 }
 
             val repository = FakeOutboxAwareRepository()
-            val engine = PetichEngine(listOf(interceptor), repository)
+            val engine = engineOf(repository, members = arrayOf("emits" to interceptor))
 
             val result = engine.process(testPetich())
 
@@ -145,25 +154,20 @@ class OutboxEventTest {
     fun `outbox events attached to Proceed are silently dropped against a plain PetichRepository`() =
         runBlocking {
             val interceptor =
-                object : PetichInterceptor<TestPayload> {
-                    override val phase = PetichPhase.EXECUTION
-
-                    override fun supports(payload: PetichPayload) = true
-
-                    override suspend fun intercept(
-                        petich: Petich,
+                object : PetichStep<TestPayload> {
+                    override suspend fun execute(
+                        ctx: PetichStepContext,
                         payload: TestPayload,
-                    ): InterceptorResult =
-                        InterceptorResult.Proceed(outboxEvents = listOf(FakeOutboxEvent(id = "evt-2")))
+                    ) = ctx.emit(FakeOutboxEvent(id = "evt-2"))
 
                     override suspend fun compensate(
-                        petich: Petich,
+                        ctx: PetichStepContext,
                         payload: TestPayload,
                     ) {
                     }
                 }
 
-            val engine = PetichEngine(listOf(interceptor), PlainRepository())
+            val engine = engineOf(PlainRepository(), members = arrayOf("emits" to interceptor))
 
             // Must not fail: the repository has no outbox support, and the petich still completes.
             val result = engine.process(testPetich())
@@ -177,53 +181,40 @@ class OutboxEventTest {
             val compensationEvent = FakeOutboxEvent(id = "evt-compensate", type = "transfer_reversed")
 
             val succeeding =
-                object : PetichInterceptor<TestPayload> {
-                    override val phase = PetichPhase.EXECUTION
-                    override val priority = 10
-
-                    override fun supports(payload: PetichPayload) = true
-
-                    override suspend fun intercept(
-                        petich: Petich,
+                object : PetichStep<TestPayload> {
+                    override suspend fun execute(
+                        ctx: PetichStepContext,
                         payload: TestPayload,
-                    ): InterceptorResult = InterceptorResult.Proceed()
+                    ) = Unit
 
+                    // A ROLLBACK THAT ANNOUNCES ITSELF, which used to need its own method
+                    // (`compensateWithEvents`) beside the plain one. `ctx.emit` from inside the
+                    // compensation says the same thing in the member's own vocabulary, and there is
+                    // no second method left to forget to override.
                     override suspend fun compensate(
-                        petich: Petich,
+                        ctx: PetichStepContext,
                         payload: TestPayload,
                     ) {
-                    }
-
-                    override suspend fun compensateWithEvents(
-                        petich: Petich,
-                        payload: TestPayload,
-                    ): List<OutboxEvent> {
-                        compensate(petich, payload)
-                        return listOf(compensationEvent)
+                        ctx.emit(compensationEvent)
                     }
                 }
 
             val failing =
-                object : PetichInterceptor<TestPayload> {
-                    override val phase = PetichPhase.EXECUTION
-                    override val priority = 5
-
-                    override fun supports(payload: PetichPayload) = true
-
-                    override suspend fun intercept(
-                        petich: Petich,
+                object : PetichStep<TestPayload> {
+                    override suspend fun execute(
+                        ctx: PetichStepContext,
                         payload: TestPayload,
-                    ): InterceptorResult = InterceptorResult.Compensate("forced rollback")
+                    ) = ctx.fail("forced rollback")
 
                     override suspend fun compensate(
-                        petich: Petich,
+                        ctx: PetichStepContext,
                         payload: TestPayload,
                     ) {
                     }
                 }
 
             val repository = FakeOutboxAwareRepository()
-            val engine = PetichEngine(listOf(succeeding, failing), repository)
+            val engine = engineOf(repository, members = arrayOf("succeeds" to succeeding, "fails" to failing))
 
             val result = engine.process(testPetich())
 
@@ -240,7 +231,7 @@ class OutboxEventTest {
             val interceptor =
                 proceedingInterceptor(listOf(FakeOutboxEvent(id = "evt-a"), FakeOutboxEvent(id = "evt-b")))
 
-            val engine = PetichEngine(listOf(interceptor), PlainRepository(), metrics = metrics)
+            val engine = engineOf(PlainRepository(), metrics = metrics, members = arrayOf("emits" to interceptor))
 
             val result = engine.process(testPetich())
 
@@ -259,7 +250,13 @@ class OutboxEventTest {
         runBlocking {
             val metrics = RecordingMetrics()
 
-            val engine = PetichEngine(listOf(proceedingInterceptor(emptyList())), PlainRepository(), metrics = metrics)
+            val engine =
+                engineOf(
+                    PlainRepository(),
+                    metrics = metrics,
+                    members =
+                        arrayOf("emits" to proceedingInterceptor(emptyList())),
+                )
 
             val result = engine.process(testPetich())
 
@@ -275,10 +272,10 @@ class OutboxEventTest {
             val repository = FakeOutboxAwareRepository()
 
             val engine =
-                PetichEngine(
-                    listOf(proceedingInterceptor(listOf(FakeOutboxEvent(id = "evt-c")))),
+                engineOf(
                     repository,
                     metrics = metrics,
+                    members = arrayOf("emits" to proceedingInterceptor(listOf(FakeOutboxEvent(id = "evt-c")))),
                 )
 
             val result = engine.process(testPetich())
@@ -297,52 +294,46 @@ class OutboxEventTest {
             val metrics = RecordingMetrics()
 
             val compensating =
-                object : PetichInterceptor<TestPayload> {
-                    override val phase = PetichPhase.EXECUTION
-                    override val priority = 10
-
-                    override fun supports(payload: PetichPayload) = true
-
-                    override suspend fun intercept(
-                        petich: Petich,
+                object : PetichStep<TestPayload> {
+                    override suspend fun execute(
+                        ctx: PetichStepContext,
                         payload: TestPayload,
-                    ): InterceptorResult = InterceptorResult.Proceed()
+                    ) = Unit
 
+                    // The announcement the rollback makes, which used to need a second method of
+                    // its own (`compensateWithEvents`) beside this one.
                     override suspend fun compensate(
-                        petich: Petich,
+                        ctx: PetichStepContext,
                         payload: TestPayload,
                     ) {
-                    }
-
-                    override suspend fun compensateWithEvents(
-                        petich: Petich,
-                        payload: TestPayload,
-                    ): List<OutboxEvent> {
-                        compensate(petich, payload)
-                        return listOf(FakeOutboxEvent(id = "evt-rollback", type = "transfer_reversed"))
+                        ctx.emit(FakeOutboxEvent(id = "evt-rollback", type = "transfer_reversed"))
                     }
                 }
 
             val failing =
-                object : PetichInterceptor<TestPayload> {
-                    override val phase = PetichPhase.EXECUTION
-                    override val priority = 5
-
-                    override fun supports(payload: PetichPayload) = true
-
-                    override suspend fun intercept(
-                        petich: Petich,
+                object : PetichStep<TestPayload> {
+                    override suspend fun execute(
+                        ctx: PetichStepContext,
                         payload: TestPayload,
-                    ): InterceptorResult = InterceptorResult.Compensate("forced rollback")
+                    ) = ctx.fail("forced rollback")
 
                     override suspend fun compensate(
-                        petich: Petich,
+                        ctx: PetichStepContext,
                         payload: TestPayload,
                     ) {
                     }
                 }
 
-            val engine = PetichEngine(listOf(compensating, failing), PlainRepository(), metrics = metrics)
+            val engine =
+                engineOf(
+                    PlainRepository(),
+                    metrics = metrics,
+                    members =
+                        arrayOf(
+                            "undoes" to compensating,
+                            "fails" to failing,
+                        ),
+                )
 
             val result = engine.process(testPetich())
 
@@ -355,7 +346,6 @@ class OutboxEventTest {
         val error =
             assertFailsWith<IllegalArgumentException> {
                 PetichEngine(
-                    interceptors = emptyList(),
                     repository = PlainRepository(),
                     config = PetichEngineConfig(requireOutbox = true),
                 )
@@ -369,7 +359,6 @@ class OutboxEventTest {
     @Test
     fun `requireOutbox constructs against an outbox-aware repository`() {
         PetichEngine(
-            interceptors = emptyList(),
             repository = FakeOutboxAwareRepository(),
             config = PetichEngineConfig(requireOutbox = true),
         )
@@ -379,6 +368,6 @@ class OutboxEventTest {
     // this change breaks every application that deliberately runs without an outbox.
     @Test
     fun `a plain PetichRepository still constructs by default`() {
-        PetichEngine(interceptors = emptyList(), repository = PlainRepository())
+        PetichEngine(repository = PlainRepository())
     }
 }

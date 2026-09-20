@@ -26,25 +26,20 @@ class CompensationGivesUpTest {
     class Step(
         private val name: String,
         private val log: Log,
-        override val priority: Int,
         private val throwOnIntercept: Boolean = false,
         private val throwOnCompensate: Boolean = false,
-    ) : PetichInterceptor<OrderPayload> {
-        override val phase = PetichPhase.EXECUTION
-
-        override fun supports(payload: PetichPayload) = payload is OrderPayload
-
-        override suspend fun intercept(
-            petich: Petich,
+    ) : PetichStep<OrderPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: OrderPayload,
-        ): InterceptorResult {
+        ) {
             log.entries.add("do:$name")
             if (throwOnIntercept) throw RuntimeException("the answer was lost")
-            return InterceptorResult.Proceed()
+            return
         }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: OrderPayload,
         ) {
             log.entries.add("undo:$name")
@@ -118,7 +113,7 @@ class CompensationGivesUpTest {
         }
     }
 
-    private fun petich(id: String) =
+    private fun row(id: String) =
         Petich(
             id = id,
             type = "order",
@@ -134,14 +129,17 @@ class CompensationGivesUpTest {
         metrics: PetichEngineMetrics = PetichEngineMetrics.NoOp,
         maxAttempts: Int = 2,
     ) = PetichEngine(
-        listOf(
-            Step("reserve", log, priority = 10),
-            Step("charge", log, priority = 5, throwOnIntercept = true, throwOnCompensate = true),
-        ),
-        repository,
-        handler,
-        PetichEngineConfig(maxCompensationAttempts = maxAttempts),
+        repository = repository,
+        compensationFailureHandler = handler,
+        config = PetichEngineConfig(maxCompensationAttempts = maxAttempts),
         metrics = metrics,
+        definitions =
+            listOf(
+                petich<OrderPayload>("order") {
+                    step("reserve", Step("reserve", log))
+                    step("charge", Step("charge", log, throwOnIntercept = true, throwOnCompensate = true))
+                },
+            ),
     )
 
     @Test
@@ -153,7 +151,7 @@ class CompensationGivesUpTest {
             val metrics = CapturingMetrics()
             val engine = engine(log, repository, handler, metrics)
 
-            engine.process(petich("p-gives-up"))
+            engine.process(row("p-gives-up"))
 
             assertEquals(
                 PetichStatus.COMPENSATING,
@@ -192,7 +190,7 @@ class CompensationGivesUpTest {
             val repository = RowRepository()
             val engine = engine(log, repository, CountingHandler())
 
-            engine.process(petich("p-terminal"))
+            engine.process(row("p-terminal"))
             engine.process(repository.row!!)
             assertEquals(PetichStatus.COMPENSATION_FAILED, repository.row?.status)
 
@@ -217,10 +215,9 @@ class CompensationGivesUpTest {
             val failure =
                 assertFailsWith<IllegalArgumentException> {
                     PetichEngine(
-                        emptyList(),
-                        RowRepository(),
-                        NoOpCompensationFailureHandler(),
-                        PetichEngineConfig(requireCompensationHandler = true),
+                        repository = RowRepository(),
+                        compensationFailureHandler = NoOpCompensationFailureHandler(),
+                        config = PetichEngineConfig(requireCompensationHandler = true),
                     )
                 }
 
@@ -230,7 +227,7 @@ class CompensationGivesUpTest {
             )
 
             // And it is off by default, so nothing existing has to configure its own silence.
-            PetichEngine(emptyList(), RowRepository(), NoOpCompensationFailureHandler())
+            PetichEngine(repository = RowRepository(), compensationFailureHandler = NoOpCompensationFailureHandler())
             Unit
         }
 }

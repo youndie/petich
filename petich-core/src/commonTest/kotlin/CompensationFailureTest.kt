@@ -9,34 +9,26 @@ class CompensationFailureTest {
         val data: String,
     ) : PetichPayload()
 
-    class FailingCompensateInterceptor(
-        override val phase: PetichPhase,
-    ) : PetichInterceptor<TestPayload> {
-        override fun supports(payload: PetichPayload) = true
-
-        override suspend fun intercept(
-            petich: Petich,
+    class FailsToCompensate : PetichStep<TestPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: TestPayload,
-        ): InterceptorResult = InterceptorResult.Proceed()
+        ) = Unit
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: TestPayload,
         ): Unit = throw RuntimeException("Compensation failed")
     }
 
-    class FailingInterceptor(
-        override val phase: PetichPhase,
-    ) : PetichInterceptor<TestPayload> {
-        override fun supports(payload: PetichPayload) = true
-
-        override suspend fun intercept(
-            petich: Petich,
+    class FailsOutright : PetichStep<TestPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: TestPayload,
-        ): InterceptorResult = throw RuntimeException("Normal failure")
+        ) = throw RuntimeException("Normal failure")
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: TestPayload,
         ) {
         }
@@ -74,14 +66,17 @@ class CompensationFailureTest {
     fun testCompensationFailureIsHandled() =
         runBlocking {
             val handler = CapturingCompensationFailureHandler()
-            val interceptor1 = FailingCompensateInterceptor(PetichPhase.EXECUTION)
-            val interceptor2 = FailingInterceptor(PetichPhase.EXECUTION)
-
             val engine =
                 PetichEngine(
-                    listOf(interceptor1, interceptor2),
-                    MockRepository(),
-                    handler,
+                    repository = MockRepository(),
+                    compensationFailureHandler = handler,
+                    definitions =
+                        listOf(
+                            petich<TestPayload>("type") {
+                                step("acts", FailsToCompensate())
+                                step("throws", FailsOutright())
+                            },
+                        ),
                 )
 
             val payload = TestPayload("test")

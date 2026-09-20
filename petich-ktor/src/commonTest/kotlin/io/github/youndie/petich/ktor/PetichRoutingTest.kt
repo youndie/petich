@@ -1,15 +1,18 @@
 package io.github.youndie.petich.ktor
 
 import io.github.youndie.petich.EnrichedPayload
-import io.github.youndie.petich.InterceptorResult
 import io.github.youndie.petich.Petich
+import io.github.youndie.petich.PetichCheck
+import io.github.youndie.petich.PetichCheckContext
 import io.github.youndie.petich.PetichEngine
-import io.github.youndie.petich.PetichInterceptor
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichRepository
 import io.github.youndie.petich.PetichStatus
+import io.github.youndie.petich.PetichStep
+import io.github.youndie.petich.PetichStepContext
 import io.github.youndie.petich.SimpleEnrichedPayload
+import io.github.youndie.petich.petich
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -75,55 +78,38 @@ class TestRepository : PetichRepository {
     }
 }
 
-class ProceedInterceptor : PetichInterceptor<TestPayload> {
-    override val phase = PetichPhase.EXECUTION
-    override val priority = 10
-
-    override fun supports(payload: PetichPayload) = payload is TestPayload
-
-    override suspend fun intercept(
-        petich: Petich,
+class ProceedInterceptor : PetichStep<TestPayload> {
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: TestPayload,
-    ): InterceptorResult = InterceptorResult.Proceed(TestEnrichedPayload(processed = true))
+    ) = ctx.enrich(TestEnrichedPayload(processed = true))
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: TestPayload,
     ) {}
 }
 
 class RejectInterceptor(
     private val reason: String,
-) : PetichInterceptor<TestPayload> {
-    override val phase = PetichPhase.VALIDATION
-    override val priority = 10
-
-    override fun supports(payload: PetichPayload) = payload is TestPayload
-
-    override suspend fun intercept(
-        petich: Petich,
+) : PetichCheck<TestPayload> {
+    override suspend fun check(
+        ctx: PetichCheckContext,
         payload: TestPayload,
-    ): InterceptorResult = InterceptorResult.Reject(reason)
-
-    override suspend fun compensate(
-        petich: Petich,
-        payload: TestPayload,
-    ) {}
+    ) = ctx.reject(reason)
 }
 
-class SuspendInterceptor : PetichInterceptor<TestPayload> {
-    override val phase = PetichPhase.AUTHORIZATION
-    override val priority = 10
-
-    override fun supports(payload: PetichPayload) = payload is TestPayload
-
-    override suspend fun intercept(
-        petich: Petich,
+class SuspendInterceptor : PetichStep<TestPayload> {
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: TestPayload,
-    ): InterceptorResult = InterceptorResult.Suspend("SMS_OTP", TestEnrichedPayload(otpCode = "123456"))
+    ) {
+        ctx.enrich(TestEnrichedPayload(otpCode = "123456"))
+        ctx.suspendFor("SMS_OTP")
+    }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: TestPayload,
     ) {}
 }
@@ -146,13 +132,44 @@ private val testJson =
     }
 
 class PetichRoutingTest {
+    /**
+     * The routes under a saga of one type, whose members are given in the order they run.
+     *
+     * A list of interceptors used to be enough because each one answered for the payload it knew;
+     * a definition is keyed by type, and the type is the one the request bodies below carry.
+     */
     private fun ApplicationTestBuilder.configureApp(
-        interceptors: List<PetichInterceptor<*>>,
+        vararg members: Pair<String, Any>,
         repo: TestRepository = TestRepository(),
     ): TestRepository {
         install(ContentNegotiation) { json(testJson) }
         install(PetichFeature) {
-            engine = PetichEngine(interceptors, repo)
+            engine =
+                PetichEngine(
+                    repository = repo,
+                    definitions =
+                        listOf(
+                            petich<TestPayload>("test") {
+                                members.forEach { (key, member) ->
+                                    when (member) {
+                                        is PetichCheck<*> -> {
+                                            @Suppress("UNCHECKED_CAST")
+                                            validate(key, member as PetichCheck<TestPayload>)
+                                        }
+
+                                        is PetichStep<*> -> {
+                                            @Suppress("UNCHECKED_CAST")
+                                            authorize(key, member as PetichStep<TestPayload>)
+                                        }
+
+                                        else -> {
+                                            error("not a member: $member")
+                                        }
+                                    }
+                                }
+                            },
+                        ),
+                )
             repository = repo
         }
         return repo
@@ -161,7 +178,7 @@ class PetichRoutingTest {
     @Test
     fun testCreatePetichHappyPath() =
         testApplication {
-            configureApp(listOf(ProceedInterceptor()))
+            configureApp("proceeds" to ProceedInterceptor())
 
             val response =
                 client.post("/api/v1/petiches") {
@@ -180,7 +197,7 @@ class PetichRoutingTest {
     @Test
     fun testCreatePetichValidationReject() =
         testApplication {
-            configureApp(listOf(RejectInterceptor("Bad request data")))
+            configureApp("refuses" to RejectInterceptor("Bad request data"))
 
             val response =
                 client.post("/api/v1/petiches") {
@@ -200,7 +217,7 @@ class PetichRoutingTest {
     @Test
     fun testCreatePetichSuspendReturns202() =
         testApplication {
-            configureApp(listOf(SuspendInterceptor(), ProceedInterceptor()))
+            configureApp("waits" to SuspendInterceptor(), "proceeds" to ProceedInterceptor())
 
             val response =
                 client.post("/api/v1/petiches") {
@@ -220,7 +237,7 @@ class PetichRoutingTest {
     @Test
     fun testGetPetichNotFound() =
         testApplication {
-            configureApp(listOf(ProceedInterceptor()))
+            configureApp("proceeds" to ProceedInterceptor())
 
             val response = client.get("/api/v1/petiches/nonexistent")
 
@@ -232,7 +249,7 @@ class PetichRoutingTest {
     @Test
     fun testGetPetichAfterCreate() =
         testApplication {
-            configureApp(listOf(ProceedInterceptor()))
+            configureApp("proceeds" to ProceedInterceptor())
 
             client.post("/api/v1/petiches") {
                 contentType(ContentType.Application.Json)
@@ -251,7 +268,7 @@ class PetichRoutingTest {
     @Test
     fun testResumeNonexistentPetich() =
         testApplication {
-            configureApp(listOf(ProceedInterceptor()))
+            configureApp("proceeds" to ProceedInterceptor())
 
             val response =
                 client.post("/api/v1/petiches/nonexistent/resume") {
@@ -265,7 +282,7 @@ class PetichRoutingTest {
     @Test
     fun testResumeTerminalPetichReturnsConflict() =
         testApplication {
-            configureApp(listOf(ProceedInterceptor()))
+            configureApp("proceeds" to ProceedInterceptor())
 
             client.post("/api/v1/petiches") {
                 contentType(ContentType.Application.Json)

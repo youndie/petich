@@ -2,10 +2,8 @@ package io.github.youndie.petich.chronik
 
 import io.github.youndie.chronik.EpochSeconds
 import io.github.youndie.chronik.FiredTimer
-import io.github.youndie.petich.InterceptorResult
 import io.github.youndie.petich.Petich
 import io.github.youndie.petich.PetichEngine
-import io.github.youndie.petich.PetichInterceptor
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichRepository
@@ -42,27 +40,30 @@ class SagaTimerSinkTest {
         val what: String = "waiting",
     ) : PetichPayload()
 
+    /** The saga both halves belong to: wait, then observe how the waiting ended. */
+    private fun waitThenObserve(observer: ObserveHowItWoke) =
+        petich<Payload>("t") {
+            step("await", WaitForTheDeadline())
+            step("observe", observer)
+        }
+
     /**
-     * The step that waits. Higher priority, so it runs first.
+     * The step that waits. Declared first, so it runs first — it used to be a higher priority.
      *
-     * It suspends unconditionally: a `Suspend` moves the saga on to the NEXT step when it is
+     * It suspends unconditionally: `suspendFor` moves the saga on to the NEXT member when it is
      * resumed (the engine stores `index + 1`), so this one is entered exactly once and never sees
      * the resume at all. Getting that wrong is the first mistake anybody writing an `awaitUntil`
-     * will make, which is why the two roles are separate classes here rather than one.
+     * will make, which is why the two roles are separate classes here rather than one —
+     * `resuspendFor` is the verb for the other shape.
      */
-    private class WaitForTheDeadline : PetichInterceptor<Payload> {
-        override val phase = PetichPhase.EXECUTION
-        override val priority = 10
-
-        override fun supports(payload: PetichPayload) = payload is Payload
-
-        override suspend fun intercept(
-            petich: Petich,
+    private class WaitForTheDeadline : PetichStep<Payload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: Payload,
-        ): InterceptorResult = InterceptorResult.Suspend(requiredAction = "AWAIT_DEADLINE")
+        ) = ctx.suspendFor("AWAIT_DEADLINE")
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: Payload,
         ) = Unit
     }
@@ -70,26 +71,21 @@ class SagaTimerSinkTest {
     /** The step the saga continues into once something wakes it. */
     private class ObserveHowItWoke(
         val resumed: MutableList<String>,
-    ) : PetichInterceptor<Payload> {
-        override val phase = PetichPhase.EXECUTION
-        override val priority = 0
-
-        override fun supports(payload: PetichPayload) = payload is Payload
-
-        override suspend fun intercept(
-            petich: Petich,
+    ) : PetichStep<Payload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: Payload,
-        ): InterceptorResult {
+        ) {
             // Which somebody came back is in the payload's type: a timer here, a person in an
             // application that also resumes by hand. "The client confirmed" and "nobody came and
             // the deadline passed" lead to opposite branches.
-            val resume = petich.resumePayload
-            resumed += if (resume is TimerFired) "${petich.id}:late=${resume.lateness}" else "${petich.id}:by-hand"
-            return InterceptorResult.Proceed()
+            val resume = ctx.petich.resumePayload
+            val id = ctx.petich.id
+            resumed += if (resume is TimerFired) "$id:late=${resume.lateness}" else "$id:by-hand"
         }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: Payload,
         ) = Unit
     }
@@ -122,7 +118,11 @@ class SagaTimerSinkTest {
         runTest {
             val repository = InMemoryRepository()
             val resumed = mutableListOf<String>()
-            val engine = PetichEngine(listOf(WaitForTheDeadline(), ObserveHowItWoke(resumed)), repository)
+            val engine =
+                PetichEngine(
+                    repository = repository,
+                    definitions = listOf(waitThenObserve(ObserveHowItWoke(resumed))),
+                )
 
             val saga =
                 Petich(
@@ -159,7 +159,11 @@ class SagaTimerSinkTest {
     fun `a timer naming a saga that is gone is reported and not retried`() =
         runTest {
             val repository = InMemoryRepository()
-            val engine = PetichEngine(listOf(WaitForTheDeadline(), ObserveHowItWoke(mutableListOf())), repository)
+            val engine =
+                PetichEngine(
+                    repository = repository,
+                    definitions = listOf(waitThenObserve(ObserveHowItWoke(mutableListOf()))),
+                )
             val missing = mutableListOf<Pair<String, String>>()
 
             val sink =
@@ -191,10 +195,9 @@ class SagaTimerSinkTest {
                 )
             repository.saveOrGet(saga)
 
-            // AN ENGINE THAT KNOWS A DIFFERENT TYPE, which is the only way to be unowned now: the
-            // application no longer keeps a mapping that could be missing an entry, so a saga is
-            // unowned exactly when its type has no definition here (B-31). An engine built from
-            // interceptors owns whatever it is handed, as it always did.
+            // AN ENGINE THAT KNOWS A DIFFERENT TYPE, which is the only way to be unowned: the
+            // application keeps no mapping that could be missing an entry, so a saga is unowned
+            // exactly when its type has no definition here (B-31).
             val known =
                 PetichEngine(
                     repository = repository,
@@ -220,7 +223,11 @@ class SagaTimerSinkTest {
                 object : PetichRepository by repository {
                     override suspend fun findById(id: String) = error("the saga store is down")
                 }
-            val engine = PetichEngine(listOf(WaitForTheDeadline(), ObserveHowItWoke(mutableListOf())), repository)
+            val engine =
+                PetichEngine(
+                    repository = repository,
+                    definitions = listOf(waitThenObserve(ObserveHowItWoke(mutableListOf()))),
+                )
 
             val sink = SagaTimerSink(exploding, engine)
 

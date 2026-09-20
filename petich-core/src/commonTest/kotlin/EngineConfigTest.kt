@@ -43,7 +43,7 @@ class EngineConfigTest {
         }
     }
 
-    private fun petich(id: String = "1") =
+    private fun row(id: String = "1") =
         Petich(
             id = id,
             type = "test",
@@ -57,38 +57,31 @@ class EngineConfigTest {
     @Test
     fun `a phase timeout comes from the config rather than from the default table`() =
         runBlocking {
+            // A CHECK, because that is all it ever was: it delays and returns. ENRICHMENT takes
+            // checks only, which is the model saying that a member with nothing to undo is what
+            // belongs there.
             val slow =
-                object : PetichInterceptor<TestPayload> {
-                    override val phase = PetichPhase.ENRICHMENT
-
-                    override fun supports(payload: PetichPayload) = payload is TestPayload
-
-                    override suspend fun intercept(
-                        petich: Petich,
+                object : PetichCheck<TestPayload> {
+                    override suspend fun check(
+                        ctx: PetichCheckContext,
                         payload: TestPayload,
-                    ): InterceptorResult {
+                    ) {
                         // Longer than the shortened timeout but three times shorter than the
-                        // default of 1000 ms: had the config been ignored, the interceptor would
-                        // have finished in time.
+                        // default of 1000 ms: had the config been ignored, the member would have
+                        // finished in time.
                         delay(300)
-                        return InterceptorResult.Proceed()
                     }
-
-                    override suspend fun compensate(
-                        petich: Petich,
-                        payload: TestPayload,
-                    ) = Unit
                 }
 
             val repository = RecordingRepository()
             val engine =
                 PetichEngine(
-                    listOf(slow),
-                    repository,
+                    repository = repository,
                     config = PetichEngineConfig(phaseTimeoutsMs = mapOf(PetichPhase.ENRICHMENT to 50)),
+                    definitions = listOf(petich<TestPayload>("test") { enrich("slow", slow) }),
                 )
 
-            val result = engine.process(petich("short-timeout"))
+            val result = engine.process(row("short-timeout"))
 
             assertTrue(result is PetichResult.SystemFailure, "the shortened timeout did not fire: $result")
         }
@@ -99,18 +92,14 @@ class EngineConfigTest {
             var compensationInterrupted = false
 
             val hanging =
-                object : PetichInterceptor<TestPayload> {
-                    override val phase = PetichPhase.ENRICHMENT
-
-                    override fun supports(payload: PetichPayload) = payload is TestPayload
-
-                    override suspend fun intercept(
-                        petich: Petich,
+                object : PetichStep<TestPayload> {
+                    override suspend fun execute(
+                        ctx: PetichStepContext,
                         payload: TestPayload,
-                    ) = InterceptorResult.Proceed()
+                    ) = Unit
 
                     override suspend fun compensate(
-                        petich: Petich,
+                        ctx: PetichStepContext,
                         payload: TestPayload,
                     ) {
                         try {
@@ -122,18 +111,14 @@ class EngineConfigTest {
                 }
 
             val failing =
-                object : PetichInterceptor<TestPayload> {
-                    override val phase = PetichPhase.VALIDATION
-
-                    override fun supports(payload: PetichPayload) = payload is TestPayload
-
-                    override suspend fun intercept(
-                        petich: Petich,
+                object : PetichStep<TestPayload> {
+                    override suspend fun execute(
+                        ctx: PetichStepContext,
                         payload: TestPayload,
-                    ) = InterceptorResult.Compensate("rollback")
+                    ) = ctx.fail("rollback")
 
                     override suspend fun compensate(
-                        petich: Petich,
+                        ctx: PetichStepContext,
                         payload: TestPayload,
                     ) = Unit
                 }
@@ -152,13 +137,24 @@ class EngineConfigTest {
 
             val engine =
                 PetichEngine(
-                    listOf(hanging, failing),
-                    RecordingRepository(),
-                    handler,
-                    PetichEngineConfig(compensationTimeoutsMs = mapOf(PetichPhase.ENRICHMENT to 100)),
+                    repository = RecordingRepository(),
+                    compensationFailureHandler = handler,
+                    // AUTHORIZATION RATHER THAN ENRICHMENT, and the move is the model rather than
+                    // convenience: a compensation timeout needs a member that HAS a compensation,
+                    // and ENRICHMENT and VALIDATION take checks, which have none. What is under
+                    // test — a hung rollback is interrupted and reaches the failure handler — is
+                    // untouched by which phase it happens in.
+                    config = PetichEngineConfig(compensationTimeoutsMs = mapOf(PetichPhase.AUTHORIZATION to 100)),
+                    definitions =
+                        listOf(
+                            petich<TestPayload>("test") {
+                                authorize("hangs", hanging)
+                                step("fails", failing)
+                            },
+                        ),
                 )
 
-            engine.process(petich("compensation-timeout"))
+            engine.process(row("compensation-timeout"))
 
             assertTrue(compensationInterrupted, "a hung compensation was not interrupted")
             // An interrupted rollback is NOT a successful rollback: it must reach the
@@ -197,35 +193,35 @@ class EngineConfigTest {
             var maxActive = 0
 
             val overlapping =
-                object : PetichInterceptor<TestPayload> {
-                    override val phase = PetichPhase.ENRICHMENT
-
-                    override fun supports(payload: PetichPayload) = payload is TestPayload
-
-                    override suspend fun intercept(
-                        petich: Petich,
+                object : PetichStep<TestPayload> {
+                    override suspend fun execute(
+                        ctx: PetichStepContext,
                         payload: TestPayload,
-                    ): InterceptorResult {
+                    ) {
                         active++
                         if (active > maxActive) maxActive = active
                         delay(50)
                         active--
-                        return InterceptorResult.Proceed()
+                        return
                     }
 
                     override suspend fun compensate(
-                        petich: Petich,
+                        ctx: PetichStepContext,
                         payload: TestPayload,
                     ) = Unit
                 }
 
-            val engine = PetichEngine(listOf(overlapping), StatelessRepository())
+            val engine =
+                PetichEngine(
+                    repository = StatelessRepository(),
+                    definitions = listOf(petich<TestPayload>("test") { step("overlaps", overlapping) }),
+                )
 
             // Releasing the lock by reference count is the very change that could break mutual
             // exclusion: drop the mutex while a second call is waiting on it and two passes enter
             // one petich at once.
             withContext(Dispatchers.Default) {
-                repeat(4) { launch { engine.process(petich("same-id")) } }
+                repeat(4) { launch { engine.process(row("same-id")) } }
             }
 
             assertEquals(1, maxActive, "one petich was processed concurrently")
@@ -234,37 +230,42 @@ class EngineConfigTest {
 
     // ---- diagnostics ---------------------------------------------------------------------------
 
+    /**
+     * The successor to "an incorrect `supports` yields a message naming the interceptor".
+     *
+     * `supports()` is gone, and with it the family of mistakes where one member claimed somebody
+     * else's payload. What is left is the single declared cast: a definition written for one
+     * payload, registered under a type whose rows carry another. Without a message that is a bare
+     * ClassCastException naming two classes and nothing about the saga — which is exactly the
+     * diagnostic the old model had and the removal nearly took with it.
+     */
     @Test
-    fun `an incorrect supports yields a message naming the interceptor`() =
+    fun `a definition handed a payload it is not declared for names the member`() =
         runBlocking {
-            val lying =
-                object : PetichInterceptor<OtherPayload> {
-                    override val phase = PetichPhase.ENRICHMENT
-
-                    override fun supports(payload: PetichPayload) = true
-
-                    override suspend fun intercept(
-                        petich: Petich,
+            val mismatched =
+                object : PetichStep<OtherPayload> {
+                    override suspend fun execute(
+                        ctx: PetichStepContext,
                         payload: OtherPayload,
-                    ) = InterceptorResult.Proceed()
+                    ) = Unit
 
                     override suspend fun compensate(
-                        petich: Petich,
+                        ctx: PetichStepContext,
                         payload: OtherPayload,
                     ) = Unit
                 }
 
-            val engine = PetichEngine(listOf(lying), RecordingRepository())
-            val result = engine.process(petich("lying"))
+            val engine =
+                PetichEngine(
+                    repository = RecordingRepository(),
+                    definitions = listOf(petich<OtherPayload>("test") { step("mismatched", mismatched) }),
+                )
+            val result = engine.process(row("mismatched"))
 
             assertTrue(result is PetichResult.SystemFailure, "expected SystemFailure, got $result")
-            // The log used to carry an anonymous ClassCastException, from which there was no way
-            // to tell which interceptor had lied.
             val details = result.details
-            assertTrue(details.contains("supports()"), "the diagnostic does not mention supports(): $details")
-            assertTrue(
-                details.contains("TestPayload"),
-                "the diagnostic does not mention the payload received: $details",
-            )
+            assertTrue(details.contains("mismatched"), "the diagnostic does not name the member: $details")
+            assertTrue(details.contains("TestPayload"), "nor what actually arrived: $details")
+            assertTrue(details.contains("test"), "nor the saga type it was registered under: $details")
         }
 }

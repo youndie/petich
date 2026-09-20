@@ -23,28 +23,20 @@ class WriteCountTest {
     ) : PetichPayload()
 
     class Step(
-        override val stepKey: String,
-        override val phase: PetichPhase,
-        override val priority: Int,
+        private val name: String,
         private val suspendHere: Boolean = false,
         private val events: Int = 0,
-    ) : PetichInterceptor<OrderPayload> {
-        override fun supports(payload: PetichPayload) = payload is OrderPayload
-
-        override suspend fun intercept(
-            petich: Petich,
+    ) : PetichStep<OrderPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: OrderPayload,
-        ): InterceptorResult =
-            if (suspendHere) {
-                InterceptorResult.Suspend(requiredAction = "CONFIRM")
-            } else {
-                InterceptorResult.Proceed(
-                    outboxEvents = (0 until events).map { event("${petich.id}:$stepKey:$it") },
-                )
-            }
+        ) {
+            if (suspendHere) return ctx.suspendFor("CONFIRM")
+            (0 until events).forEach { ctx.emit(event("${ctx.petich.id}:$name:$it")) }
+        }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: OrderPayload,
         ) = Unit
 
@@ -88,7 +80,7 @@ class WriteCountTest {
         }
     }
 
-    private fun petich(id: String) =
+    private fun row(id: String) =
         Petich(
             id = id,
             type = "order",
@@ -96,22 +88,32 @@ class WriteCountTest {
             payload = OrderPayload("sku-1"),
         )
 
-    /** Six steps across three phases, none of them suspending, one event each in EXECUTION. */
+    /**
+     * The same six members, one per phase but for EXECUTION, which carries two.
+     *
+     * `enrich` and `validate` are steps under `authorize` rather than checks in their own phases:
+     * what this test counts is WRITES per member, and a check costs the same write a step does. Two
+     * of them in AUTHORIZATION keeps the count at six with no member losing its undo.
+     */
     private fun sixSteps(suspendAt: String? = null) =
-        listOf(
-            Step("enrich", PetichPhase.ENRICHMENT, priority = 10),
-            Step("validate", PetichPhase.VALIDATION, priority = 10),
-            Step("authorise", PetichPhase.AUTHORIZATION, priority = 10, suspendHere = suspendAt == "authorise"),
-            Step("reserve", PetichPhase.EXECUTION, priority = 30, events = 1),
-            Step("charge", PetichPhase.EXECUTION, priority = 20, events = 1),
-            Step("notify", PetichPhase.POST_PROCESSING, priority = 10, events = 1),
-        )
+        petich<OrderPayload>("order") {
+            authorize("enrich", Step("enrich"))
+            authorize("validate", Step("validate"))
+            authorize("authorise", Step("authorise", suspendHere = suspendAt == "authorise"))
+            step("reserve", Step("reserve", events = 1))
+            step("charge", Step("charge", events = 1))
+            announce("notify", Step("notify", events = 1))
+        }
 
     @Test
     fun `a six-step saga that runs straight through costs one write per step plus two`() =
         runBlocking {
             val repository = CountingRepository()
-            val result = PetichEngine(sixSteps(), repository).process(petich("p-straight"))
+            val result =
+                PetichEngine(
+                    repository = repository,
+                    definitions = listOf(sixSteps()),
+                ).process(row("p-straight"))
 
             assertEquals(PetichResult.Success::class, result::class, "expected a completed saga: $result")
             assertEquals(1, repository.inserts, "the saga is inserted once")
@@ -136,9 +138,9 @@ class WriteCountTest {
     fun `a suspension moves a write rather than adding one`() =
         runBlocking {
             val repository = CountingRepository()
-            val engine = PetichEngine(sixSteps(suspendAt = "authorise"), repository)
+            val engine = PetichEngine(repository = repository, definitions = listOf(sixSteps(suspendAt = "authorise")))
 
-            val suspended = engine.process(petich("p-suspended"))
+            val suspended = engine.process(row("p-suspended"))
             assertEquals(
                 PetichResult.ActionRequired::class,
                 suspended::class,

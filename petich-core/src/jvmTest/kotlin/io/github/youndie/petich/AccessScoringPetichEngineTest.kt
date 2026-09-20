@@ -110,11 +110,9 @@ class FakeGrantService {
 
 // --- Interceptors ---
 
-abstract class AccessScoringInterceptor : PetichInterceptor<AccessScoringPayload> {
-    override fun supports(payload: PetichPayload) = payload is AccessScoringPayload
-
+abstract class AccessScoringInterceptor : PetichStep<AccessScoringPayload> {
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
     ) {}
 }
@@ -122,30 +120,24 @@ abstract class AccessScoringInterceptor : PetichInterceptor<AccessScoringPayload
 class HistoryLookupInterceptor(
     private val bureauService: FakeReputationService,
 ) : AccessScoringInterceptor() {
-    override val phase = PetichPhase.ENRICHMENT
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
-    ): InterceptorResult {
+    ) {
         val score = bureauService.getAccessScore(payload.applicantId)
         val grade = bureauService.getAccessGrade(payload.applicantId)
-        return InterceptorResult.Proceed(
+        return ctx.enrich(
             AccessScoringEnrichedPayload(accessScore = score, historyGrade = grade),
         )
     }
 }
 
 class ScoringCalculationInterceptor : AccessScoringInterceptor() {
-    override val phase = PetichPhase.ENRICHMENT
-    override val priority = 5
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
+    ) {
+        val enriched = ctx.petich.enrichedPayload as AccessScoringEnrichedPayload
         val baseRate =
             when {
                 enriched.accessScore >= 750 -> BigDecimal("12.5")
@@ -172,7 +164,7 @@ class ScoringCalculationInterceptor : AccessScoringInterceptor() {
 
         val dtiRatio = monthlyCost.divide(payload.monthlyScore, 4, RoundingMode.HALF_UP)
 
-        return InterceptorResult.Proceed(
+        return ctx.enrich(
             AccessScoringEnrichedPayload(
                 interestRate = interestRate,
                 monthlyCost = monthlyCost,
@@ -184,112 +176,90 @@ class ScoringCalculationInterceptor : AccessScoringInterceptor() {
 }
 
 class EligibilityCheckInterceptor : AccessScoringInterceptor() {
-    override val phase = PetichPhase.VALIDATION
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
-    ): InterceptorResult {
-        if (payload.age < 21) return InterceptorResult.Reject("Minimum age is 21")
-        if (payload.age > 65) return InterceptorResult.Reject("Maximum age is 65")
-        return InterceptorResult.Proceed()
+    ) {
+        if (payload.age < 21) return ctx.reject("Minimum age is 21")
+        if (payload.age > 65) return ctx.reject("Maximum age is 65")
+        return
     }
 }
 
 class DenyListCheckInterceptor(
     private val denyListService: FakeDenyListService,
 ) : AccessScoringInterceptor() {
-    override val phase = PetichPhase.VALIDATION
-    override val priority = 5
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
-    ): InterceptorResult {
+    ) {
         if (denyListService.isDenyListed(payload.applicantId)) {
-            return InterceptorResult.Compensate("Applicant is denyListed")
+            return ctx.fail("Applicant is denyListed")
         }
-        return InterceptorResult.Proceed()
+        return
     }
 }
 
 class ScoreThresholdInterceptor : AccessScoringInterceptor() {
-    override val phase = PetichPhase.VALIDATION
-    override val priority = 3
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
-        if (enriched.accessScore < 300) return InterceptorResult.Reject("Access score too low")
-        if (enriched.dtiRatio > BigDecimal("0.50")) return InterceptorResult.Reject("Debt-to-score ratio too high")
-        return InterceptorResult.Proceed()
+    ) {
+        val enriched = ctx.petich.enrichedPayload as AccessScoringEnrichedPayload
+        if (enriched.accessScore < 300) return ctx.reject("Access score too low")
+        if (enriched.dtiRatio > BigDecimal("0.50")) return ctx.reject("Debt-to-score ratio too high")
+        return
     }
 }
 
 class AccessConfirmCodeInterceptor(
     private val notifierService: FakeNotifierService,
 ) : AccessScoringInterceptor() {
-    override val phase = PetichPhase.AUTHORIZATION
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
-    ): InterceptorResult {
+    ) {
         val code = (100000..999999).random().toString()
         notifierService.send(code)
-        return InterceptorResult.Suspend("SMS_CONFIRM_CODE", AccessScoringEnrichedPayload(confirmCodeCode = code))
+        ctx.enrich(AccessScoringEnrichedPayload(confirmCodeCode = code))
+        return ctx.suspendFor("SMS_CONFIRM_CODE")
     }
 }
 
 class AccessApprovalInterceptor : AccessScoringInterceptor() {
-    override val phase = PetichPhase.AUTHORIZATION
-    override val priority = 0
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
-        if (enriched.confirmCodeCode == null) return InterceptorResult.Reject("No CONFIRM_CODE issued")
-        if (enriched.confirmCodeAttempts >= 3) return InterceptorResult.Reject("Too many CONFIRM_CODE attempts")
-        val providedCode = (petich.resumePayload as? ConfirmResumePayload)?.code
-        if (providedCode == enriched.confirmCodeCode) return InterceptorResult.Proceed()
+    ) {
+        val enriched = ctx.petich.enrichedPayload as AccessScoringEnrichedPayload
+        if (enriched.confirmCodeCode == null) return ctx.reject("No CONFIRM_CODE issued")
+        if (enriched.confirmCodeAttempts >= 3) return ctx.reject("Too many CONFIRM_CODE attempts")
+        val providedCode = (ctx.petich.resumePayload as? ConfirmResumePayload)?.code
+        if (providedCode == enriched.confirmCodeCode) return
 
-        return InterceptorResult.Resuspend(
-            "SMS_CONFIRM_CODE",
-            AccessScoringEnrichedPayload(
-                confirmCodeAttempts =
-                    enriched.confirmCodeAttempts + 1,
-            ),
-        )
+        ctx.enrich(AccessScoringEnrichedPayload(confirmCodeAttempts = enriched.confirmCodeAttempts + 1))
+        return ctx.resuspendFor("SMS_CONFIRM_CODE")
     }
 }
 
 class QuotaReservationInterceptor(
     private val grantService: FakeGrantService,
 ) : AccessScoringInterceptor() {
-    override val phase = PetichPhase.EXECUTION
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
+    ) {
+        val enriched = ctx.petich.enrichedPayload as AccessScoringEnrichedPayload
         val reservationId = UUID.randomUUID().toString()
         grantService.reserveQuota(payload.applicantId, enriched.approvedQuantity, reservationId)
-        return InterceptorResult.Proceed(AccessScoringEnrichedPayload(reservationId = reservationId))
+        return ctx.enrich(AccessScoringEnrichedPayload(reservationId = reservationId))
     }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
     ) {
-        val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
+        val enriched = ctx.petich.enrichedPayload as AccessScoringEnrichedPayload
         if (enriched.reservationId != null) {
             grantService.cancelReservation(enriched.reservationId)
         }
@@ -300,24 +270,21 @@ class ActivationInterceptor(
     private val grantService: FakeGrantService,
     private val shouldFail: Boolean,
 ) : AccessScoringInterceptor() {
-    override val phase = PetichPhase.EXECUTION
-    override val priority = 5
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
-    ): InterceptorResult {
+    ) {
         if (shouldFail) throw RuntimeException("Activation service unavailable")
-        val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
+        val enriched = ctx.petich.enrichedPayload as AccessScoringEnrichedPayload
         grantService.disburse(payload.applicantId, enriched.approvedQuantity)
-        return InterceptorResult.Proceed()
+        return
     }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
     ) {
-        val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
+        val enriched = ctx.petich.enrichedPayload as AccessScoringEnrichedPayload
         grantService.reverseActivation(payload.applicantId, enriched.approvedQuantity)
     }
 }
@@ -325,23 +292,48 @@ class ActivationInterceptor(
 class AccessNotificationInterceptor(
     private val notificationLog: MutableList<String>,
 ) : AccessScoringInterceptor() {
-    override val phase = PetichPhase.POST_PROCESSING
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: AccessScoringPayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as AccessScoringEnrichedPayload
+    ) {
+        val enriched = ctx.petich.enrichedPayload as AccessScoringEnrichedPayload
         notificationLog.add(
             "APPROVED: ${payload.applicantId} ${enriched.approvedQuantity} at ${enriched.interestRate}%",
         )
         notificationLog.add("MONTHLY_COST: ${payload.applicantId} ${enriched.monthlyCost}")
-        return InterceptorResult.Proceed()
+        return
     }
 }
 
 // --- Tests ---
+
+/**
+ * The saga, in the order it runs — which used to be a `phase` and a `priority` on every class.
+ *
+ * **Placed by TYPE rather than by position**, because several tests below hand this a shorter list
+ * of their own: a member's phase is a property of the member, and indexing a list by position made
+ * it a property of the list.
+ *
+ * **What used to sit in ENRICHMENT and VALIDATION is in AUTHORIZATION.** Those phases take
+ * `PetichCheck`s, which have no undo, and every member of this corpus has one. What the corpus is
+ * for — the order members run in, the order they are undone in, and what a suspension does in the
+ * middle — does not depend on which phase they sit in, and nothing here asserts a phase.
+ */
+private fun accessScoring(members: List<AccessScoringInterceptor>) =
+    petich<AccessScoringPayload>("access_scoring") {
+        members.forEachIndexed { index, member ->
+            val key = member::class.simpleName ?: "member-$index"
+            when (member) {
+                is QuotaReservationInterceptor,
+                is ActivationInterceptor,
+                -> step(key, member)
+
+                is AccessNotificationInterceptor -> announce(key, member)
+
+                else -> authorize(key, member)
+            }
+        }
+    }
 
 class AccessScoringPetichEngineTest {
     private fun createEngine(
@@ -366,7 +358,7 @@ class AccessScoringPetichEngineTest {
                 ActivationInterceptor(grantService, failActivation),
                 AccessNotificationInterceptor(notificationLog),
             )
-        return PetichEngine(interceptors, repo) to repo
+        return PetichEngine(repository = repo, definitions = listOf(accessScoring(interceptors))) to repo
     }
 
     private fun defaultPayload(
@@ -699,19 +691,16 @@ class AccessScoringPetichEngineTest {
             val compensationLog = mutableListOf<String>()
 
             class TrackedEnrichmentInterceptor : AccessScoringInterceptor() {
-                override val phase = PetichPhase.ENRICHMENT
-                override val priority = 1
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: AccessScoringPayload,
-                ): InterceptorResult {
+                ) {
                     compensationLog.add("ENRICHMENT_EXECUTED")
-                    return InterceptorResult.Proceed()
+                    return
                 }
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: AccessScoringPayload,
                 ) {
                     compensationLog.add("ENRICHMENT_COMPENSATED")
@@ -719,19 +708,16 @@ class AccessScoringPetichEngineTest {
             }
 
             class TrackedValidationInterceptor : AccessScoringInterceptor() {
-                override val phase = PetichPhase.VALIDATION
-                override val priority = 10
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: AccessScoringPayload,
-                ): InterceptorResult {
+                ) {
                     compensationLog.add("VALIDATION_EXECUTED")
-                    return InterceptorResult.Proceed()
+                    return
                 }
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: AccessScoringPayload,
                 ) {
                     compensationLog.add("VALIDATION_COMPENSATED")
@@ -739,13 +725,10 @@ class AccessScoringPetichEngineTest {
             }
 
             class FailingExecutionInterceptor : AccessScoringInterceptor() {
-                override val phase = PetichPhase.EXECUTION
-                override val priority = 10
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: AccessScoringPayload,
-                ): InterceptorResult = throw RuntimeException("Execution failure")
+                ) = throw RuntimeException("Execution failure")
             }
 
             val bureauService = FakeReputationService()
@@ -760,7 +743,7 @@ class AccessScoringPetichEngineTest {
                     TrackedValidationInterceptor(),
                     FailingExecutionInterceptor(),
                 )
-            val engine = PetichEngine(interceptors, repo)
+            val engine = PetichEngine(repository = repo, definitions = listOf(accessScoring(interceptors)))
 
             val petich = defaultPetich("cs-cross-phase")
 

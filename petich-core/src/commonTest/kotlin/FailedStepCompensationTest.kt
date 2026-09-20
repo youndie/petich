@@ -30,23 +30,19 @@ class FailedStepCompensationTest {
     open class RecordingInterceptor(
         private val name: String,
         private val log: Log,
-        override val phase: PetichPhase = PetichPhase.EXECUTION,
-        override val priority: Int = 0,
-        private val onIntercept: suspend () -> InterceptorResult = { InterceptorResult.Proceed() },
+        private val onIntercept: suspend (PetichStepContext) -> Unit = { },
         private val onCompensate: suspend (Log) -> Unit = {},
-    ) : PetichInterceptor<OrderPayload> {
-        override fun supports(payload: PetichPayload) = payload is OrderPayload
-
-        override suspend fun intercept(
-            petich: Petich,
+    ) : PetichStep<OrderPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: OrderPayload,
-        ): InterceptorResult {
+        ) {
             log.entries.add("do:$name")
-            return onIntercept()
+            onIntercept(ctx)
         }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: OrderPayload,
         ) {
             log.entries.add("undo:$name")
@@ -81,7 +77,7 @@ class FailedStepCompensationTest {
         }
     }
 
-    private fun petich(id: String) =
+    private fun row(id: String) =
         Petich(
             id = id,
             type = "order",
@@ -96,19 +92,24 @@ class FailedStepCompensationTest {
             val log = Log()
             val engine =
                 PetichEngine(
-                    listOf(
-                        RecordingInterceptor("reserve", log, priority = 10),
-                        RecordingInterceptor(
-                            "charge",
-                            log,
-                            priority = 5,
-                            onIntercept = { throw RuntimeException("the answer was lost") },
+                    repository = RowRepository(),
+                    definitions =
+                        listOf(
+                            petich<OrderPayload>("order") {
+                                step("reserve", RecordingInterceptor("reserve", log))
+                                step(
+                                    "charge",
+                                    RecordingInterceptor(
+                                        "charge",
+                                        log,
+                                        onIntercept = { throw RuntimeException("the answer was lost") },
+                                    ),
+                                )
+                            },
                         ),
-                    ),
-                    RowRepository(),
                 )
 
-            val result = engine.process(petich("p-threw"))
+            val result = engine.process(row("p-threw"))
 
             assertTrue(result is PetichResult.SystemFailure, "expected a system failure: $result")
             assertEquals(
@@ -124,23 +125,18 @@ class FailedStepCompensationTest {
             val log = Log()
             val engine =
                 PetichEngine(
-                    listOf(
-                        RecordingInterceptor("reserve", log, priority = 10),
-                        RecordingInterceptor(
-                            "charge",
-                            log,
-                            priority = 5,
-                            onIntercept = {
-                                delay(10_000)
-                                InterceptorResult.Proceed()
+                    repository = RowRepository(),
+                    config = PetichEngineConfig(phaseTimeoutsMs = mapOf(PetichPhase.EXECUTION to 50L)),
+                    definitions =
+                        listOf(
+                            petich<OrderPayload>("order") {
+                                step("reserve", RecordingInterceptor("reserve", log))
+                                step("charge", RecordingInterceptor("charge", log, onIntercept = { delay(10_000) }))
                             },
                         ),
-                    ),
-                    RowRepository(),
-                    config = PetichEngineConfig(phaseTimeoutsMs = mapOf(PetichPhase.EXECUTION to 50L)),
                 )
 
-            val result = engine.process(petich("p-timeout"))
+            val result = engine.process(row("p-timeout"))
 
             assertTrue(result is PetichResult.SystemFailure, "expected a system failure: $result")
             assertEquals(
@@ -164,23 +160,26 @@ class FailedStepCompensationTest {
             var now = 1_000L
             val engine =
                 PetichEngine(
-                    listOf(
-                        RecordingInterceptor("reserve", log, priority = 30),
-                        RecordingInterceptor(
-                            "confirm",
-                            log,
-                            priority = 20,
-                            onIntercept = {
-                                InterceptorResult.Suspend(requiredAction = "CONFIRM", ttl = 5.minutes)
+                    repository = RowRepository(),
+                    clock = PetichClock { now },
+                    definitions =
+                        listOf(
+                            petich<OrderPayload>("order") {
+                                step("reserve", RecordingInterceptor("reserve", log))
+                                step(
+                                    "confirm",
+                                    RecordingInterceptor(
+                                        "confirm",
+                                        log,
+                                        onIntercept = { it.suspendFor("CONFIRM", ttl = 5.minutes) },
+                                    ),
+                                )
+                                step("ship", RecordingInterceptor("ship", log))
                             },
                         ),
-                        RecordingInterceptor("ship", log, priority = 10),
-                    ),
-                    RowRepository(),
-                    clock = PetichClock { now },
                 )
 
-            val suspended = engine.process(petich("p-expired"))
+            val suspended = engine.process(row("p-expired"))
             assertTrue(suspended is PetichResult.ActionRequired, "expected a suspension: $suspended")
 
             now += 6.minutes.inWholeMilliseconds
@@ -207,27 +206,32 @@ class FailedStepCompensationTest {
             val repository = RowRepository()
             val engine =
                 PetichEngine(
-                    listOf(
-                        RecordingInterceptor("reserve", log, priority = 30),
-                        RecordingInterceptor("quota", log, priority = 20),
-                        RecordingInterceptor(
-                            "charge",
-                            log,
-                            priority = 10,
-                            onIntercept = { throw RuntimeException("the answer was lost") },
-                            // Lose every write from here on, but only on the first pass: the
-                            // interruption lands between this compensation and the write that
-                            // would have recorded it.
-                            onCompensate = { entries ->
-                                if (entries.count("undo:charge") == 1) repository.failWrites = true
+                    repository = repository,
+                    config = PetichEngineConfig(maxStateUpdateAttempts = 2),
+                    definitions =
+                        listOf(
+                            petich<OrderPayload>("order") {
+                                step("reserve", RecordingInterceptor("reserve", log))
+                                step("quota", RecordingInterceptor("quota", log))
+                                step(
+                                    "charge",
+                                    RecordingInterceptor(
+                                        "charge",
+                                        log,
+                                        onIntercept = { throw RuntimeException("the answer was lost") },
+                                        // Lose every write from here on, but only on the first pass:
+                                        // the interruption lands between this compensation and the
+                                        // write that would have recorded it.
+                                        onCompensate = { entries ->
+                                            if (entries.count("undo:charge") == 1) repository.failWrites = true
+                                        },
+                                    ),
+                                )
                             },
                         ),
-                    ),
-                    repository,
-                    config = PetichEngineConfig(maxStateUpdateAttempts = 2),
                 )
 
-            engine.process(petich("p-interrupted"))
+            engine.process(row("p-interrupted"))
 
             assertEquals(
                 listOf("do:reserve", "do:quota", "do:charge", "undo:charge"),

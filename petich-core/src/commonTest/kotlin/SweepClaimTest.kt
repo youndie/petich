@@ -21,32 +21,23 @@ class SweepClaimTest {
     ) : PetichPayload()
 
     class Step(
-        override val stepKey: String,
+        private val name: String,
         private val log: MutableList<String>,
-        override val priority: Int,
         private val suspendHere: Boolean = false,
-    ) : PetichInterceptor<OrderPayload> {
-        override val phase = PetichPhase.EXECUTION
-
-        override fun supports(payload: PetichPayload) = payload is OrderPayload
-
-        override suspend fun intercept(
-            petich: Petich,
+    ) : PetichStep<OrderPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: OrderPayload,
-        ): InterceptorResult {
-            log.add("do:$stepKey")
-            return if (suspendHere) {
-                InterceptorResult.Suspend(requiredAction = "CONFIRM", ttl = 5.minutes)
-            } else {
-                InterceptorResult.Proceed()
-            }
+        ) {
+            log.add("do:$name")
+            if (suspendHere) ctx.suspendFor("CONFIRM", ttl = 5.minutes)
         }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: OrderPayload,
         ) {
-            log.add("undo:$stepKey")
+            log.add("undo:$name")
         }
     }
 
@@ -114,7 +105,7 @@ class SweepClaimTest {
                 .take(limit)
     }
 
-    private fun petich(
+    private fun row(
         id: String,
         status: PetichStatus = PetichStatus.PROCESSING,
     ) = Petich(
@@ -136,15 +127,18 @@ class SweepClaimTest {
             val log = mutableListOf<String>()
             val engine =
                 PetichEngine(
-                    listOf(
-                        Step("reserve", log, priority = 10),
-                        Step("confirm", log, priority = 5, suspendHere = true),
-                    ),
-                    repository,
+                    repository = repository,
                     clock = clock,
+                    definitions =
+                        listOf(
+                            petich<OrderPayload>("order") {
+                                step("reserve", Step("reserve", log))
+                                step("confirm", Step("confirm", log, suspendHere = true))
+                            },
+                        ),
                 )
 
-            engine.process(petich("p-lost"))
+            engine.process(row("p-lost"))
             reading += 6.minutes.inWholeMilliseconds
             val ranBefore = log.toList()
 
@@ -175,15 +169,18 @@ class SweepClaimTest {
             val log = mutableListOf<String>()
             val engine =
                 PetichEngine(
-                    listOf(
-                        Step("reserve", log, priority = 10),
-                        Step("confirm", log, priority = 5, suspendHere = true),
-                    ),
-                    repository,
+                    repository = repository,
                     clock = clock,
+                    definitions =
+                        listOf(
+                            petich<OrderPayload>("order") {
+                                step("reserve", Step("reserve", log))
+                                step("confirm", Step("confirm", log, suspendHere = true))
+                            },
+                        ),
                 )
 
-            engine.process(petich("p-won"))
+            engine.process(row("p-won"))
             reading += 6.minutes.inWholeMilliseconds
 
             val outcome = engine.expireSuspended("p-won")
@@ -223,9 +220,14 @@ class SweepClaimTest {
             val log = mutableListOf<String>()
             val contended = mutableListOf<String>()
             val revived = mutableListOf<String>()
-            val engine = PetichEngine(listOf(Step("reserve", log, priority = 10)), repository, clock = clock)
+            val engine =
+                PetichEngine(
+                    repository = repository,
+                    clock = clock,
+                    definitions = listOf(petich<OrderPayload>("order") { step("reserve", Step("reserve", log)) }),
+                )
 
-            repository.seed(petich("p-taken"), stampedAt = now - 9.minutes.inWholeMilliseconds)
+            repository.seed(row("p-taken"), stampedAt = now - 9.minutes.inWholeMilliseconds)
             repository.refuseNextUpdate = true
 
             val swept = sweeperOver(repository, engine, clock, contended, revived).sweepStuck()
@@ -250,11 +252,16 @@ class SweepClaimTest {
             // candidate for the query — the claim is what has to remove it, not the outcome.
             val engine =
                 PetichEngine(
-                    listOf(Step("confirm", log, priority = 10, suspendHere = true)),
-                    repository,
+                    repository = repository,
                     clock = clock,
+                    definitions =
+                        listOf(
+                            petich<OrderPayload>("order") {
+                                step("confirm", Step("confirm", log, suspendHere = true))
+                            },
+                        ),
                 )
-            repository.seed(petich("p-claimed"), stampedAt = now - 9.minutes.inWholeMilliseconds)
+            repository.seed(row("p-claimed"), stampedAt = now - 9.minutes.inWholeMilliseconds)
 
             val sweeper = sweeperOver(repository, engine, clock, contended, revived)
             assertEquals(1, sweeper.sweepStuck(), "the first pass takes it")

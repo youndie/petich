@@ -205,13 +205,6 @@ public data class PetichEngineConfig(
     // this engine cannot leave on its own, and with the default handler it is also silent - so the
     // first anyone hears of it is a support ticket about a reservation nobody released.
     val requireCompensationHandler: Boolean = false,
-    // Refuse a phase whose steps share a priority for the payload being processed. Off by default:
-    // equal priorities are legal and common, and since the tie is now broken by stepKey rather than
-    // by the order a dependency container assembled, they are no longer ambiguous - only unstated.
-    //
-    // Worth switching on where the order of compensations is reviewed by a person, because a tie
-    // means the order came from a name rather than from a decision.
-    val requireDistinctPriorities: Boolean = false,
 ) {
     init {
         require(maxProcessAttempts > 0) { "maxProcessAttempts must be positive" }
@@ -579,6 +572,22 @@ public class PetichEngine(
 
         override fun discardedAnnouncements(): Int = discarded
 
+        /**
+         * ONE cast, in one place, for the forward pass and the rollback both.
+         *
+         * It is at the boundary where a row meets the definition its type names — rather than one
+         * per member behind a `supports()` that could lie about anyone's payload. It cannot be
+         * removed while a stored payload is polymorphic and a definition is generic; what this
+         * stage changed is that there is a single declared place for it to be wrong.
+         *
+         * **It cannot announce itself here**, which is what "unchecked" means: `as P` on an erased
+         * type does not throw on this line. The ClassCastException arrives later, when the member is
+         * actually handed the value — so the diagnostic sits around the dispatch, exactly where
+         * `withPayloadDiagnostics` sat for the older model.
+         */
+        @Suppress("UNCHECKED_CAST")
+        private fun typed(payload: PetichPayload): P = payload as P
+
         override val stepKey: String get() = member.key
         override val label: String get() = member.key + if (member.undoes) "" else " (check)"
 
@@ -591,16 +600,30 @@ public class PetichEngine(
             // than one per member behind a `supports()` that could lie about anyone's payload. It
             // cannot be removed while a stored payload is polymorphic and a definition is generic;
             // what changed is that there is a single declared place for it to be wrong.
-
-            @Suppress("UNCHECKED_CAST")
-            val typed = payload as P
+            val typed = typed(payload)
             // IN A FINALLY, because the case that matters most is the one where `execute` does not
             // return. A member that records what it did and then throws is the ambiguous failure
             // B-18 exists for: its own compensation is called, and without the record it concludes
             // "the step did not happen" about a step that may well have. Read after the fact, the
             // record survives however the member left.
             try {
-                member.step?.execute(context, typed) ?: member.check?.check(context, typed)
+                try {
+                    member.step?.execute(context, typed) ?: member.check?.check(context, typed)
+                } catch (e: ClassCastException) {
+                    // The unchecked cast above, failing where it actually shows: a definition
+                    // declared for one payload and registered under a saga type whose rows carry
+                    // another. Bare, this is two class names and nothing about the saga.
+                    //
+                    // It can mis-attribute — a ClassCastException from inside the member's own body
+                    // is relabelled too — and that trade was already made for the older model, which
+                    // wrapped its call the same way. A message naming the wrong cause is cheaper
+                    // than one naming no cause at all, and the original is kept as the cause.
+                    throw IllegalStateException(
+                        "member `${member.key}` of saga type `${petich.type}` was handed a " +
+                            "${payload::class.simpleName}, which its definition is not declared for",
+                        e,
+                    )
+                }
             } finally {
                 recorded = context.written()
             }
@@ -617,8 +640,7 @@ public class PetichEngine(
         ): List<OutboxEvent> {
             val step = member.step ?: return emptyList()
 
-            @Suppress("UNCHECKED_CAST")
-            val typed = payload as P
+            val typed = typed(payload)
             // The context a compensation gets is built from the SAGA AS STORED, so `recorded()`
             // answers with what this member wrote when it ran — or null, which is what a step that
             // never ran looks like from inside its own undo.

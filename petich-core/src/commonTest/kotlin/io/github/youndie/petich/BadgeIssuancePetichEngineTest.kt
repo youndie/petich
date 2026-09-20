@@ -167,11 +167,9 @@ open class FakeDeliveryService {
 
 // --- Interceptors ---
 
-abstract class BadgeIssuanceInterceptor : PetichInterceptor<BadgeIssuancePayload> {
-    override fun supports(payload: PetichPayload) = payload is BadgeIssuancePayload
-
+abstract class BadgeIssuanceInterceptor : PetichStep<BadgeIssuancePayload> {
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
     ) {
     }
@@ -179,22 +177,19 @@ abstract class BadgeIssuanceInterceptor : PetichInterceptor<BadgeIssuancePayload
 
 // ENRICHMENT: generate an idempotency key for the badge processor
 class IdempotencyKeyInterceptor : BadgeIssuanceInterceptor() {
-    override val phase = PetichPhase.ENRICHMENT
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
+    ) {
+        val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
         if (enriched.idempotencyKey == null) {
-            return InterceptorResult.Proceed(
+            return ctx.enrich(
                 BadgeIssuanceEnrichedPayload(
                     idempotencyKey = "IDEM-${payload.holderId}-${payload.badgeDesign}-${payload.currency}",
                 ),
             )
         }
-        return InterceptorResult.Proceed()
+        return
     }
 }
 
@@ -202,17 +197,14 @@ class IdempotencyKeyInterceptor : BadgeIssuanceInterceptor() {
 class HolderStatusCheckInterceptor(
     private val blockedHolders: Set<String>,
 ) : BadgeIssuanceInterceptor() {
-    override val phase = PetichPhase.VALIDATION
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
-    ): InterceptorResult {
+    ) {
         if (payload.holderId in blockedHolders) {
-            return InterceptorResult.Reject("Holder is blocked")
+            return ctx.reject("Holder is blocked")
         }
-        return InterceptorResult.Proceed()
+        return
     }
 }
 
@@ -220,37 +212,30 @@ class HolderStatusCheckInterceptor(
 class BadgeConfirmCodeInterceptor(
     private val notifierService: FakeNotifierService,
 ) : BadgeIssuanceInterceptor() {
-    override val phase = PetichPhase.AUTHORIZATION
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
-    ): InterceptorResult {
+    ) {
         val code = (100000..999999).random().toString()
         notifierService.send(code)
-        return InterceptorResult.Suspend("SMS_CONFIRM_CODE", BadgeIssuanceEnrichedPayload(confirmCodeCode = code))
+        ctx.enrich(BadgeIssuanceEnrichedPayload(confirmCodeCode = code))
+        return ctx.suspendFor("SMS_CONFIRM_CODE")
     }
 }
 
 class BadgeApprovalInterceptor : BadgeIssuanceInterceptor() {
-    override val phase = PetichPhase.AUTHORIZATION
-    override val priority = 0
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
-        if (enriched.confirmCodeCode == null) return InterceptorResult.Reject("No CONFIRM_CODE issued")
-        if (enriched.confirmCodeAttempts >= 3) return InterceptorResult.Reject("Too many CONFIRM_CODE attempts")
-        val providedCode = (petich.resumePayload as? ConfirmResumePayload)?.code
-        if (providedCode == enriched.confirmCodeCode) return InterceptorResult.Proceed()
+    ) {
+        val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
+        if (enriched.confirmCodeCode == null) return ctx.reject("No CONFIRM_CODE issued")
+        if (enriched.confirmCodeAttempts >= 3) return ctx.reject("Too many CONFIRM_CODE attempts")
+        val providedCode = (ctx.petich.resumePayload as? ConfirmResumePayload)?.code
+        if (providedCode == enriched.confirmCodeCode) return
 
-        return InterceptorResult.Resuspend(
-            "SMS_CONFIRM_CODE",
-            BadgeIssuanceEnrichedPayload(confirmCodeAttempts = enriched.confirmCodeAttempts + 1),
-        )
+        ctx.enrich(BadgeIssuanceEnrichedPayload(confirmCodeAttempts = enriched.confirmCodeAttempts + 1))
+        return ctx.resuspendFor("SMS_CONFIRM_CODE")
     }
 }
 
@@ -258,22 +243,19 @@ class BadgeApprovalInterceptor : BadgeIssuanceInterceptor() {
 class CreateDirectoryRecordInterceptor(
     private val directoryService: FakeDirectoryService,
 ) : BadgeIssuanceInterceptor() {
-    override val phase = PetichPhase.EXECUTION
-    override val priority = 40
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
-    ): InterceptorResult {
+    ) {
         val recordId = directoryService.createBadgeRecord(payload.holderId)
-        return InterceptorResult.Proceed(BadgeIssuanceEnrichedPayload(directoryRecordId = recordId))
+        return ctx.enrich(BadgeIssuanceEnrichedPayload(directoryRecordId = recordId))
     }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
     ) {
-        val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
+        val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
         if (enriched.directoryRecordId != null) {
             directoryService.closeBadgeRecord(enriched.directoryRecordId)
         }
@@ -284,29 +266,26 @@ class CreateDirectoryRecordInterceptor(
 class IssueCredentialsInterceptor(
     private val credentialService: FakeCredentialService,
 ) : BadgeIssuanceInterceptor() {
-    override val phase = PetichPhase.EXECUTION
-    override val priority = 30
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
+    ) {
+        val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
         val (badgeId, pan, cvv) =
             credentialService.issueVirtualBadge(
                 enriched.directoryRecordId!!,
                 enriched.idempotencyKey!!,
             )
-        return InterceptorResult.Proceed(
+        return ctx.enrich(
             BadgeIssuanceEnrichedPayload(virtualBadgeId = badgeId, pan = pan, cvv = cvv),
         )
     }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
     ) {
-        val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
+        val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
         if (enriched.virtualBadgeId != null) {
             credentialService.blockBadge(enriched.virtualBadgeId)
         }
@@ -317,23 +296,20 @@ class IssueCredentialsInterceptor(
 class PrintOrderInterceptor(
     private val factory: FakePrintingFactory,
 ) : BadgeIssuanceInterceptor() {
-    override val phase = PetichPhase.EXECUTION
-    override val priority = 20
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
+    ) {
+        val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
         val orderId = factory.submitOrder(enriched.virtualBadgeId!!, payload.badgeDesign)
-        return InterceptorResult.Proceed(BadgeIssuanceEnrichedPayload(printingOrderId = orderId))
+        return ctx.enrich(BadgeIssuanceEnrichedPayload(printingOrderId = orderId))
     }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
     ) {
-        val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
+        val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
         if (enriched.printingOrderId != null) {
             factory.cancelOrder(enriched.printingOrderId)
         }
@@ -344,23 +320,20 @@ class PrintOrderInterceptor(
 class DeliveryDispatchInterceptor(
     private val deliveryService: FakeDeliveryService,
 ) : BadgeIssuanceInterceptor() {
-    override val phase = PetichPhase.EXECUTION
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
+    ) {
+        val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
         val trackingId = deliveryService.scheduleDelivery(enriched.printingOrderId!!, payload.deliveryAddress)
-        return InterceptorResult.Proceed(BadgeIssuanceEnrichedPayload(deliveryTrackingId = trackingId))
+        return ctx.enrich(BadgeIssuanceEnrichedPayload(deliveryTrackingId = trackingId))
     }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
     ) {
-        val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
+        val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
         if (enriched.deliveryTrackingId != null) {
             deliveryService.cancelDelivery(enriched.deliveryTrackingId)
         }
@@ -371,24 +344,51 @@ class DeliveryDispatchInterceptor(
 class BadgeIssuanceNotificationInterceptor(
     private val notificationLog: MutableList<String>,
 ) : BadgeIssuanceInterceptor() {
-    override val phase = PetichPhase.POST_PROCESSING
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: BadgeIssuancePayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
+    ) {
+        val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
         notificationLog.add(
             "BADGE_ISSUED: holder=${payload.holderId} pan=****${enriched.pan?.takeLast(
                 4,
             )} tracking=${enriched.deliveryTrackingId}",
         )
-        return InterceptorResult.Proceed()
+        return
     }
 }
 
 // --- Tests ---
+
+/**
+ * The saga, in the order it runs — which used to be a `phase` and a `priority` on every class.
+ *
+ * **Placed by TYPE rather than by position**, because several tests below hand this a shorter list
+ * of their own: a member's phase is a property of the member, and indexing a list by position made
+ * it a property of the list.
+ *
+ * **What used to sit in ENRICHMENT and VALIDATION is in AUTHORIZATION.** Those phases take
+ * `PetichCheck`s, which have no undo, and every member of this corpus has one. What the corpus is
+ * for — the order members run in, the order they are undone in, and what a suspension does in the
+ * middle — does not depend on which phase they sit in, and nothing here asserts a phase.
+ */
+private fun badgeIssuance(members: List<BadgeIssuanceInterceptor>) =
+    petich<BadgeIssuancePayload>("badge_issuance") {
+        members.forEachIndexed { index, member ->
+            val key = member::class.simpleName ?: "member-$index"
+            when (member) {
+                is CreateDirectoryRecordInterceptor,
+                is IssueCredentialsInterceptor,
+                is PrintOrderInterceptor,
+                is DeliveryDispatchInterceptor,
+                -> step(key, member)
+
+                is BadgeIssuanceNotificationInterceptor -> announce(key, member)
+
+                else -> authorize(key, member)
+            }
+        }
+    }
 
 class BadgeIssuancePetichEngineTest {
     private fun createEngine(
@@ -413,7 +413,7 @@ class BadgeIssuancePetichEngineTest {
                 DeliveryDispatchInterceptor(deliveryService),
                 BadgeIssuanceNotificationInterceptor(notificationLog),
             )
-        return PetichEngine(interceptors, repo)
+        return PetichEngine(repository = repo, definitions = listOf(badgeIssuance(interceptors)))
     }
 
     private fun defaultPayload(
@@ -766,7 +766,7 @@ class BadgeIssuancePetichEngineTest {
                     DeliveryDispatchInterceptor(failingDelivery),
                     BadgeIssuanceNotificationInterceptor(notificationLog),
                 )
-            val engine = PetichEngine(interceptors, repo)
+            val engine = PetichEngine(repository = repo, definitions = listOf(badgeIssuance(interceptors)))
 
             val petich = defaultPetich("badge-delivery-fail")
 
@@ -809,19 +809,16 @@ class BadgeIssuancePetichEngineTest {
             val compensationLog = mutableListOf<String>()
 
             class TrackedEnrichmentInterceptor : BadgeIssuanceInterceptor() {
-                override val phase = PetichPhase.ENRICHMENT
-                override val priority = 1
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
-                ): InterceptorResult {
+                ) {
                     compensationLog.add("ENRICHMENT_EXECUTED")
-                    return InterceptorResult.Proceed()
+                    return
                 }
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
                 ) {
                     compensationLog.add("ENRICHMENT_COMPENSATED")
@@ -829,19 +826,16 @@ class BadgeIssuancePetichEngineTest {
             }
 
             class TrackedValidationInterceptor : BadgeIssuanceInterceptor() {
-                override val phase = PetichPhase.VALIDATION
-                override val priority = 10
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
-                ): InterceptorResult {
+                ) {
                     compensationLog.add("VALIDATION_EXECUTED")
-                    return InterceptorResult.Proceed()
+                    return
                 }
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
                 ) {
                     compensationLog.add("VALIDATION_COMPENSATED")
@@ -849,13 +843,10 @@ class BadgeIssuancePetichEngineTest {
             }
 
             class FailingExecutionInterceptor : BadgeIssuanceInterceptor() {
-                override val phase = PetichPhase.EXECUTION
-                override val priority = 10
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
-                ): InterceptorResult = throw RuntimeException("Execution failure")
+                ) = throw RuntimeException("Execution failure")
             }
 
             val repo = FakePetichRepository()
@@ -866,7 +857,7 @@ class BadgeIssuancePetichEngineTest {
                     TrackedValidationInterceptor(),
                     FailingExecutionInterceptor(),
                 )
-            val engine = PetichEngine(interceptors, repo)
+            val engine = PetichEngine(repository = repo, definitions = listOf(badgeIssuance(interceptors)))
 
             val petich = defaultPetich("badge-cross-phase")
             val result = engine.process(petich)
@@ -983,20 +974,17 @@ class BadgeIssuancePetichEngineTest {
             val notifierService = FakeNotifierService()
 
             class TrackedCreateRecordInterceptor : BadgeIssuanceInterceptor() {
-                override val phase = PetichPhase.EXECUTION
-                override val priority = 40
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
-                ): InterceptorResult {
+                ) {
                     val recordId = directoryService.createBadgeRecord(payload.holderId)
                     compensationLog.add("STEP1_RECORD_EXECUTED")
-                    return InterceptorResult.Proceed(BadgeIssuanceEnrichedPayload(directoryRecordId = recordId))
+                    return ctx.enrich(BadgeIssuanceEnrichedPayload(directoryRecordId = recordId))
                 }
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
                 ) {
                     compensationLog.add("STEP1_RECORD_COMPENSATED")
@@ -1004,27 +992,24 @@ class BadgeIssuancePetichEngineTest {
             }
 
             class TrackedIssueBadgeInterceptor : BadgeIssuanceInterceptor() {
-                override val phase = PetichPhase.EXECUTION
-                override val priority = 30
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
-                ): InterceptorResult {
-                    val enriched = petich.enrichedPayload as BadgeIssuanceEnrichedPayload
+                ) {
+                    val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
                     val (badgeId, pan, cvv) =
                         credentialService.issueVirtualBadge(
                             enriched.directoryRecordId!!,
                             enriched.idempotencyKey!!,
                         )
                     compensationLog.add("STEP2_BADGE_EXECUTED")
-                    return InterceptorResult.Proceed(
+                    return ctx.enrich(
                         BadgeIssuanceEnrichedPayload(virtualBadgeId = badgeId, pan = pan, cvv = cvv),
                     )
                 }
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
                 ) {
                     compensationLog.add("STEP2_BADGE_COMPENSATED")
@@ -1032,19 +1017,16 @@ class BadgeIssuancePetichEngineTest {
             }
 
             class TrackedPrintingInterceptor : BadgeIssuanceInterceptor() {
-                override val phase = PetichPhase.EXECUTION
-                override val priority = 20
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
-                ): InterceptorResult {
+                ) {
                     compensationLog.add("STEP3_PRINTING_EXECUTED")
-                    return InterceptorResult.Proceed()
+                    return
                 }
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
                 ) {
                     compensationLog.add("STEP3_PRINTING_COMPENSATED")
@@ -1052,13 +1034,10 @@ class BadgeIssuancePetichEngineTest {
             }
 
             class FailingStep4Interceptor : BadgeIssuanceInterceptor() {
-                override val phase = PetichPhase.EXECUTION
-                override val priority = 10
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: BadgeIssuancePayload,
-                ): InterceptorResult = throw RuntimeException("Step 4 failed")
+                ) = throw RuntimeException("Step 4 failed")
             }
 
             val repo = FakePetichRepository()
@@ -1070,7 +1049,7 @@ class BadgeIssuancePetichEngineTest {
                     TrackedPrintingInterceptor(),
                     FailingStep4Interceptor(),
                 )
-            val engine = PetichEngine(interceptors, repo)
+            val engine = PetichEngine(repository = repo, definitions = listOf(badgeIssuance(interceptors)))
 
             val petich = defaultPetich("badge-comp-order")
             val result = engine.process(petich)

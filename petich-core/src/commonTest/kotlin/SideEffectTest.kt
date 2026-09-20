@@ -55,21 +55,32 @@ class SideEffectTest {
 
     private class Suspending(
         val effects: List<PetichSideEffect>,
-    ) : PetichInterceptor<Payload> {
-        override val phase = PetichPhase.EXECUTION
-
-        override fun supports(payload: PetichPayload) = payload is Payload
-
-        override suspend fun intercept(
-            petich: Petich,
+    ) : PetichStep<Payload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: Payload,
-        ) = InterceptorResult.Suspend(requiredAction = "WAIT", sideEffects = effects)
+        ) {
+            effects.forEach { ctx.attach(it) }
+            ctx.suspendFor("WAIT")
+        }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: Payload,
         ) = Unit
     }
+
+    private fun engineFor(
+        step: Suspending,
+        repository: PetichRepository,
+        metrics: PetichEngineMetrics = PetichEngineMetrics.NoOp,
+        config: PetichEngineConfig = PetichEngineConfig(),
+    ) = PetichEngine(
+        repository = repository,
+        config = config,
+        metrics = metrics,
+        definitions = listOf(petich<Payload>("t") { step("suspend", step) }),
+    )
 
     private fun saga(id: String = "s1") =
         Petich(
@@ -88,7 +99,7 @@ class SideEffectTest {
     fun `a suspending step gets its side effects committed with its state`() =
         runTest {
             val repository = RecordingRepository()
-            val engine = PetichEngine(listOf(Suspending(listOf(WriteThis("timer-1")))), repository)
+            val engine = engineFor(Suspending(listOf(WriteThis("timer-1"))), repository)
 
             engine.process(saga())
 
@@ -112,11 +123,7 @@ class SideEffectTest {
                 }
             val repository = PlainRepository()
             val engine =
-                PetichEngine(
-                    listOf(Suspending(listOf(WriteThis("a"), WriteThis("b")))),
-                    repository,
-                    metrics = metrics,
-                )
+                engineFor(Suspending(listOf(WriteThis("a"), WriteThis("b"))), repository, metrics = metrics)
 
             engine.process(saga())
 
@@ -139,7 +146,7 @@ class SideEffectTest {
                         dropped++
                     }
                 }
-            val engine = PetichEngine(listOf(Suspending(emptyList())), PlainRepository(), metrics = metrics)
+            val engine = engineFor(Suspending(emptyList()), PlainRepository(), metrics = metrics)
 
             engine.process(saga())
 
@@ -151,8 +158,8 @@ class SideEffectTest {
     fun `requireSideEffects refuses the wiring rather than the first saga`() {
         val failure =
             assertFailsWith<IllegalArgumentException> {
-                PetichEngine(
-                    listOf(Suspending(emptyList())),
+                engineFor(
+                    Suspending(emptyList()),
                     PlainRepository(),
                     config = PetichEngineConfig(requireSideEffects = true),
                 )
@@ -163,8 +170,8 @@ class SideEffectTest {
 
     @Test
     fun `requireSideEffects is satisfied by a repository that can store them`() {
-        PetichEngine(
-            listOf(Suspending(emptyList())),
+        engineFor(
+            Suspending(emptyList()),
             RecordingRepository(),
             config = PetichEngineConfig(requireSideEffects = true),
         )

@@ -17,32 +17,23 @@ class ChainFingerprintTest {
     ) : PetichPayload()
 
     class Step(
-        override val stepKey: String,
+        private val name: String,
         private val log: MutableList<String>,
-        override val priority: Int,
         private val suspendHere: Boolean = false,
-    ) : PetichInterceptor<OrderPayload> {
-        override val phase = PetichPhase.EXECUTION
-
-        override fun supports(payload: PetichPayload) = payload is OrderPayload
-
-        override suspend fun intercept(
-            petich: Petich,
+    ) : PetichStep<OrderPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: OrderPayload,
-        ): InterceptorResult {
-            log.add("do:$stepKey")
-            return if (suspendHere) {
-                InterceptorResult.Suspend(requiredAction = "CONFIRM")
-            } else {
-                InterceptorResult.Proceed()
-            }
+        ) {
+            log.add("do:$name")
+            if (suspendHere) ctx.suspendFor("CONFIRM")
         }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: OrderPayload,
         ) {
-            log.add("undo:$stepKey")
+            log.add("undo:$name")
         }
     }
 
@@ -66,7 +57,7 @@ class ChainFingerprintTest {
         }
     }
 
-    private fun petich(id: String) =
+    private fun row(id: String) =
         Petich(
             id = id,
             type = "order",
@@ -75,10 +66,26 @@ class ChainFingerprintTest {
             payload = OrderPayload("sku-1"),
         )
 
+    /**
+     * An engine over a chain named by its member keys, in order.
+     *
+     * The order used to be `priority = 20, 10, 5, 1` across four classes; it is the order of these
+     * arguments now, which is the same fact with nowhere left to disagree with itself.
+     */
     private fun engine(
         repository: PetichRepository,
-        vararg steps: PetichInterceptor<*>,
-    ) = PetichEngine(steps.toList(), repository)
+        log: MutableList<String>,
+        vararg keys: String,
+        suspendAt: String? = null,
+    ) = PetichEngine(
+        repository = repository,
+        definitions =
+            listOf(
+                petich<OrderPayload>("order") {
+                    keys.forEach { key -> step(key, Step(key, log, suspendHere = key == suspendAt)) }
+                },
+            ),
+    )
 
     /** Runs a saga up to its suspension and returns the row as storage holds it. */
     private suspend fun suspendedSaga(
@@ -86,13 +93,8 @@ class ChainFingerprintTest {
         log: MutableList<String>,
     ): Petich {
         val first =
-            engine(
-                repository,
-                Step("reserve", log, priority = 10),
-                Step("confirm", log, priority = 5, suspendHere = true),
-                Step("ship", log, priority = 1),
-            )
-        val result = first.process(petich("p-1"))
+            engine(repository, log, "reserve", "confirm", "ship", suspendAt = "confirm")
+        val result = first.process(row("p-1"))
         assertTrue(result is PetichResult.ActionRequired, "expected a suspension: $result")
         return repository.row!!
     }
@@ -108,13 +110,7 @@ class ChainFingerprintTest {
             // The deploy: a step that runs FIRST. The stored index now points one step to the left
             // of what it meant, and nothing in the row says so.
             val afterDeploy =
-                engine(
-                    repository,
-                    Step("audit", log, priority = 20),
-                    Step("reserve", log, priority = 10),
-                    Step("confirm", log, priority = 5, suspendHere = true),
-                    Step("ship", log, priority = 1),
-                )
+                engine(repository, log, "audit", "reserve", "confirm", "ship", suspendAt = "confirm")
 
             val result = afterDeploy.process(repository.row!!)
 
@@ -136,13 +132,7 @@ class ChainFingerprintTest {
             // The ordinary release. A fingerprint over the WHOLE chain would refuse every saga in
             // flight here, and a guard that fires on a normal deploy is switched off in a week.
             val afterDeploy =
-                engine(
-                    repository,
-                    Step("reserve", log, priority = 10),
-                    Step("confirm", log, priority = 5, suspendHere = true),
-                    Step("ship", log, priority = 1),
-                    Step("notify", log, priority = 0),
-                )
+                engine(repository, log, "reserve", "confirm", "ship", "notify", suspendAt = "confirm")
 
             val result = afterDeploy.process(repository.row!!)
 
@@ -162,13 +152,8 @@ class ChainFingerprintTest {
             repository.row = stored.copy(chainFingerprint = null)
 
             val result =
-                engine(
-                    repository,
-                    Step("audit", log, priority = 20),
-                    Step("reserve", log, priority = 10),
-                    Step("confirm", log, priority = 5, suspendHere = true),
-                    Step("ship", log, priority = 1),
-                ).process(repository.row!!)
+                engine(repository, log, "audit", "reserve", "confirm", "ship", suspendAt = "confirm")
+                    .process(repository.row!!)
 
             // NOT refused — and what it does instead is the old behaviour in full view: the stored
             // index now points at `confirm` rather than `ship`, so the saga asks for a confirmation
@@ -187,64 +172,24 @@ class ChainFingerprintTest {
             )
         }
 
-    @Test
-    fun `steps of equal priority run in a stated order and not in registration order`() =
-        runBlocking {
-            val forwards = mutableListOf<String>()
-            val backwards = mutableListOf<String>()
-
-            engine(
-                RowRepository(),
-                Step("bravo", forwards, priority = 0),
-                Step("alpha", forwards, priority = 0),
-            ).process(petich("p-forwards"))
-
-            engine(
-                RowRepository(),
-                Step("alpha", backwards, priority = 0),
-                Step("bravo", backwards, priority = 0),
-            ).process(petich("p-backwards"))
-
-            assertEquals(listOf("do:alpha", "do:bravo"), forwards)
-            assertEquals(
-                forwards,
-                backwards,
-                "the order of two steps must not depend on the order a container handed them over",
-            )
-        }
-
-    @Test
-    fun `requireDistinctPriorities names the steps that collide`() =
-        runBlocking {
-            val log = mutableListOf<String>()
-            val engine =
-                PetichEngine(
-                    listOf(Step("alpha", log, priority = 0), Step("bravo", log, priority = 0)),
-                    RowRepository(),
-                    config = PetichEngineConfig(requireDistinctPriorities = true),
-                )
-
-            val failure = assertFailsWith<IllegalArgumentException> { engine.describeChain(OrderPayload("sku-1")) }
-
-            assertTrue(
-                failure.message?.contains("alpha") == true && failure.message?.contains("bravo") == true,
-                "the refusal has to name both: ${failure.message}",
-            )
-        }
+    // TWO CASES REMOVED HERE WITH THE CONCEPT THEY TESTED (B-33). One asserted that two steps of
+    // equal priority ran in `stepKey` order rather than in the order a container handed them over;
+    // the other asserted that `requireDistinctPriorities` named the pair that collided. A member has
+    // no priority now — the order is the order of the declaration — so neither has a subject, and
+    // the property the first one protected is asserted directly by `DefinitionEngineTest`'s "a
+    // definition runs its members in the order it declares them". The config flag went with them:
+    // its only implementation was in the chain arm this item deleted, and a flag that reads as
+    // protection and does nothing is worse than no flag.
 
     @Test
     fun `the resolved chain can be printed for review`() =
         runBlocking {
             val log = mutableListOf<String>()
             val dump =
-                engine(
-                    RowRepository(),
-                    Step("confirm", log, priority = 5),
-                    Step("reserve", log, priority = 10),
-                ).describeChain(OrderPayload("sku-1"))
+                engine(RowRepository(), log, "reserve", "confirm").describeChain(OrderPayload("sku-1"), "order")
 
             assertTrue(
-                dump.contains("EXECUTION: reserve(10) -> confirm(5)"),
+                dump.contains("EXECUTION: reserve -> confirm"),
                 "the dump has to show the order a person would otherwise reconstruct: $dump",
             )
             assertTrue(dump.contains("ENRICHMENT: -"), "and the phases nothing applies to: $dump")

@@ -10,25 +10,22 @@ class ResumeInterceptorTest {
     ) : PetichPayload()
 
     class CountingInterceptor(
-        override val phase: PetichPhase,
         val id: String,
         val shouldSuspend: Boolean = false,
-    ) : PetichInterceptor<TestPayload> {
+    ) : PetichStep<TestPayload> {
         var callCount = 0
 
-        override fun supports(payload: PetichPayload) = true
-
-        override suspend fun intercept(
-            petich: Petich,
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: TestPayload,
-        ): InterceptorResult {
+        ) {
             callCount++
-            if (shouldSuspend) return InterceptorResult.Suspend("SUSPEND_ACTION")
-            return InterceptorResult.Proceed()
+            if (shouldSuspend) return ctx.suspendFor("SUSPEND_ACTION")
+            return
         }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: TestPayload,
         ) {}
     }
@@ -55,14 +52,20 @@ class ResumeInterceptorTest {
     @Test
     fun testNoDoubleExecutionOnResume() =
         runBlocking {
-            val interceptor1 = CountingInterceptor(PetichPhase.EXECUTION, "1")
-            val interceptor2 = CountingInterceptor(PetichPhase.EXECUTION, "2", shouldSuspend = true)
+            val interceptor1 = CountingInterceptor("1")
+            val interceptor2 = CountingInterceptor("2", shouldSuspend = true)
 
             val repo = MockRepository()
             val engine =
                 PetichEngine(
-                    listOf(interceptor1, interceptor2),
-                    repo,
+                    repository = repo,
+                    definitions =
+                        listOf(
+                            petich<TestPayload>("type") {
+                                step("first", interceptor1)
+                                step("waits", interceptor2)
+                            },
+                        ),
                 )
 
             val payload = TestPayload("test")

@@ -46,26 +46,22 @@ private data class TtlPayload(
 // Suspends on the first pass and proceeds on resume — the same behaviour as a real
 // confirmation interceptor.
 private class TtlSuspendingInterceptor(
-    override val phase: PetichPhase = PetichPhase.AUTHORIZATION,
     private val ttl: kotlin.time.Duration? = null,
     private val resuspendForever: Boolean = false,
-) : PetichInterceptor<TtlPayload> {
+) : PetichStep<TtlPayload> {
     var compensated = 0
 
-    override fun supports(payload: PetichPayload) = true
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: TtlPayload,
-    ): InterceptorResult =
-        when {
-            resuspendForever -> InterceptorResult.Resuspend("CONFIRM", ttl = ttl)
-            petich.resumePayload != null -> InterceptorResult.Proceed()
-            else -> InterceptorResult.Suspend("CONFIRM", ttl = ttl)
-        }
+    ) = when {
+        resuspendForever -> ctx.resuspendFor("CONFIRM", ttl = ttl)
+        ctx.petich.resumePayload != null -> Unit
+        else -> ctx.suspendFor("CONFIRM", ttl = ttl)
+    }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: TtlPayload,
     ) {
         compensated++
@@ -103,19 +99,19 @@ private class TtlRepository : ExpiringPetichRepository {
     ): List<Petich> = emptyList()
 }
 
-private fun petich(id: String = "p-1") =
+private fun row(id: String = "p-1") =
     Petich(id = id, type = "test", status = PetichStatus.DRAFT, payload = TtlPayload())
 
 private fun engineWith(
     repository: PetichRepository,
-    interceptor: PetichInterceptor<*>,
+    member: PetichStep<TtlPayload>,
     clock: PetichClock,
     defaultTtl: kotlin.time.Duration? = null,
 ) = PetichEngine(
-    interceptors = listOf(interceptor),
     repository = repository,
     config = PetichEngineConfig(defaultSuspendTtl = defaultTtl),
     clock = clock,
+    definitions = listOf(petich<TtlPayload>("test") { step("confirm", member) }),
 )
 
 class SuspendDeadlineTest {
@@ -124,7 +120,7 @@ class SuspendDeadlineTest {
         runBlocking {
             val clock = TtlTestClock()
             val repository = TtlRepository()
-            engineWith(repository, TtlSuspendingInterceptor(), clock, defaultTtl = 5.minutes).process(petich())
+            engineWith(repository, TtlSuspendingInterceptor(), clock, defaultTtl = 5.minutes).process(row())
 
             val stored = repository.stored.getValue("p-1")
             assertEquals(PetichStatus.PENDING_SIGNATURE, stored.status)
@@ -139,7 +135,7 @@ class SuspendDeadlineTest {
             val clock = TtlTestClock()
             val repository = TtlRepository()
             engineWith(repository, TtlSuspendingInterceptor(ttl = 30.seconds), clock, defaultTtl = 5.minutes)
-                .process(petich())
+                .process(row())
 
             assertEquals(
                 clock.nowMs + 30.seconds.inWholeMilliseconds,
@@ -153,7 +149,7 @@ class SuspendDeadlineTest {
     fun `with no ttl configured a suspended petich gets no deadline at all`() =
         runBlocking {
             val repository = TtlRepository()
-            engineWith(repository, TtlSuspendingInterceptor(), TtlTestClock()).process(petich())
+            engineWith(repository, TtlSuspendingInterceptor(), TtlTestClock()).process(row())
 
             assertEquals(PetichStatus.PENDING_SIGNATURE, repository.stored.getValue("p-1").status)
             assertNull(repository.stored.getValue("p-1").suspendedUntilEpochMs)
@@ -166,7 +162,7 @@ class SuspendDeadlineTest {
             val clock = TtlTestClock()
             val repository = TtlRepository()
             val engine = engineWith(repository, TtlSuspendingInterceptor(), clock, defaultTtl = 5.minutes)
-            engine.process(petich())
+            engine.process(row())
             assertNotNull(repository.stored.getValue("p-1").suspendedUntilEpochMs)
 
             engine.process(repository.stored.getValue("p-1").copy(resumePayload = TtlOtpResume("0000")))
@@ -182,7 +178,7 @@ class SuspendDeadlineTest {
             val repository = TtlRepository()
             val engine =
                 engineWith(repository, TtlSuspendingInterceptor(resuspendForever = true), clock, defaultTtl = 5.minutes)
-            engine.process(petich())
+            engine.process(row())
             val first = repository.stored.getValue("p-1").suspendedUntilEpochMs
 
             clock.advance(60_000)
@@ -201,7 +197,7 @@ class ExpireSuspendedTest {
             val repository = TtlRepository()
             val interceptor = TtlSuspendingInterceptor()
             val engine = engineWith(repository, interceptor, clock, defaultTtl = 5.minutes)
-            engine.process(petich())
+            engine.process(row())
 
             clock.advance(5.minutes.inWholeMilliseconds + 1)
             val result = engine.expireSuspended("p-1")
@@ -217,7 +213,7 @@ class ExpireSuspendedTest {
             val clock = TtlTestClock()
             val repository = TtlRepository()
             val engine = engineWith(repository, TtlSuspendingInterceptor(), clock, defaultTtl = 5.minutes)
-            engine.process(petich())
+            engine.process(row())
 
             clock.advance(1.minutes.inWholeMilliseconds)
 
@@ -235,7 +231,7 @@ class ExpireSuspendedTest {
             val repository = TtlRepository()
             val interceptor = TtlSuspendingInterceptor()
             val engine = engineWith(repository, interceptor, clock, defaultTtl = 5.minutes)
-            engine.process(petich())
+            engine.process(row())
             clock.advance(5.minutes.inWholeMilliseconds + 1)
 
             // The client made it: the petich moved on and completed.
@@ -254,7 +250,7 @@ class ExpireSuspendedTest {
         runBlocking {
             val clock = TtlTestClock()
             val repository = TtlRepository()
-            engineWith(repository, TtlSuspendingInterceptor(), clock).process(petich())
+            engineWith(repository, TtlSuspendingInterceptor(), clock).process(row())
 
             clock.advance(365L * 24 * 60 * 60 * 1000)
 
@@ -278,15 +274,25 @@ class ExpireSuspendedTest {
             val clock = TtlTestClock()
             val repository = TtlRepository()
             val executed = RecordingProceed()
-            val suspending = TtlSuspendingInterceptor(phase = PetichPhase.AUTHORIZATION)
+            val suspending = TtlSuspendingInterceptor()
             val engine =
                 PetichEngine(
-                    interceptors = listOf(executed, suspending),
                     repository = repository,
                     config = PetichEngineConfig(defaultSuspendTtl = 5.minutes),
                     clock = clock,
+                    definitions =
+                        listOf(
+                            petich<TtlPayload>("test") {
+                                // Both in one phase, in this order: phases run in their own order,
+                                // so a member declared in EXECUTION would not have run before the
+                                // AUTHORIZATION one suspended - and then there would be nothing to
+                                // roll back, which is what this test is about.
+                                authorize("ran", executed)
+                                authorize("confirm", suspending)
+                            },
+                        ),
                 )
-            engine.process(petich())
+            engine.process(row())
             clock.advance(5.minutes.inWholeMilliseconds + 1)
 
             engine.expireSuspended("p-1")
@@ -302,20 +308,16 @@ class ExpireSuspendedTest {
 
 // A separate interceptor that simply proceeds and counts rollbacks, needed to check that expiry
 // rolls back the steps ALREADY EXECUTED, not merely the suspended one.
-private class RecordingProceed(
-    override val phase: PetichPhase = PetichPhase.ENRICHMENT,
-) : PetichInterceptor<TtlPayload> {
+private class RecordingProceed : PetichStep<TtlPayload> {
     var compensated = 0
 
-    override fun supports(payload: PetichPayload) = true
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: TtlPayload,
-    ): InterceptorResult = InterceptorResult.Proceed()
+    ) = Unit
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: TtlPayload,
     ) {
         compensated++
@@ -329,8 +331,8 @@ class SuspendedPetichSweeperTest {
             val clock = TtlTestClock()
             val repository = TtlRepository()
             val engine = engineWith(repository, TtlSuspendingInterceptor(), clock, defaultTtl = 5.minutes)
-            engine.process(petich("p-1"))
-            engine.process(petich("p-2"))
+            engine.process(row("p-1"))
+            engine.process(row("p-2"))
             clock.advance(5.minutes.inWholeMilliseconds + 1)
 
             val expiredIds = mutableListOf<String>()
@@ -347,7 +349,7 @@ class SuspendedPetichSweeperTest {
             val clock = TtlTestClock()
             val repository = TtlRepository()
             val engine = engineWith(repository, TtlSuspendingInterceptor(), clock, defaultTtl = 5.minutes)
-            engine.process(petich("p-1"))
+            engine.process(row("p-1"))
 
             assertEquals(0, SuspendedPetichSweeper(repository, engine, clock).sweep())
             assertEquals(PetichStatus.PENDING_SIGNATURE, repository.stored.getValue("p-1").status)
@@ -362,7 +364,7 @@ class SuspendedPetichSweeperTest {
             val repository = TtlRepository()
             val interceptor = TtlSuspendingInterceptor()
             val engine = engineWith(repository, interceptor, clock, defaultTtl = 5.minutes)
-            engine.process(petich("p-1"))
+            engine.process(row("p-1"))
             clock.advance(5.minutes.inWholeMilliseconds + 1)
 
             val skipped = mutableListOf<String>()
@@ -395,8 +397,8 @@ class SuspendedPetichSweeperTest {
             val clock = TtlTestClock()
             val repository = TtlRepository()
             val engine = engineWith(repository, TtlSuspendingInterceptor(), clock, defaultTtl = 5.minutes)
-            engine.process(petich("p-1"))
-            engine.process(petich("p-2"))
+            engine.process(row("p-1"))
+            engine.process(row("p-2"))
             clock.advance(5.minutes.inWholeMilliseconds + 1)
 
             // The onExpired handler throws on the first petich; the sweep must still reach the

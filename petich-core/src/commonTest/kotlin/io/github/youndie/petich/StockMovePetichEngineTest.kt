@@ -132,26 +132,21 @@ class FakePetichRepository : PetichRepository {
 
 // --- Interceptors ---
 
-abstract class MoveInterceptor : PetichInterceptor<StockMovePayload> {
-    override fun supports(payload: PetichPayload) = payload is StockMovePayload
-
+abstract class MoveInterceptor : PetichStep<StockMovePayload> {
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: StockMovePayload,
     ) {
     }
 }
 
 class OverheadInterceptor : MoveInterceptor() {
-    override val phase = PetichPhase.ENRICHMENT
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: StockMovePayload,
-    ): InterceptorResult {
+    ) {
         val overhead = payload.amount / 100 // one per cent, exact in hundredths
-        return InterceptorResult.Proceed(
+        return ctx.enrich(
             StockMoveEnrichedPayload(
                 overhead = overhead,
                 finalAmount = payload.amount + overhead,
@@ -168,109 +163,87 @@ private fun Long.asAmount(): String = "${this / 100}.${(this % 100).toString().p
 class StockEnrichmentInterceptor(
     private val inventoryService: FakeInventoryService,
 ) : MoveInterceptor() {
-    override val phase = PetichPhase.ENRICHMENT
-    override val priority = 5
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: StockMovePayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as StockMoveEnrichedPayload
+    ) {
+        val enriched = ctx.petich.enrichedPayload as StockMoveEnrichedPayload
         val quantity = (inventoryService.quantities[payload.fromWarehouseId] ?: 0L)
-        if (quantity < enriched.finalAmount) return InterceptorResult.Reject("Insufficient stock")
-        return InterceptorResult.Proceed()
+        if (quantity < enriched.finalAmount) return ctx.reject("Insufficient stock")
+        return
     }
 }
 
 class CapacityCheckInterceptor : MoveInterceptor() {
-    override val phase = PetichPhase.VALIDATION
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: StockMovePayload,
-    ): InterceptorResult {
-        if (payload.amount > 10_000_000L) return InterceptorResult.Reject("Move limit exceeded")
-        return InterceptorResult.Proceed()
+    ) {
+        if (payload.amount > 10_000_000L) return ctx.reject("Move limit exceeded")
+        return
     }
 }
 
 class PolicyCheckInterceptor(
     private val shouldBlock: Boolean,
 ) : MoveInterceptor() {
-    override val phase = PetichPhase.VALIDATION
-    override val priority = 5
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: StockMovePayload,
-    ): InterceptorResult {
-        if (shouldBlock) return InterceptorResult.Compensate("Fraud detected")
-        return InterceptorResult.Proceed()
+    ) {
+        if (shouldBlock) return ctx.fail("Fraud detected")
+        return
     }
 }
 
 class ConfirmationCodeInterceptor(
     private val notifierService: FakeNotifierService,
 ) : MoveInterceptor() {
-    override val phase = PetichPhase.AUTHORIZATION
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: StockMovePayload,
-    ): InterceptorResult {
+    ) {
         val code = (100000..999999).random().toString()
         notifierService.send(code)
-        return InterceptorResult.Suspend("CONFIRM_CODE", StockMoveEnrichedPayload(confirmCode = code))
+        ctx.enrich(StockMoveEnrichedPayload(confirmCode = code))
+        return ctx.suspendFor("CONFIRM_CODE")
     }
 }
 
 class ApprovalInterceptor : MoveInterceptor() {
-    override val phase = PetichPhase.AUTHORIZATION
-    override val priority = 0
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: StockMovePayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as StockMoveEnrichedPayload
-        if (enriched.confirmCode == null) return InterceptorResult.Reject("No CONFIRM issued")
-        if (enriched.confirmAttempts >= 3) return InterceptorResult.Reject("Too many CONFIRM attempts")
-        val provided = (petich.resumePayload as? ConfirmResumePayload)?.code
-        if (provided == enriched.confirmCode) return InterceptorResult.Proceed()
+    ) {
+        val enriched = ctx.petich.enrichedPayload as StockMoveEnrichedPayload
+        if (enriched.confirmCode == null) return ctx.reject("No CONFIRM issued")
+        if (enriched.confirmAttempts >= 3) return ctx.reject("Too many CONFIRM attempts")
+        val provided = (ctx.petich.resumePayload as? ConfirmResumePayload)?.code
+        if (provided == enriched.confirmCode) return
 
-        return InterceptorResult.Resuspend(
-            "CONFIRM_CODE",
-            StockMoveEnrichedPayload(
-                confirmAttempts =
-                    enriched.confirmAttempts + 1,
-            ),
-        )
+        ctx.enrich(StockMoveEnrichedPayload(confirmAttempts = enriched.confirmAttempts + 1))
+        return ctx.resuspendFor("CONFIRM_CODE")
     }
 }
 
 class StockReservationInterceptor(
     private val inventoryService: FakeInventoryService,
 ) : MoveInterceptor() {
-    override val phase = PetichPhase.EXECUTION
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: StockMovePayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as StockMoveEnrichedPayload
+    ) {
+        val enriched = ctx.petich.enrichedPayload as StockMoveEnrichedPayload
         val reservationId = testId("RES")
         inventoryService.reserve(payload.fromWarehouseId, enriched.finalAmount, reservationId)
-        return InterceptorResult.Proceed(StockMoveEnrichedPayload(reservationId = reservationId))
+        return ctx.enrich(StockMoveEnrichedPayload(reservationId = reservationId))
     }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: StockMovePayload,
     ) {
-        val enriched = petich.enrichedPayload as StockMoveEnrichedPayload
+        val enriched = ctx.petich.enrichedPayload as StockMoveEnrichedPayload
         if (enriched.reservationId != null) {
             inventoryService.cancelReservation(enriched.reservationId)
         }
@@ -280,19 +253,16 @@ class StockReservationInterceptor(
 class WithdrawInterceptor(
     private val inventoryService: FakeInventoryService,
 ) : MoveInterceptor() {
-    override val phase = PetichPhase.EXECUTION
-    override val priority = 5
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: StockMovePayload,
-    ): InterceptorResult {
+    ) {
         // Withdraw just confirms the reservation. Quantity is already reduced in reserve().
-        return InterceptorResult.Proceed()
+        return
     }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: StockMovePayload,
     ) {
         // No-op, reservation cancellation handled by StockReservationInterceptor
@@ -303,17 +273,14 @@ class DepositInterceptor(
     private val inventoryService: FakeInventoryService,
     private val shouldFail: Boolean,
 ) : MoveInterceptor() {
-    override val phase = PetichPhase.EXECUTION
-    override val priority = 1
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: StockMovePayload,
-    ): InterceptorResult {
+    ) {
         if (shouldFail) throw RuntimeException("Core hubing unavailable")
-        val enriched = petich.enrichedPayload as StockMoveEnrichedPayload
+        val enriched = ctx.petich.enrichedPayload as StockMoveEnrichedPayload
         inventoryService.deposit(payload.toWarehouseId, enriched.finalAmount)
-        return InterceptorResult.Proceed()
+        return
     }
 
     // It undoes ITS OWN deposit. It used to call withdraw() with the reservation id belonging to
@@ -321,10 +288,10 @@ class DepositInterceptor(
     // compensation, running next, then found nothing to cancel and left the stock short. Harmless
     // while a failed step was skipped by the rollback; a silent loss the moment it was not.
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: StockMovePayload,
     ) {
-        val enriched = petich.enrichedPayload as StockMoveEnrichedPayload
+        val enriched = ctx.petich.enrichedPayload as StockMoveEnrichedPayload
         inventoryService.reverseDeposit(payload.toWarehouseId, enriched.finalAmount)
     }
 }
@@ -332,21 +299,47 @@ class DepositInterceptor(
 class NotificationInterceptor(
     private val notificationLog: MutableList<String>,
 ) : MoveInterceptor() {
-    override val phase = PetichPhase.POST_PROCESSING
-    override val priority = 10
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: StockMovePayload,
-    ): InterceptorResult {
-        val enriched = petich.enrichedPayload as StockMoveEnrichedPayload
+    ) {
+        val enriched = ctx.petich.enrichedPayload as StockMoveEnrichedPayload
         notificationLog.add("WITHDRAW: ${payload.fromWarehouseId} -${enriched.finalAmount.asAmount()}")
         notificationLog.add("DEPOSIT: ${payload.toWarehouseId} +${enriched.finalAmount.asAmount()}")
-        return InterceptorResult.Proceed()
+        return
     }
 }
 
 // --- Tests ---
+
+/**
+ * The saga, in the order it runs — which used to be a `phase` and a `priority` on every class.
+ *
+ * **Placed by TYPE rather than by position**, because several tests below hand this a shorter list
+ * of their own: a member's phase is a property of the member, and indexing a list by position made
+ * it a property of the list.
+ *
+ * **What used to sit in ENRICHMENT and VALIDATION is in AUTHORIZATION.** Those phases take
+ * `PetichCheck`s, which have no undo, and every member of this corpus has one. What the corpus is
+ * for — the order members run in, the order they are undone in, and what a suspension does in the
+ * middle — does not depend on which phase they sit in, and nothing here asserts a phase.
+ */
+private fun stockMove(members: List<MoveInterceptor>) =
+    petich<StockMovePayload>("move") {
+        members.forEachIndexed { index, member ->
+            val key = member::class.simpleName ?: "member-$index"
+            when (member) {
+                is StockReservationInterceptor,
+                is WithdrawInterceptor,
+                is DepositInterceptor,
+                -> step(key, member)
+
+                is NotificationInterceptor -> announce(key, member)
+
+                else -> authorize(key, member)
+            }
+        }
+    }
 
 class StockMovePetichEngineTest {
     private fun createEngine(
@@ -370,7 +363,7 @@ class StockMovePetichEngineTest {
                 DepositInterceptor(inventoryService, failDeposit),
                 NotificationInterceptor(notificationLog),
             )
-        return PetichEngine(interceptors, repo) to repo
+        return PetichEngine(repository = repo, definitions = listOf(stockMove(interceptors))) to repo
     }
 
     @Test
@@ -639,19 +632,16 @@ class StockMovePetichEngineTest {
             val compensationLog = mutableListOf<String>()
 
             class TrackedEnrichmentInterceptor : MoveInterceptor() {
-                override val phase = PetichPhase.ENRICHMENT
-                override val priority = 1
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: StockMovePayload,
-                ): InterceptorResult {
+                ) {
                     compensationLog.add("ENRICHMENT_EXECUTED")
-                    return InterceptorResult.Proceed()
+                    return
                 }
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: StockMovePayload,
                 ) {
                     compensationLog.add("ENRICHMENT_COMPENSATED")
@@ -659,19 +649,16 @@ class StockMovePetichEngineTest {
             }
 
             class TrackedValidationInterceptor : MoveInterceptor() {
-                override val phase = PetichPhase.VALIDATION
-                override val priority = 10
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: StockMovePayload,
-                ): InterceptorResult {
+                ) {
                     compensationLog.add("VALIDATION_EXECUTED")
-                    return InterceptorResult.Proceed()
+                    return
                 }
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: StockMovePayload,
                 ) {
                     compensationLog.add("VALIDATION_COMPENSATED")
@@ -679,13 +666,10 @@ class StockMovePetichEngineTest {
             }
 
             class FailingExecutionInterceptor : MoveInterceptor() {
-                override val phase = PetichPhase.EXECUTION
-                override val priority = 10
-
-                override suspend fun intercept(
-                    petich: Petich,
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: StockMovePayload,
-                ): InterceptorResult = throw RuntimeException("Execution failure")
+                ) = throw RuntimeException("Execution failure")
             }
 
             val inventoryService = FakeInventoryService()
@@ -699,7 +683,7 @@ class StockMovePetichEngineTest {
                     TrackedValidationInterceptor(),
                     FailingExecutionInterceptor(),
                 )
-            val engine = PetichEngine(interceptors, repo)
+            val engine = PetichEngine(repository = repo, definitions = listOf(stockMove(interceptors)))
 
             val payload = StockMovePayload("from1", "to1", 5_000_000L, "RUB")
             val petich =

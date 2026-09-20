@@ -6,18 +6,19 @@ import io.github.youndie.chronik.postgres.ExposedTimerStore
 import io.github.youndie.chronik.postgres.TimersTable
 import io.github.youndie.chronik.postgres.asTimerTransaction
 import io.github.youndie.petich.EnrichedPayload
-import io.github.youndie.petich.InterceptorResult
 import io.github.youndie.petich.OutboxAwarePetichRepository
 import io.github.youndie.petich.OutboxEvent
 import io.github.youndie.petich.Petich
 import io.github.youndie.petich.PetichEngine
 import io.github.youndie.petich.PetichEngineConfig
-import io.github.youndie.petich.PetichInterceptor
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichRepository
 import io.github.youndie.petich.PetichStatus
+import io.github.youndie.petich.PetichStep
+import io.github.youndie.petich.PetichStepContext
 import io.github.youndie.petich.SimpleEnrichedPayload
+import io.github.youndie.petich.petich
 import io.github.youndie.petich.postgres.ExposedPetichRepository
 import io.github.youndie.petich.postgres.OutboxEventsTable
 import io.github.youndie.petich.postgres.PetichTable
@@ -112,26 +113,24 @@ class OneTransactionTest {
         private val at: EpochSeconds,
         /** Which sagas actually reached this step and asked for a timer. */
         val asked: MutableList<String> = mutableListOf(),
-    ) : PetichInterceptor<Payload> {
-        override val phase = PetichPhase.EXECUTION
-
-        override fun supports(payload: PetichPayload) = payload is Payload
-
-        override suspend fun intercept(
-            petich: Petich,
+    ) : PetichStep<Payload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: Payload,
-        ): InterceptorResult =
-            InterceptorResult
-                .Suspend(
-                    requiredAction = "AWAIT_DEADLINE",
-                    sideEffects = listOf(ScheduleTimer("timer-${petich.id}", at, petich.id)),
-                ).also { asked += petich.id }
+        ) {
+            val id = ctx.petich.id
+            ctx.attach(ScheduleTimer("timer-$id", at, id))
+            ctx.suspendFor("AWAIT_DEADLINE")
+            asked += id
+        }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: Payload,
         ) = Unit
     }
+
+    private fun awaits(step: AwaitUntil) = petich<Payload>("t") { step("await", step) }
 
     private fun saga(id: String) =
         Petich(
@@ -147,7 +146,11 @@ class OneTransactionTest {
         runTest {
             freshSchema()
             val delegate = ExposedPetichRepository(db, petichTable, outboxTable)
-            val engine = PetichEngine(listOf(AwaitUntil(EpochSeconds(1_000))), repository(delegate))
+            val engine =
+                PetichEngine(
+                    repository = repository(delegate),
+                    definitions = listOf(awaits(AwaitUntil(EpochSeconds(1_000)))),
+                )
 
             engine.process(saga("s1"))
 
@@ -188,9 +191,9 @@ class OneTransactionTest {
             val step = AwaitUntil(EpochSeconds(1_000))
             val engine =
                 PetichEngine(
-                    listOf(step),
-                    repository(refusingState),
+                    repository = repository(refusingState),
                     config = PetichEngineConfig(maxStateUpdateAttempts = 1),
+                    definitions = listOf(awaits(step)),
                 )
 
             @Suppress(
@@ -226,17 +229,17 @@ class OneTransactionTest {
         val delegate = ExposedPetichRepository(db, petichTable, outboxTable)
 
         PetichEngine(
-            listOf(AwaitUntil(EpochSeconds(1))),
-            repository(delegate),
+            repository = repository(delegate),
             config = PetichEngineConfig(requireSideEffects = true),
+            definitions = listOf(awaits(AwaitUntil(EpochSeconds(1)))),
         )
 
         val failed =
             runCatching {
                 PetichEngine(
-                    listOf(AwaitUntil(EpochSeconds(1))),
-                    delegate,
+                    repository = delegate,
                     config = PetichEngineConfig(requireSideEffects = true),
+                    definitions = listOf(awaits(AwaitUntil(EpochSeconds(1)))),
                 )
             }.isFailure
 

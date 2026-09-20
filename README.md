@@ -4,11 +4,11 @@
 [![maven central](https://img.shields.io/maven-central/v/io.github.youndie.petich/petich-core?label=maven%20central&color=40c14a)](https://central.sonatype.com/namespace/io.github.youndie.petich)
 [![snapshots](https://reposilite.kotlin.website/api/badge/latest/snapshots/io/github/youndie/petich/petich-core?name=snapshots&color=blue&prefix=v)](https://reposilite.kotlin.website/#/snapshots/io/github/youndie/petich/petich-core)
 
-**a distributed saga engine for Kotlin** — a multi-step operation is described as a chain of
-interceptors; the engine walks it through phases and, when any step fails, undoes the steps it
-recorded as done
+**a distributed saga engine for Kotlin** — a multi-step operation is declared as a definition: the
+members it runs, in the order they run. The engine walks it and, when any member fails, undoes the
+ones it recorded as done
 
-> 🔁 one interceptor → one step forward and one step back
+> 🔁 one member → one step forward and one step back
 
 Built around a single question: what is left in the system if you die halfway.
 
@@ -29,7 +29,7 @@ The engine takes on exactly that:
   dependency container assembled them in;
 - **compensation** — a failure at step N calls `compensate()` on steps N … 1, in reverse, step N
   included: the engine never learned whether that one's effect landed, so it undoes it too — see
-  **What it asks of an interceptor**;
+  **What it asks of a member**;
 - **waiting for a human** — a saga can pause for a confirmation and continue on a later HTTP
   request, holding neither a thread nor a database connection;
 - **a deadline on that wait** — a suspended saga nobody came back to is rolled back by a background
@@ -51,7 +51,7 @@ The engine takes on exactly that:
 
 | module | what for | targets | depends on |
 | --- | --- | --- | --- |
-| `petich-core` | the engine: sagas, interceptors, phases, compensation, suspend/resume, TTL | jvm, linuxX64 | — |
+| `petich-core` | the engine: definitions, members, phases, compensation, suspend/resume, TTL | jvm, linuxX64 | — |
 | `petich-ktor` | REST endpoints for creating and resuming a saga | jvm, linuxX64 | `petich-core` |
 | `petich-postgres` | storage on Exposed | **jvm only** — Exposed over JDBC, and JDBC is a JVM interface rather than a protocol | core, outbox, idempotency, scheduler |
 | `petich-outbox-core` | at-least-once event delivery with backoff and dead lettering | jvm, linuxX64 | — |
@@ -118,6 +118,12 @@ that difference is stated here, column by column, so it can be copied into your 
 | --- | --- | --- |
 | `id`, `type`, `current_phase`, `current_interceptor_index`, `status`, `payload`, `enriched_payload`, `version` | 0.2.0 or earlier | part of the original table |
 | `suspended_until` | 0.2.0 or earlier | part of the original table |
+
+`current_interceptor_index` still says *interceptor*, and the model it was named for is gone. The
+column keeps the name on purpose: renaming it is a migration every consumer has to run, and a table
+rewrite on the busiest table in the system, to buy a word. It is the saga's position in the chain its
+definition declares.
+
 | `compensation_attempts` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS compensation_attempts INT NOT NULL DEFAULT 0;` |
 | `updated_at` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0;` |
 | `chain_fingerprint` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS chain_fingerprint VARCHAR(64);` |
@@ -161,43 +167,64 @@ in the SQL it hands you, because it states its schema as SQL — same setting, t
 
 ### ✍️ What it looks like
 
-A saga step is an interceptor: what to do, and how to undo it.
+A saga is a **definition**: the members it runs, in the order they run.
 
 ```kotlin
-class ReserveStockInterceptor(private val stock: StockRepository) : PetichInterceptor<OrderPayload> {
-    override val phase = PetichPhase.EXECUTION
-    override val priority = 10
+val order = petich<OrderPayload>("order") {
+    validate("in-stock", InStock(stock))
+    authorize("hold-funds", HoldFunds(payments))
+    step("reserve", ReserveStock(stock))
+    announce("confirmed", AnnounceOrder(events))
+}
+```
 
-    override fun supports(payload: PetichPayload) = payload is OrderPayload
+A member that acts is a `PetichStep`: what to do, and how to undo it.
 
-    override suspend fun intercept(petich: Petich, payload: OrderPayload): InterceptorResult {
+```kotlin
+class ReserveStock(private val stock: StockRepository) : PetichStep<OrderPayload> {
+    override suspend fun execute(ctx: PetichStepContext, payload: OrderPayload) {
         stock.reserve(payload.sku, payload.quantity)
-        return InterceptorResult.Proceed()
     }
 
-    override suspend fun compensate(petich: Petich, payload: OrderPayload) {
+    override suspend fun compensate(ctx: PetichStepContext, payload: OrderPayload) {
         stock.release(payload.sku, payload.quantity)
     }
 }
 ```
 
-A step that needs confirmation returns `Suspend` — the saga stops and waits for a separate `resume`
-call:
+A member that only decides is a `PetichCheck`, and **has no `compensate` at all** — which is the
+point of the split. Of the 27 compensations written against the older model, half did nothing; an
+empty `compensate` said either "this member has nothing to undo" or "somebody has not finished it
+yet", and no reader could tell which.
 
 ```kotlin
-return InterceptorResult.Suspend(requiredAction = "CONFIRM", ttl = 5.minutes)
+class InStock(private val stock: StockRepository) : PetichCheck<OrderPayload> {
+    override suspend fun check(ctx: PetichCheckContext, payload: OrderPayload) {
+        if (!stock.has(payload.sku, payload.quantity)) ctx.reject("out of stock")
+    }
+}
 ```
 
-`ttl` is this particular step's deadline. If it passes, the sweeper rolls the saga back exactly as a
-refusal would: typing a one-time code and approving a long-running request live on different time
-scales, and the step knows that, not the engine.
+A member that needs confirmation suspends — the saga stops and waits for a separate `resume` call:
 
-### ⚠️ What it asks of an interceptor
+```kotlin
+ctx.suspendFor("CONFIRM", ttl = 5.minutes)
+```
 
-Four rules. They are the engine's side of the bargain stated from the other end, and an interceptor
-that breaks them fails in ways that look like storage faults.
+`ttl` is this particular member's deadline. If it passes, the sweeper rolls the saga back exactly as
+a refusal would: typing a one-time code and approving a long-running request live on different time
+scales, and the member knows that, not the engine.
 
-**`intercept()` must be idempotent.** The engine calls it, and only then writes the new position —
+`ctx.resuspendFor(...)` is the other shape: it waits for another answer **at this member** rather
+than for the one that moves past it — a cascade offering a ride to one driver after another, where
+the member *is* the cascade.
+
+### ⚠️ What it asks of a member
+
+Four rules. They are the engine's side of the bargain stated from the other end, and a member that
+breaks them fails in ways that look like storage faults.
+
+**`execute()` must be idempotent.** The engine calls it, and only then writes the new position —
 so a call that already happened can happen again. This is not the rare case of a process dying in
 between: an optimistic-lock conflict on that write makes the engine re-read the row and run the same
 step a second time, on a healthy instance, under nothing worse than two requests touching one saga.
@@ -208,7 +235,7 @@ the remote side to honour it.
 far it has got *after* calling the step, so an interrupted rollback re-compensates the step it was
 on.
 
-**`compensate()` may be called for a step that did not happen.** When `intercept()` throws or times
+**`compensate()` may be called for a member that did not happen.** When `execute()` throws or times
 out, the engine cannot tell an effect that reached the far side from a call that never landed — it
 only ever learns that the step did not report success — so it rolls that step back as well.
 `release` therefore has to tolerate arriving without its `reserve`, and a compensation that instead
@@ -216,26 +243,27 @@ assumes its own step committed will undo something that was never done. The guar
 evidence the step leaves: undo what the record says happened, and return quietly when there is no
 record.
 
-Two results are NOT this case, and both keep the old starting point: a step that returns
-`Compensate` reported its outcome and is not undone by the engine, and an expired suspension rolls
-back from the step that suspended, which committed.
+Two outcomes are NOT this case, and both keep the old starting point: a member that calls `ctx.fail`
+reported its outcome and is not undone by the engine, and an expired suspension rolls back from the
+member that suspended, which committed.
 
 **A saga remembers which steps it has run, and refuses to resume against a different chain.** Its
-position is an index into a list filtered by `supports()` and sorted by priority — assembled fresh on
-every pass — so a deploy that adds, removes or re-prioritises a step in the same or an earlier phase
-would otherwise re-point every suspended saga at a different step, and the rollback with it. Each
-write records a fingerprint of the steps already run; a resume that cannot reproduce it stops with a
-message naming both, and runs nothing.
+position is an index into the chain its definition declares — reassembled on every pass — so a deploy
+that adds, removes or reorders a member in the same or an earlier phase would otherwise re-point
+every suspended saga at a different member, and the rollback with it. Each write records a
+fingerprint of the members already run; a resume that cannot reproduce it stops with a message naming
+both, and runs nothing.
 
 The fingerprint covers that prefix and not the whole chain, so appending a step is an ordinary
 release. The column is nullable and a null is never refused, so the upgrade that introduces the guard
 does not stop the sagas it cannot yet protect — those keep the old behaviour, including its silence.
-`PetichEngine.describeChain(payload)` prints the resolved order for a payload type: log it at
+`PetichEngine.describeChain(payload, type)` prints the resolved order for a saga type: log it at
 startup, or snapshot it in a test, and a chain that moved shows up in a diff instead of in a saga.
-`PetichInterceptor.stepKey` is what that order and that fingerprint are made of — the class name by
-default, overridable to survive a rename.
+The **key** each member is declared under is what that order and that fingerprint are made of, and a
+member reads its own through `ctx.stepKey` — which is what to name a span or a log line after, since
+it is the same string going forward and inside the member's own rollback.
 
-**A `compensate()` that throws stops the rollback below it.** The steps under the one that threw are
+**A `compensate()` that throws stops the rollback below it.** The members under the one that threw are
 not undone, and the saga stays `COMPENSATING`. That is retried — the whole rollback, not just the
 step — up to `maxCompensationAttempts` separate passes, counted on the saga itself so a restart does
 not reset them; at the bound the saga becomes `COMPENSATION_FAILED`, which is terminal and means
@@ -253,11 +281,11 @@ whether the work comes back:
 | `Reject(reason)` | steps N−1 … 1 are compensated in reverse | `REJECTED` — a business refusal |
 | `Compensate(reason)` | the same | `FAILED` — a fault |
 
-Pick by what the client should be told, which is the question an interceptor can answer about
-itself. `Reject` used to compensate nothing, which was right for a validation refusing before
-anything had happened and silent theft after a step had touched the outside world — and telling
-those apart needs to know whether an *earlier* step had an effect, which is knowledge about somebody
-else's steps. The engine has it; the interceptor does not.
+Pick by what the client should be told, which is the question a member can answer about itself. A
+refusal used to compensate nothing, which was right for a validation refusing before anything had
+happened and silent theft after a member had touched the outside world — and telling those apart
+needs to know whether an *earlier* member had an effect, which is knowledge about somebody else's
+members. The engine has it; the member does not.
 
 In both cases the refusing step itself is not undone: unlike a step that threw, it reported its
 outcome, and what it reported is that it declined to act.
@@ -279,9 +307,9 @@ outcome, and what it reported is that it declined to act.
 ### 💰 Cost
 
 A saga of six steps costs **eight writes to the saga table**: one `INSERT`, one `UPDATE` per step,
-and one that completes it. Events an interceptor hands over ride along inside those writes rather
-than adding any — three steps emitting one event each make three rows in the outbox and no extra
-write to the saga.
+and one that completes it. Events a member hands over ride along inside those writes rather than
+adding any — three members emitting one event each make three rows in the outbox and no extra write
+to the saga.
 
 **A suspension does not add a write; it moves one.** The step that suspends writes
 `PENDING_SIGNATURE` instead of the `Proceed` it would have written, and it is deliberately not
