@@ -47,7 +47,7 @@ class PetichDefinitionTest {
     @Test
     fun `the order of a saga is the order it is written in`() {
         val definition =
-            petich<OrderPayload>("order") {
+            petichDefinition<OrderPayload>("order") {
                 validate("limits", Decides())
                 authorize("confirm", Decides())
                 step("reserve-stock", Acts())
@@ -66,7 +66,7 @@ class PetichDefinitionTest {
     @Test
     fun `the definition reads back as the chain a person would otherwise reconstruct`() {
         val dump =
-            petich<OrderPayload>("order") {
+            petichDefinition<OrderPayload>("order") {
                 validate("limits", Decides())
                 step("reserve-stock", Acts())
                 step("charge", Acts())
@@ -84,7 +84,7 @@ class PetichDefinitionTest {
     fun `a check cannot be placed after a step that has already acted`() {
         val failure =
             assertFailsWith<IllegalArgumentException> {
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve-stock", Acts())
                     validate("too-late", Decides())
                 }
@@ -105,7 +105,7 @@ class PetichDefinitionTest {
     @Test
     fun `a check after a member that acted is refused whichever phase it names`() {
         assertFailsWith<IllegalArgumentException> {
-            petich<OrderPayload>("order") {
+            petichDefinition<OrderPayload>("order") {
                 step("hold-funds", Acts())
                 validate("too-late", Decides())
             }
@@ -113,7 +113,7 @@ class PetichDefinitionTest {
 
         // And the legitimate order is accepted: every check first, then the members that act.
         val fine =
-            petich<OrderPayload>("order") {
+            petichDefinition<OrderPayload>("order") {
                 authorize("policy", Decides())
                 step("hold-funds", Acts())
             }
@@ -132,7 +132,7 @@ class PetichDefinitionTest {
     fun `a member that runs before the one declared above it is refused`() {
         val failure =
             assertFailsWith<IllegalArgumentException> {
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", Acts())
                     announce("notify", Announces())
                     step("charge", Acts())
@@ -152,7 +152,7 @@ class PetichDefinitionTest {
     @Test
     fun `two members of one phase stay legal and keep the order they were written in`() {
         val definition =
-            petich<OrderPayload>("order") {
+            petichDefinition<OrderPayload>("order") {
                 enrich("quote", Decides())
                 enrich("fees", Decides())
                 validate("limits", Decides())
@@ -177,7 +177,7 @@ class PetichDefinitionTest {
     fun `the refusal still says what a check placed too late would cost`() {
         val failure =
             assertFailsWith<IllegalArgumentException> {
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("hold-funds", Acts())
                     validate("too-late", Decides())
                 }
@@ -191,7 +191,7 @@ class PetichDefinitionTest {
     fun `the message names the pair that is wrong and not the whole definition`() {
         val failure =
             assertFailsWith<IllegalArgumentException> {
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     validate("limits", Decides())
                     announce("notify", Announces())
                     enrich("quote", Decides())
@@ -208,7 +208,7 @@ class PetichDefinitionTest {
     fun `a key is declared once because it is the member's identity in the row`() {
         val failure =
             assertFailsWith<IllegalArgumentException> {
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("charge", Acts())
                     step("charge", Acts())
                 }
@@ -216,13 +216,13 @@ class PetichDefinitionTest {
         assertTrue(failure.message?.contains("twice") == true, "${failure.message}")
 
         assertFailsWith<IllegalArgumentException> {
-            petich<OrderPayload>("order") { step("  ", Acts()) }
+            petichDefinition<OrderPayload>("order") { step("  ", Acts()) }
         }
     }
 
     @Test
     fun `a definition with no members is not a definition`() {
-        assertFailsWith<IllegalArgumentException> { petich<OrderPayload>("order") { } }
-        assertFailsWith<IllegalArgumentException> { petich<OrderPayload>("") { step("s", Acts()) } }
+        assertFailsWith<IllegalArgumentException> { petichDefinition<OrderPayload>("order") { } }
+        assertFailsWith<IllegalArgumentException> { petichDefinition<OrderPayload>("") { step("s", Acts()) } }
     }
 }

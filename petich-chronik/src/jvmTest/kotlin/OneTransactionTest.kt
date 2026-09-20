@@ -18,7 +18,7 @@ import io.github.youndie.petich.PetichStatus
 import io.github.youndie.petich.PetichStep
 import io.github.youndie.petich.PetichStepContext
 import io.github.youndie.petich.SimpleEnrichedPayload
-import io.github.youndie.petich.petich
+import io.github.youndie.petich.petichDefinition
 import io.github.youndie.petich.postgres.ExposedPetichRepository
 import io.github.youndie.petich.postgres.OutboxEventsTable
 import io.github.youndie.petich.postgres.PetichTable
@@ -130,7 +130,7 @@ class OneTransactionTest {
         ) = Unit
     }
 
-    private fun awaits(step: AwaitUntil) = petich<Payload>("t") { step("await", step) }
+    private fun awaits(step: AwaitUntil) = petichDefinition<Payload>("t") { step("await", step) }
 
     private fun saga(id: String) =
         Petich(

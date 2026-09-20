@@ -22,7 +22,7 @@ import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichEngine
 import io.github.youndie.petich.PetichStep
 import io.github.youndie.petich.PetichStepContext
-import io.github.youndie.petich.petich
+import io.github.youndie.petich.petichDefinition
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichResult
@@ -167,7 +167,7 @@ private suspend fun runSaga(url: String) {
             repository = store,
             definitions =
                 listOf(
-                    petich<OrderPayload>("order") {
+                    petichDefinition<OrderPayload>("order") {
                         step("await-confirmation", await)
                         announce("notify-shipped", notify)
                     },

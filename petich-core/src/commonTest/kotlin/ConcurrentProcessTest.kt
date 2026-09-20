@@ -83,7 +83,7 @@ class ConcurrentProcessTest {
             val engine =
                 PetichEngine(
                     repository = LockingStore(),
-                    definitions = listOf(petich<Payload>("concurrency") { step("count", step) }),
+                    definitions = listOf(petichDefinition<Payload>("concurrency") { step("count", step) }),
                 )
             val petich =
                 Petich(

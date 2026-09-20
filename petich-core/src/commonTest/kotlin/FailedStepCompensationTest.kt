@@ -95,7 +95,7 @@ class FailedStepCompensationTest {
                     repository = RowRepository(),
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", RecordingInterceptor("reserve", log))
                                 step(
                                     "charge",
@@ -129,7 +129,7 @@ class FailedStepCompensationTest {
                     config = PetichEngineConfig(phaseTimeoutsMs = mapOf(PetichPhase.EXECUTION to 50L)),
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", RecordingInterceptor("reserve", log))
                                 step("charge", RecordingInterceptor("charge", log, onIntercept = { delay(10_000) }))
                             },
@@ -164,7 +164,7 @@ class FailedStepCompensationTest {
                     clock = PetichClock { now },
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", RecordingInterceptor("reserve", log))
                                 step(
                                     "confirm",
@@ -210,7 +210,7 @@ class FailedStepCompensationTest {
                     config = PetichEngineConfig(maxStateUpdateAttempts = 2),
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", RecordingInterceptor("reserve", log))
                                 step("quota", RecordingInterceptor("quota", log))
                                 step(

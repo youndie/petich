@@ -170,7 +170,7 @@ in the SQL it hands you, because it states its schema as SQL — same setting, t
 A saga is a **definition**: the members it runs, in the order they run.
 
 ```kotlin
-val order = petich<OrderPayload>("order") {
+val order = petichDefinition<OrderPayload>("order") {
     validate("in-stock", InStock(stock))
     authorize("within-limits", WithinLimits(limits))
     step("hold-funds", HoldFunds(payments))

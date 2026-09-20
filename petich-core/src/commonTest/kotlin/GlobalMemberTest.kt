@@ -85,7 +85,7 @@ class GlobalMemberTest {
     }
 
     private fun definition(log: MutableList<String>) =
-        petich<OrderPayload>("order") {
+        petichDefinition<OrderPayload>("order") {
             validate("limits", CheckOf("limits", log))
             step("hold", Acts("hold", log, suspendHere = true))
             step("ship", Acts("ship", log))

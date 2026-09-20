@@ -135,7 +135,7 @@ class CompensationGivesUpTest {
         metrics = metrics,
         definitions =
             listOf(
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", Step("reserve", log))
                     step("charge", Step("charge", log, throwOnIntercept = true, throwOnCompensate = true))
                 },

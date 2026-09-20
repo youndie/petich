@@ -80,7 +80,7 @@ class RejectRollsBackTest {
                         listOf(
                             // Two members of one phase, and their order is these two lines rather
                             // than priority 10 against priority 5.
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", Step("reserve", log))
                                 step("limits", Step("limits", log, rejectWith = "over the limit"))
                             },
@@ -117,7 +117,7 @@ class RejectRollsBackTest {
                             // that COULD have acted — which is what the case is about. Since B-39
                             // that means EXECUTION: the phases before it take checks, which have no
                             // undo to leave unused.
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("validate", Step("validate", log, rejectWith = "malformed"))
                                 step("reserve", Step("reserve", log))
                             },
@@ -147,7 +147,7 @@ class RejectRollsBackTest {
                         listOf(
                             // Two members of one phase, and their order is these two lines rather
                             // than priority 10 against priority 5.
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", Step("reserve", log))
                                 step("limits", Step("limits", log, rejectWith = "over the limit"))
                             },

@@ -10,7 +10,7 @@ import io.github.youndie.petich.PetichRepository
 import io.github.youndie.petich.PetichStatus
 import io.github.youndie.petich.PetichStep
 import io.github.youndie.petich.PetichStepContext
-import io.github.youndie.petich.petich
+import io.github.youndie.petich.petichDefinition
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -42,7 +42,7 @@ class SagaTimerSinkTest {
 
     /** The saga both halves belong to: wait, then observe how the waiting ended. */
     private fun waitThenObserve(observer: ObserveHowItWoke) =
-        petich<Payload>("t") {
+        petichDefinition<Payload>("t") {
             step("await", WaitForTheDeadline())
             step("observe", observer)
         }
@@ -201,7 +201,7 @@ class SagaTimerSinkTest {
             val known =
                 PetichEngine(
                     repository = repository,
-                    definitions = listOf(petich<Payload>("t") { step("wait", ResumeAnything()) }),
+                    definitions = listOf(petichDefinition<Payload>("t") { step("wait", ResumeAnything()) }),
                 )
 
             val unknown = mutableListOf<String>()

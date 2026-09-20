@@ -124,7 +124,7 @@ class StepRecordTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", Reserve(log))
                     step("charge", Charge(log, fail = true))
                 }
@@ -153,7 +153,7 @@ class StepRecordTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", Reserve(log, throwInstead = true))
                     step("charge", Charge(log))
                 }
@@ -183,7 +183,7 @@ class StepRecordTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", Reserve(log))
                     step("charge", Charge(log, throwInstead = true))
                 }
@@ -202,7 +202,7 @@ class StepRecordTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", Reserve(log))
                     step("charge", Charge(log, suspendHere = true))
                 }
@@ -237,7 +237,7 @@ class StepRecordTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", Reserve(log, throwAfterRecording = true))
                 }
 
@@ -260,7 +260,7 @@ class StepRecordTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", Reserve(log, suspendAfterRecording = true))
                     step("charge", Charge(log))
                 }

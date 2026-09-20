@@ -66,7 +66,10 @@ class EngineDefectsTest {
             val engine =
                 PetichEngine(
                     repository = MockRepository(),
-                    definitions = listOf(petich<TestPayload>("test") { step("proceeds", proceedingInterceptor()) }),
+                    definitions =
+                        listOf(
+                            petichDefinition<TestPayload>("test") { step("proceeds", proceedingInterceptor()) },
+                        ),
                 )
 
             repeat(200) { index -> engine.process(row("petich-$index")) }
@@ -128,7 +131,7 @@ class EngineDefectsTest {
                     repository = MockRepository(),
                     definitions =
                         listOf(
-                            petich<TestPayload>("test") {
+                            petichDefinition<TestPayload>("test") {
                                 step("slow-undo", slowCompensation)
                                 step("fails", compensating)
                             },
@@ -207,7 +210,10 @@ class EngineDefectsTest {
             val engine =
                 PetichEngine(
                     repository = repository,
-                    definitions = listOf(petich<TestPayload>("test") { step("proceeds", proceedingInterceptor()) }),
+                    definitions =
+                        listOf(
+                            petichDefinition<TestPayload>("test") { step("proceeds", proceedingInterceptor()) },
+                        ),
                 )
 
             val result = engine.process(row("version-echo"))
@@ -253,7 +259,7 @@ class EngineDefectsTest {
             val engine =
                 PetichEngine(
                     repository = repository,
-                    definitions = listOf(petich<OtherPayload>("test") { step("mismatched", lying) }),
+                    definitions = listOf(petichDefinition<OtherPayload>("test") { step("mismatched", lying) }),
                 )
 
             val result = engine.process(row("mismatched-payload"))

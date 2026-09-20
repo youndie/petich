@@ -56,7 +56,7 @@ class ResuspendTest {
             val engine =
                 PetichEngine(
                     repository = repo,
-                    definitions = listOf(petich<TestPayload>("type") { step("re-ask", interceptor) }),
+                    definitions = listOf(petichDefinition<TestPayload>("type") { step("re-ask", interceptor) }),
                 )
 
             val payload = TestPayload("test")

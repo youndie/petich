@@ -374,7 +374,7 @@ class BadgeIssuanceNotificationInterceptor(
  * middle — does not depend on which phase they sit in, and nothing here asserts a phase.
  */
 private fun badgeIssuance(members: List<Any>) =
-    petich<BadgeIssuancePayload>("badge_issuance") {
+    petichDefinition<BadgeIssuancePayload>("badge_issuance") {
         members.forEachIndexed { index, member ->
             val key = member::class.simpleName ?: "member-$index"
             when (member) {

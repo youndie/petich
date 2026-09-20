@@ -12,7 +12,7 @@ import io.github.youndie.petich.PetichStatus
 import io.github.youndie.petich.PetichStep
 import io.github.youndie.petich.PetichStepContext
 import io.github.youndie.petich.SimpleEnrichedPayload
-import io.github.youndie.petich.petich
+import io.github.youndie.petich.petichDefinition
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -149,7 +149,7 @@ class PetichRoutingTest {
                     repository = repo,
                     definitions =
                         listOf(
-                            petich<TestPayload>("test") {
+                            petichDefinition<TestPayload>("test") {
                                 members.forEach { (key, member) ->
                                     when (member) {
                                         is PetichCheck<*> -> {
