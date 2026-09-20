@@ -76,6 +76,7 @@ into part of somebody's feature.
 
 ### 🔌 Installation
 
+<!-- readme-probe: skip -->
 ```kotlin
 repositories {
     mavenCentral()
@@ -100,6 +101,7 @@ compile: take a snapshot to follow the page, or read the README at the tag you a
 **On Kotlin/Native** the coordinates are the same; take `petich-sqlx4k-postgres` instead of
 `petich-postgres`, and bring your own sqlx4k driver:
 
+<!-- readme-probe: skip -->
 ```kotlin
 dependencies {
     implementation("io.github.youndie.petich:petich-core:0.2.0")
@@ -241,6 +243,7 @@ threw still rides with the saga.
 
 A member that needs confirmation suspends — the saga stops and waits for a separate `resume` call:
 
+<!-- readme-probe: statements -->
 ```kotlin
 ctx.suspendFor("CONFIRM", ttl = 5.minutes)
 ```
@@ -256,6 +259,7 @@ the member *is* the cascade.
 To test a member on its own — ask it the question the engine is about to ask, with no saga, no engine
 and no database — hand it a `PetichMemberProbe` and read back what it asked for:
 
+<!-- readme-probe: statements -->
 ```kotlin
 val probe = PetichMemberProbe(saga, stepKey = "capture")
 CaptureStep(payments).compensate(probe, payload)
@@ -317,6 +321,7 @@ member that suspended, which committed.
 announcement alike.** `ctx.idempotencyKey` is that name — `"<saga id>:<member key>"`, the same string on the forward pass, on a re-run after a
 version conflict, and inside the compensation:
 
+<!-- readme-probe: members -->
 ```kotlin
 override suspend fun execute(ctx: PetichStepContext, payload: OrderPayload) {
     stock.reserve(ctx.idempotencyKey, payload.sku, payload.quantity)
@@ -340,6 +345,7 @@ another, where the member *is* the cascade — and handed the plain key on every
 call arrives under the first call's name. A far side that deduplicates answers with the first call's
 result, and the refusal is silent. `ctx.idempotencyKey(discriminator)` is the discriminated form:
 
+<!-- readme-probe: statements -->
 ```kotlin
 board.offer(ctx.idempotencyKey(driverId), payload.rideId, driverId)
 ```
@@ -361,6 +367,7 @@ they want different code:
   the compensation **replays** `execute`'s request under the same key, reads the id out of the answer
   it gets back, and cancels by that id:
 
+  <!-- readme-probe: members -->
   ```kotlin
   override suspend fun compensate(ctx: PetichStepContext, payload: OrderPayload) {
       // The replay is the point: if the first call landed, this returns ITS answer and no second

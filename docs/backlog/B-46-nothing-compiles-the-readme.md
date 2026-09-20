@@ -1,7 +1,7 @@
 ---
 id: B-46
 title: "Nothing compiles the README, so its examples rot silently"
-status: open
+status: done
 priority: P2
 size: M
 stage: stage-10-review
@@ -35,3 +35,42 @@ one every user meets.
   different API from the real one is the failure mode to avoid, so they are declarations only.
 - It runs where the rest of the gate runs, and a reviewer can run it locally by name.
 - **A positive control**: reverting one example to the pre-B-41 shape must turn the check red.
+
+## Findings
+
+**`tools/readme-probe` is a build of its own**, resolving petich from a publication and never from
+`project(":petich-core")` — the same reason `native-consumer-probe` is one, applied one level out.
+`tools/readme-examples.py` splices every ```kotlin block into it and compiles. Nine of the page's
+eleven blocks are compiled; the two skipped are Gradle snippets.
+
+**Placement is a marker, not a line number**, as the acceptance demanded — an HTML comment above the
+fence saying `skip`, `statements` or `members`, defaulting to top level. A list of line numbers would
+be a second thing to keep in step with the page, and it would rot the way the page did.
+
+**The prelude is declarations only**, and the KDoc says why: the failure to avoid is not "the
+examples do not compile" but "the examples compile against something that is not petich". A stub with
+a body invites the harness to grow an API of its own, and then the page would be checked against a
+fiction.
+
+**The positive control works and its message is the one a reader needs.** Reverting `AnnounceOrder`
+to its pre-B-41 shape — a `PetichStep` with `execute` — fails with
+`Argument type mismatch: actual type is 'AnnounceOrder', but 'PetichAnnouncement<OrderPayload>' was
+expected`, which names the defect rather than the harness.
+
+**It runs in `build.yaml`, not in `make check`, and that follows the Makefile's own stated rule**:
+code checks live where the JDK is, so that a contributor editing a document needs neither a JDK nor a
+Kotlin/Native toolchain download. `make help` names the local command, which is the acceptance's
+"a reviewer can run it locally by name".
+
+**Two corrections the harness forced, both about the harness rather than the page.** A `members`
+block is spliced into an `open class` rather than an interface, because the page shows one half of a
+step twice and an interface would fail those for a reason that is about this check — the one kind of
+red it must never produce. And `PaymentGateway` gained `release(id)`, which B-48's replay example
+calls and the prelude had not declared.
+
+**The mac/Linux split cost a wrong diagnosis before it cost a fix.** The assembled file lives in the
+working tree, and this portfolio synchronises the tree one way onto the build host — so generating on
+the host and then synchronising again overwrote the fresh file with the stale copy from the other
+side, and the run looked as though the markers were being ignored. `--emit-only` separates the two
+halves: emit where you edit, compile where you build. The reason is in the flag's help rather than in
+anybody's memory.
