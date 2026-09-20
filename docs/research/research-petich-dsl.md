@@ -468,6 +468,38 @@ serves better.
 definition, a phase is only an insertion point for globals and a timeout table. Hypothesis: they
 stay, because both consumers' timeouts are per phase and the globals need somewhere to attach.
 
+### D11. A definition runs in the order it is read, and the builder refuses one that does not
+
+Decision: a member whose phase is lower than the member declared above it is refused where it is
+declared, with both keys and both phases in the message. Non-decreasing, not increasing — several
+members of one phase are what declaration order is for.
+
+Why:
+
+- **the model's whole claim is that the order is written where the saga is read.** Without this the
+  order is written and *not* read: members run in phase order, and a definition could read top to
+  bottom while running bottom to top;
+- **it has already cost a debugging pass.** `SuspendedTtlTest` was written that way while migrating
+  the suite (B-33) — an AUTHORIZATION member declared below an EXECUTION one, suspending before the
+  step it was meant to follow had run, so there was nothing to roll back and the case asserted the
+  opposite of what it meant. The file said one order and the engine did another;
+- **rejected: a type-state builder.** One comparison against the previous member is the whole rule.
+  A phantom type per phase would spread through every signature to refuse the same thing.
+
+**Correction found while implementing — it replaced a rule rather than joining one.** The builder
+already refused a *check* after a step, on B-20's reason: a check has no `compensate`, so a refusal
+from one after an effect keeps what that effect did. That rule was described in D3 as the thing that
+keeps a check from sitting after an effect, and as a separate mistake from this one. It is not
+separate any more. B-39 took the step overload off `authorize`, so every check now sits in a phase
+below every step — "a check after a step" and "a phase that goes backwards" became the same
+sentence, and the older rule was this one's special case.
+
+So it was absorbed, not left beside it: **two guards over one mistake hide which of them is
+load-bearing**, and a suite can stay green while the one everyone cites does nothing. Its reason
+survives in the message, because it is the concrete cost and not a restatement of the rule. The
+proof that the absorption is real rather than a rename is a mutation: making the new comparison
+vacuous fails the two old check-after-step tests along with the three new ones.
+
 ---
 
 ## 4. What happens next

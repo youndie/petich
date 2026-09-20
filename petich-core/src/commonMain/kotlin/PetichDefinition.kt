@@ -280,7 +280,6 @@ public class PetichDefinitionBuilder<P : PetichPayload> internal constructor(
     private val type: String,
 ) {
     private val members = mutableListOf<PetichMember<P>>()
-    private var sawStep = false
 
     public fun enrich(
         key: String,
@@ -340,16 +339,39 @@ public class PetichDefinitionBuilder<P : PetichPayload> internal constructor(
             "$type declares `$key` twice: the key is the member's identity in the saga's row, so two " +
                 "members cannot share one"
         }
-        // THE ORDERING RULE, and it is what makes the type split worth having. A check has no
-        // compensate, so a refusal from one after an effect would keep what that effect did — which
-        // is the defect B-20 had to fix in the engine because the author could not be asked to know
-        // whether an EARLIER member had acted. Here the builder knows, and says so at the line that
-        // is wrong.
-        if (step != null) sawStep = true
-        require(!(check != null && sawStep)) {
-            "$type places the check `$key` after a step that has already acted. A check has nothing " +
-                "to undo, so refusing there would keep what ran: make it a PetichStep, or move it " +
-                "above the first step"
+        // THE ORDERING RULE: A DEFINITION RUNS IN THE ORDER IT IS READ, or it is refused here.
+        //
+        // Members run in phase order; the builder used to accept them in any order, so
+        //
+        //     step("reserve", Reserve(stock))            // EXECUTION
+        //     authorize("confirm", AwaitConfirmation())  // AUTHORIZATION — runs FIRST
+        //
+        // read top to bottom and ran bottom to top. That is not hypothetical: `SuspendedTtlTest` was
+        // written that way while migrating the suite (B-33), the AUTHORIZATION member suspended
+        // before the EXECUTION one had run, there was nothing to roll back, and the case asserted
+        // the opposite of what it meant. A debugging pass, for a mistake a comparison can catch.
+        //
+        // Non-decreasing, not increasing: two members of one phase are exactly what declaration
+        // order is for, and they keep it.
+        members.lastOrNull()?.let { previous ->
+            require(phase >= previous.phase) {
+                "$type declares `$key` ($phase) after `${previous.key}` (${previous.phase}), which " +
+                    "runs later. Members run in phase order, so this reads in one order and runs in " +
+                    "another: move `$key` above `${previous.key}`" +
+                    // The reason the old, narrower rule existed, kept because it is the concrete
+                    // cost rather than a restatement of the rule. It used to be a require of its
+                    // own — a check has no compensate, so refusing after an effect keeps what that
+                    // effect did, the defect B-20 had to fix in the engine. Since B-39 took the
+                    // step overload off `authorize`, every check sits below every step by phase, so
+                    // that rule became this one's special case. Two guards where one works hide
+                    // which of them is load-bearing; this is the one.
+                    if (check != null) {
+                        ". A check has nothing to undo, so refusing there would keep what ran — if " +
+                            "`$key` is meant to run at that point, it is a PetichStep"
+                    } else {
+                        ""
+                    }
+            }
         }
         members += PetichMember(key, phase, step, check)
     }
