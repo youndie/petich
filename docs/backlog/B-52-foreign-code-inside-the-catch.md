@@ -1,7 +1,7 @@
 ---
 id: B-52
 title: "A hung announcement rolls the saga back, and a handler that throws decides its fate"
-status: wip
+status: done
 priority: P1
 size: M
 stage: stage-11-review
@@ -39,3 +39,39 @@ handler can still `emit`.
 - Tests: an announcement that hangs; an announcement whose handler throws, ending `COMPLETED`;
   `handle` throwing `maxCompensationAttempts` times in a row, ending `COMPENSATION_FAILED` — which is
   the assertion that the bound still bounds.
+
+## Findings
+
+**An imposed deadline cannot be caught, so the member has to own it.** `withTimeout` cancels the
+coroutine, and everything downstream is obliged to let a `CancellationException` through — which is
+why catching the timeout inside `announce()` was never going to work. `PetichMemberRun` gained
+`boundsItsOwnTime`; an announcement is the only member that says yes, and it uses
+`withTimeoutOrNull`, which **ends the body and returns**, so the counter and the failure handler
+still run. That last part is the acceptance's real criterion: "the handler is still called" is only
+possible in a coroutine that is still alive.
+
+**The guards are decorators, not a `try` at each call**, and that is the difference between a rule
+and a property. `GuardedMetrics`, `GuardedCompensationFailureHandler` and
+`GuardedAnnouncementFailureHandler` wrap what the engine is handed, at construction, so no site
+inside the engine has to remember — including sites written later. The constructor parameters keep
+their names, because consumers pass them by name, and the properties that shadow them are the wrapped
+ones.
+
+**The worst of the three was `handle`**, whose throw escaped before the attempt was counted: with
+`recordGivingUp` skipped, `maxCompensationAttempts` bounded nothing and the sweeper re-drove the saga
+for ever. The test for it asserts `COMPENSATION_FAILED` is reached with a reporter that throws every
+time — the bound still bounding is the whole assertion.
+
+**And the decorator's own weakness found me while I was writing it.** `GuardedMetrics` must name
+every method of `PetichEngineMetrics`; I added `onHandlerFailed` to the interface **after** writing
+the decorator, so it fell through to the interface's no-op default and the counter was silently not
+forwarded. A test caught it only because it asserted on that counter. It is the hand-written-list
+shape again, and it is written into the file rather than left for the next person: what stands in for
+a guard here is that every counter this engine relies on is asserted somewhere.
+
+**Checked by two mutations, each isolating one half.** Letting the phase loop bound the announcement
+again fails the hang case alone; unwrapping the announcement handler fails the throwing-handler case
+alone. Restored, tree clean.
+
+**Verification.** Full `build --rerun-tasks` on the Linux box, exit code read rather than piped: 473
+tests across `jvmTest`, `linuxX64Test` and `test`.
