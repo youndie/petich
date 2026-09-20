@@ -3,6 +3,7 @@ package io.github.youndie.petich
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 
@@ -330,4 +331,40 @@ class DefinitionEngineTest {
             )
             assertTrue(log.entries.isEmpty(), "and nothing ran: ${log.entries}")
         }
+
+    /**
+     * The question an application used to answer with a mapping of its own (B-31).
+     *
+     * `SuspendedPetichSweeper` and `SagaTimerSink` took `engineFor: (Petich) -> PetichEngine?`
+     * because several engines shared one saga store. The definition is the value that says what an
+     * `order` saga is, so the engine answers it — and there is no mapping left for anyone to leave
+     * an entry out of.
+     */
+    @Test
+    fun `an engine owns the types its definitions name and no others`() {
+        val log = Log()
+        val engine =
+            engineFor(
+                petich<OrderPayload>("order") { step("reserve", Acts("reserve", log)) },
+                RowRepository(),
+            )
+
+        assertTrue(engine.owns(petich("p-1")), "the type it was given a definition for")
+        assertFalse(
+            engine.owns(petich("p-2").copy(type = "settlement")),
+            "and not a type it has never heard of",
+        )
+    }
+
+    /**
+     * And the older model keeps what it had: its engine is a fixed list, the application's lambda
+     * was the only thing that ever decided ownership, so an interceptor engine owns what it is
+     * handed. B-33 removes this branch with the model.
+     */
+    @Test
+    fun `an engine built from interceptors owns whatever it is handed`() {
+        val engine = PetichEngine(interceptors = emptyList(), repository = RowRepository())
+
+        assertTrue(engine.owns(petich("p-1").copy(type = "anything-at-all")))
+    }
 }

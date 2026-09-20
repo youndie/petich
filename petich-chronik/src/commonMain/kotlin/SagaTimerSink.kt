@@ -42,17 +42,25 @@ public data class TimerFired(
 public class SagaTimerSink(
     private val repository: PetichRepository,
     /**
-     * Which engine owns a given saga.
+     * The engine, which answers for itself which sagas are its (B-31).
      *
-     * Not one engine for everything: an application usually keeps several, sharing one saga store
-     * but each with its own interceptor list. Resuming a saga of one type with another type's
-     * engine would run the wrong steps. The same shape the expiry sweeper already uses.
+     * This was `engineFor: (Petich) -> PetichEngine?`, a mapping the application kept because
+     * several engines shared one saga store. `PetichDefinition` is the value that says what an
+     * "order" saga is, so the engine answers the question the lambda was asked — the same change
+     * the expiry sweeper took, for the same reason.
      */
-    private val engineFor: (Petich) -> PetichEngine?,
+    private val engine: PetichEngine,
     /** The timer fired and the saga it names is gone, or was never there. */
     private val onMissing: (timerId: String, sagaId: String) -> Unit = { _, _ -> },
-    /** The saga's type has no engine registered. Silence here means sagas pile up suspended. */
-    private val onUnowned: (Petich) -> Unit = {},
+    /**
+     * A saga whose type this engine has no definition for.
+     *
+     * Skipped rather than failed, and the reason is the sweeper's: the engine would end such a
+     * saga `FAILED`, which is right when somebody tries to start one and wrong when a timer fires
+     * for a row older than the definition it needs. Silence here means those sagas stay suspended
+     * with nobody told, so this is the line worth a counter (B-31).
+     */
+    private val onUnknownType: (Petich) -> Unit = {},
     private val onResumed: (sagaId: String, result: PetichResult) -> Unit = { _, _ -> },
 ) : TimerSink {
     /**
@@ -75,9 +83,8 @@ public class SagaTimerSink(
             return
         }
 
-        val engine = engineFor(petich)
-        if (engine == null) {
-            onUnowned(petich)
+        if (!engine.owns(petich)) {
+            onUnknownType(petich)
             return
         }
 

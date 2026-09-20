@@ -10,6 +10,9 @@ import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichRepository
 import io.github.youndie.petich.PetichStatus
+import io.github.youndie.petich.PetichStep
+import io.github.youndie.petich.PetichStepContext
+import io.github.youndie.petich.petich
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -91,6 +94,18 @@ class SagaTimerSinkTest {
         ) = Unit
     }
 
+    private class ResumeAnything : PetichStep<Payload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
+            payload: Payload,
+        ) = Unit
+
+        override suspend fun compensate(
+            ctx: PetichStepContext,
+            payload: Payload,
+        ) = Unit
+    }
+
     private fun fired(
         timerId: String,
         sagaId: String,
@@ -126,7 +141,7 @@ class SagaTimerSinkTest {
                 "the saga must be waiting before the timer fires, or this test proves nothing",
             )
 
-            SagaTimerSink(repository, engineFor = { engine }).deliver(fired("timer-1", "s1"))
+            SagaTimerSink(repository, engine).deliver(fired("timer-1", "s1"))
 
             assertEquals(
                 listOf("s1:late=2"),
@@ -150,7 +165,7 @@ class SagaTimerSinkTest {
             val sink =
                 SagaTimerSink(
                     repository,
-                    engineFor = { engine },
+                    engine = engine,
                     onMissing = { timerId, sagaId -> missing += timerId to sagaId },
                 )
 
@@ -176,14 +191,25 @@ class SagaTimerSinkTest {
                 )
             repository.saveOrGet(saga)
 
-            val unowned = mutableListOf<String>()
-            val sink = SagaTimerSink(repository, engineFor = { null }, onUnowned = { unowned += it.id })
+            // AN ENGINE THAT KNOWS A DIFFERENT TYPE, which is the only way to be unowned now: the
+            // application no longer keeps a mapping that could be missing an entry, so a saga is
+            // unowned exactly when its type has no definition here (B-31). An engine built from
+            // interceptors owns whatever it is handed, as it always did.
+            val known =
+                PetichEngine(
+                    repository = repository,
+                    definitions = listOf(petich<Payload>("t") { step("wait", ResumeAnything()) }),
+                )
+
+            val unknown = mutableListOf<String>()
+            val sink = SagaTimerSink(repository, known, onUnknownType = { unknown += it.id })
 
             sink.deliver(fired("timer-1", "s1"))
 
-            // Silence here would mean somebody added a saga type and forgot to register it, and
-            // those sagas pile up suspended with nothing saying so.
-            assertEquals(listOf("s1"), unowned)
+            // Silence here would leave the saga suspended with nothing saying why. Skipped rather
+            // than failed: the engine's own answer to an unknown type is to end the saga, which is
+            // right when somebody tries to start one and wrong for a row older than its definition.
+            assertEquals(listOf("s1"), unknown)
         }
 
     @Test
@@ -196,7 +222,7 @@ class SagaTimerSinkTest {
                 }
             val engine = PetichEngine(listOf(WaitForTheDeadline(), ObserveHowItWoke(mutableListOf())), repository)
 
-            val sink = SagaTimerSink(exploding, engineFor = { engine })
+            val sink = SagaTimerSink(exploding, engine)
 
             var threw = false
             try {

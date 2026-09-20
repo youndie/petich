@@ -841,6 +841,24 @@ public class PetichEngine(
         fun discarded(): Int = discardedAnnouncements
     }
 
+    /**
+     * Whether this engine has a definition for [petich]'s type — the question an application used
+     * to answer with a mapping of its own (B-31).
+     *
+     * `SuspendedPetichSweeper` and `SagaTimerSink` took an `engineFor: (Petich) -> PetichEngine?`
+     * because several engines shared one saga store and only the application knew which owned
+     * which. `Petich.type` carried that identity all along; what was missing was a value on the
+     * other side of it, and `PetichDefinition` is now that value. The mapping was a thing to
+     * maintain, and the way it failed was silence: a type introduced and not registered produced
+     * sagas that piled up expired forever, unless somebody had wired the optional callback.
+     *
+     * **An engine with no definitions owns everything it is given.** That is the interceptor
+     * model, where the engine is a fixed list and the application's lambda was the only thing that
+     * ever decided ownership — so this answers exactly as before for it, and B-33 removes the
+     * branch along with the model.
+     */
+    public fun owns(petich: Petich): Boolean = definitions.isEmpty() || definitionFor(petich.type) != null
+
     private fun definitionFor(type: String?): PetichDefinition<*>? =
         type?.let { wanted -> definitions.firstOrNull { it.type == wanted } }
 

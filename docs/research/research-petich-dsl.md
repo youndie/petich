@@ -192,12 +192,36 @@ keyed by `type`.
 Why:
 
 - 1.5: `Petich.type` already carries the identity and the definition was the missing half;
-- it removes `engineFor` and `onUnowned` from the sweeper: "which engine owns this saga" stops being
-  a lambda an application must keep in step with its own types, and a forgotten registration stops
-  being a class of silent expiry;
+- it removes `engineFor` from the sweeper and the timer sink: "which engine owns this saga" stops
+  being a lambda an application must keep in step with its own types, and a forgotten registration
+  stops being a class of silent expiry;
 - naming matters and is not free: `Petich` is the **instance** — a row with an id, a status and a
   version. `PetichDefinition` is what a builder returns. A function `petich(…)` beside a class
   `Petich` is legal Kotlin and would read badly if the result were not named for what it is.
+
+**Correction found while implementing B-31: "and `onUnowned`" was too strong, and removing it would
+have replaced a silence with something worse.** The decision above bundled two things that turned out
+not to travel together. `engineFor` goes: it answered "which engine owns this saga", and the engine
+answers that itself now — `PetichEngine.owns` — so there is no mapping left for an application to
+leave an entry out of. The callback beside it did not go, because **its cause changed rather than
+disappeared**.
+
+What `onUnowned` was documented for — somebody introduced a saga type and forgot to register an
+engine — genuinely cannot happen any more: with one engine, a type with no definition cannot be
+*started* either, and `process` refuses it by name at the caller (#78). What remains is the case the
+old name never described: **a row written when a definition existed and read after it stopped
+existing** — a rollback, or a decommissioned saga type whose rows have not drained. The item's own
+"does not cover" note named exactly this and asked for an answer that is not a crash.
+
+Deleting the callback would have made the sweeper fall through to `process`, whose answer to an
+unknown type is to end the saga `FAILED`. That is right on the forward path and irreversible here: a
+deploy that drops a definition would have the sweeper walk every expired saga of that type and end
+them all, for a reason the next deploy fixes. So the sweeper **skips** and the callback stays, renamed
+`onUnknownType` to say what it now means. A non-zero rate on it means a definition is missing, not
+that a saga is broken.
+
+The general shape is worth keeping: *a parameter whose removal is justified by "its cause is gone"
+needs the cause enumerated, not assumed.* Two causes shared one name here, and only one of them left.
 
 ### D6. The vocabulary is `Petich*`, and the prose still says "saga"
 

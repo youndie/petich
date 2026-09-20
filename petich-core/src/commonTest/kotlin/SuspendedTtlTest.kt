@@ -26,6 +26,19 @@ private class TtlOtpResume(
     val code: String,
 ) : ResumePayload()
 
+/** A member that exists only so a definition is not empty; it is never reached. */
+private class TtlInert : PetichStep<TtlPayload> {
+    override suspend fun execute(
+        ctx: PetichStepContext,
+        payload: TtlPayload,
+    ) = Unit
+
+    override suspend fun compensate(
+        ctx: PetichStepContext,
+        payload: TtlPayload,
+    ) = Unit
+}
+
 private data class TtlPayload(
     val data: String = "x",
 ) : PetichPayload()
@@ -321,7 +334,7 @@ class SuspendedPetichSweeperTest {
             clock.advance(5.minutes.inWholeMilliseconds + 1)
 
             val expiredIds = mutableListOf<String>()
-            val swept = SuspendedPetichSweeper(repository, { engine }, clock, onExpired = { expiredIds += it }).sweep()
+            val swept = SuspendedPetichSweeper(repository, engine, clock, onExpired = { expiredIds += it }).sweep()
 
             assertEquals(2, swept)
             assertEquals(setOf("p-1", "p-2"), expiredIds.toSet())
@@ -336,7 +349,7 @@ class SuspendedPetichSweeperTest {
             val engine = engineWith(repository, TtlSuspendingInterceptor(), clock, defaultTtl = 5.minutes)
             engine.process(petich("p-1"))
 
-            assertEquals(0, SuspendedPetichSweeper(repository, { engine }, clock).sweep())
+            assertEquals(0, SuspendedPetichSweeper(repository, engine, clock).sweep())
             assertEquals(PetichStatus.PENDING_SIGNATURE, repository.stored.getValue("p-1").status)
         }
 
@@ -356,9 +369,17 @@ class SuspendedPetichSweeperTest {
             val swept =
                 SuspendedPetichSweeper(
                     repository,
-                    engineFor = { null },
+                    // An engine that knows a different type: with one engine holding definitions
+                    // there is no mapping left to leave an entry out of, so a saga is unowned
+                    // exactly when its type has no definition here (B-31). This saga is a `test`.
+                    engine =
+                        PetichEngine(
+                            repository = repository,
+                            clock = clock,
+                            definitions = listOf(petich<TtlPayload>("something-else") { step("x", TtlInert()) }),
+                        ),
                     clock = clock,
-                    onUnowned = { skipped += it.id },
+                    onUnknownType = { skipped += it.id },
                 ).sweep()
 
             assertEquals(0, swept)
@@ -384,7 +405,7 @@ class SuspendedPetichSweeperTest {
             val sweeper =
                 SuspendedPetichSweeper(
                     repository,
-                    { engine },
+                    engine,
                     clock,
                     onExpired = {
                         seen++
