@@ -755,7 +755,7 @@ public class PetichEngine(
     /** What a member said, collected rather than thrown — see PetichMemberContext.suspendFor. */
     private class RecordingContext(
         override val petich: Petich,
-        private val key: String,
+        override val stepKey: String,
     ) : PetichCheckContext,
         PetichStepContext {
         private var enriched: EnrichedPayload? = null
@@ -779,7 +779,7 @@ public class PetichEngine(
             written = value
         }
 
-        override fun recordedValue(): PetichStepRecord? = written ?: petich.stepRecords[key]
+        override fun recordedValue(): PetichStepRecord? = written ?: petich.stepRecords[stepKey]
 
         fun written(): PetichStepRecord? = written
 

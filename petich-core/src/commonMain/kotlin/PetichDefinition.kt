@@ -136,6 +136,26 @@ public interface PetichMemberContext {
     /** The saga as it stands, for a member that needs its id or its enriched payload. */
     public val petich: Petich
 
+    /**
+     * This member's key — the same string the definition declares it under (B-36).
+     *
+     * **It is the member's address, and it is the only one.** A step carries no `phase` and no
+     * `priority` any more; both moved into the definition, which is the point of this model. What
+     * moved with them was the member's ability to say where it is, and observability had been
+     * hanging off exactly that: shashki names a tracing span after the step's phase and asserts the
+     * string in a test, because a version of it once shipped an unexpanded template to a collector.
+     *
+     * **The same value in a compensation as on the forward pass**, which is what makes it usable for
+     * naming: the engine builds this context from the member it is running, going either way.
+     * `petich.currentPhase` is a different fact — the saga's position, which during a rollback is
+     * where the rollback has reached rather than where this member ran.
+     *
+     * The engine has had this all along: it constructs the context with the key, and uses it to find
+     * this member's [recordedValue] and to build the chain fingerprint. Nothing here is computed;
+     * it was private.
+     */
+    public val stepKey: String
+
     /** Merge into the payload the saga carries forward. */
     public fun enrich(payload: EnrichedPayload)
 
