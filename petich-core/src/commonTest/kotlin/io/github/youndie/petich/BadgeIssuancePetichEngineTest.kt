@@ -343,9 +343,9 @@ class DeliveryDispatchInterceptor(
 // POST_PROCESSING: notify the customer
 class BadgeIssuanceNotificationInterceptor(
     private val notificationLog: MutableList<String>,
-) : BadgeIssuanceInterceptor() {
-    override suspend fun execute(
-        ctx: PetichStepContext,
+) : PetichAnnouncement<BadgeIssuancePayload> {
+    override suspend fun announce(
+        ctx: PetichAnnouncementContext,
         payload: BadgeIssuancePayload,
     ) {
         val enriched = ctx.petich.enrichedPayload as BadgeIssuanceEnrichedPayload
@@ -373,7 +373,7 @@ class BadgeIssuanceNotificationInterceptor(
  * for — the order members run in, the order they are undone in, and what a suspension does in the
  * middle — does not depend on which phase they sit in, and nothing here asserts a phase.
  */
-private fun badgeIssuance(members: List<BadgeIssuanceInterceptor>) =
+private fun badgeIssuance(members: List<Any>) =
     petich<BadgeIssuancePayload>("badge_issuance") {
         members.forEachIndexed { index, member ->
             val key = member::class.simpleName ?: "member-$index"
@@ -386,7 +386,11 @@ private fun badgeIssuance(members: List<BadgeIssuanceInterceptor>) =
 
                 is BadgeIssuanceNotificationInterceptor -> announce(key, member)
 
-                else -> step(key, member)
+                // An announcement is no longer a step, so the fallthrough has to know which
+                // kind it is holding rather than assuming one (B-41).
+                is BadgeIssuanceInterceptor -> step(key, member)
+
+                else -> error("$key is neither a step nor an announcement")
             }
         }
     }

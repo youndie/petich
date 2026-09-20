@@ -119,6 +119,24 @@ public interface PetichEngineMetrics {
     ): Unit = Unit
 
     /**
+     * An announcement threw, and the saga carried on (B-41).
+     *
+     * **Read it as a delivery problem, never as a saga problem.** By the time an announcement runs
+     * the work is done, so petich does not roll the saga back over one — which means a broken
+     * notification path shows up here and nowhere else: not in the failure rate, not in the
+     * compensation rate. A non-zero rate with everything else flat is exactly the case this counter
+     * exists for, and it is the one a status page would otherwise call healthy.
+     *
+     * Distinct from [onAnnouncementDiscarded], which counts an announcement petich REFUSED to make
+     * because the member that asked then began a rollback. That one never left; this one tried.
+     */
+    public fun onAnnouncementFailed(
+        type: String,
+        key: String,
+        reason: String,
+    ): Unit = Unit
+
+    /**
      * What a member asked to have committed and lost by then refusing the saga (B-35).
      *
      * **Not the same question as [onDroppedEvents]**, which counts a repository that cannot store an
@@ -131,6 +149,7 @@ public interface PetichEngineMetrics {
      * A non-zero line here is a member written as though announcing and refusing could be done in
      * one breath. It names the step key, because which member it is, is the whole finding.
      */
+
     public fun onAnnouncementDiscarded(
         type: String,
         stepKey: String,

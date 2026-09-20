@@ -37,6 +37,21 @@ class DefinitionEngineTest {
         }
     }
 
+    /** POST_PROCESSING's member type: it says what happened and cannot take it back. */
+    private class Announces(
+        private val name: String,
+        private val log: Log,
+        private val onRun: (PetichAnnouncementContext) -> Unit = {},
+    ) : PetichAnnouncement<OrderPayload> {
+        override suspend fun announce(
+            ctx: PetichAnnouncementContext,
+            payload: OrderPayload,
+        ) {
+            log.entries.add("do:$name")
+            onRun(ctx)
+        }
+    }
+
     private class Acts(
         private val name: String,
         private val log: Log,
@@ -255,7 +270,7 @@ class DefinitionEngineTest {
             val definition =
                 petich<OrderPayload>("order") {
                     step("charge", Acts("charge", log))
-                    announce("notify", Acts("notify", log) { ctx -> ctx.emit(event("order-completed")) })
+                    announce("notify", Announces("notify", log) { ctx -> ctx.emit(event("order-completed")) })
                 }
 
             val result = engineFor(definition, repository).process(row("p-announced"))

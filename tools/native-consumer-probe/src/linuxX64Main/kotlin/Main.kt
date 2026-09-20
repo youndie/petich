@@ -16,6 +16,8 @@ import io.github.smyrgeorge.sqlx4k.postgres.PostgreSQL
 import io.github.youndie.petich.EnrichedPayload
 import io.github.youndie.petich.OutboxEvent
 import io.github.youndie.petich.Petich
+import io.github.youndie.petich.PetichAnnouncement
+import io.github.youndie.petich.PetichAnnouncementContext
 import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichEngine
 import io.github.youndie.petich.PetichStep
@@ -78,22 +80,17 @@ private class AwaitConfirmation : PetichStep<OrderPayload> {
  * the work does not do it twice. The probe's expectation was wrong and the store was right, which is
  * the sort of thing only a run tells you.
  */
-private class NotifyShipped : PetichStep<OrderPayload> {
+private class NotifyShipped : PetichAnnouncement<OrderPayload> {
     var executions: Int = 0
         private set
 
-    override suspend fun execute(
-        ctx: PetichStepContext,
+    override suspend fun announce(
+        ctx: PetichAnnouncementContext,
         payload: OrderPayload,
     ) {
         executions++
         ctx.emit(event("shipped-${payload.orderId}", "order.shipped", payload.orderId))
     }
-
-    override suspend fun compensate(
-        ctx: PetichStepContext,
-        payload: OrderPayload,
-    ) = Unit
 }
 
 private fun event(

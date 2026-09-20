@@ -500,6 +500,47 @@ survives in the message, because it is the concrete cost and not a restatement o
 proof that the absorption is real rather than a rename is a mutation: making the new comparison
 vacuous fails the two old check-after-step tests along with the three new ones.
 
+### D12. An announcement is a third member type, and its exception is counted rather than rolled back
+
+Decision: `announce` takes a `PetichAnnouncement<P>` — one method, no `compensate` — whose context
+carries `emit`, `attach` and `enrich` and none of `reject`, `fail`, `suspendFor` or `resuspendFor`.
+An exception it throws is counted through `onAnnouncementFailed` and the saga completes; what it
+asked to have committed before throwing rides with that completion.
+
+Why:
+
+- **by the time it runs, the work is done.** The stock is reserved and the money is captured;
+  rolling all of it back because a notification did not go is the wrong answer, and `PetichStep`
+  offered it as the natural one;
+- **the portfolio already followed this rule by discipline.** shashki's settlement sends a receipt
+  by mail before emitting and swallows the send's failure by hand, because `SendReceiptUseCase` says
+  a settlement rolled back over a mail server would be the tail wagging the dog. Same gap as B-39: a
+  rule kept by an author's memory rather than by a type;
+- **rejected: the reviewer's shape, a type that returns the event and takes no context.** It answers
+  "may an announcement do I/O" as well as "may it fail the saga", and only the second question
+  matters. shashki is the counter-example to the first and is not a mistake.
+
+**Correction found while implementing — the type was the smaller half.** Withholding `fail` stops a
+member from *deciding* to end the saga and does nothing about one that throws, and a throw meant
+exactly the same rollback. So the promise would have been a comment: `PetichAnnouncement` without
+the engine change is a type that documents an intention the runtime ignores. The engine change is
+what the tests hold, and it is what the mutation kills.
+
+**What it announced before it threw is kept, and that is a departure from B-35.** A refusal carries
+nothing because it begins a rollback and petich will not announce work it is undoing. There is no
+rollback here, so there is nothing to protect by dropping the event — and dropping it would lose the
+one write the outbox exists to make certain.
+
+**May it suspend? No, and the answer is the context's shape rather than a rule.** Nothing in the
+portfolio parks a saga from POST_PROCESSING, and "no" is cheaper to relax later than to impose.
+
+**A consumer's suite was asserting the old answer, which is how the cost was measured.** shashki's
+`dying after any phase leaves no held payment and no reserved driver` ran the same death through
+four members, `publish-assigned` among them, and asserted that a death there released the fare and
+freed the driver — a ride un-assigned because the sentence announcing it could not be built. That
+member came out of the list and got a case of its own with the opposite assertion. The settlement
+suite had the identical pair.
+
 ---
 
 ## 4. What happens next
