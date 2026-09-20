@@ -3,6 +3,7 @@ package io.github.youndie.petich
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -195,6 +196,38 @@ class FailedAnnouncementLeavesTheDatabaseTest {
             // and `PetichEngineConfig.requireOutbox` is what refuses this wiring at construction.
             assertEquals(1, metrics.dropped)
         }
+
+    @Test
+    fun `requireAnnouncementFailureHandler refuses the handler that goes nowhere`() {
+        // The switch its two neighbours had and this one did not (B-57). The test above is what it
+        // refuses: a counter, and a consumer at the far end that is simply never told.
+        val failure =
+            assertFailsWith<IllegalArgumentException> {
+                PetichEngine(
+                    repository = RowRepository(),
+                    config = PetichEngineConfig(requireAnnouncementFailureHandler = true),
+                    announcementFailureHandler = NoOpAnnouncementFailureHandler(),
+                )
+            }
+        assertTrue(
+            failure.message?.contains("no-op") == true,
+            "the refusal has to name what is wrong: ${failure.message}",
+        )
+
+        // AND IT HAS TO LET A REAL HANDLER THROUGH, which is the half a guard fails silently. The
+        // engine wraps this parameter in `GuardedAnnouncementFailureHandler` before anything else
+        // reads it, and that wrapper is never a `NoOpAnnouncementFailureHandler` — so a check
+        // written one line lower would refuse nothing at all, and only this assertion can tell the
+        // two apart from the outside.
+        PetichEngine(
+            repository = RowRepository(),
+            config = PetichEngineConfig(requireAnnouncementFailureHandler = true),
+            announcementFailureHandler = SaysSo(),
+        )
+
+        // And it is off by default, so an application that has chosen its own silence keeps it.
+        PetichEngine(repository = RowRepository(), announcementFailureHandler = NoOpAnnouncementFailureHandler())
+    }
 
     private class EmitsThenDies : PetichAnnouncement<OrderPayload> {
         override suspend fun announce(

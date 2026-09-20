@@ -305,6 +305,15 @@ at it for `SuspendedPetichSweeper` to re-drive. An announcement that only calls 
 the outbox key; **an announcement that sends a mail, or calls anything outside the process, will send
 it twice** unless it says otherwise.
 
+**An announcement that could not be made at all leaves a trace, if you ask for one.**
+`AnnouncementFailureHandler.failed` is handed the saga, the member's key and the reason, and whatever
+it returns rides with that member's own commit — one transaction, no extra write. Without a handler
+the only trace is `PetichEngineMetrics.onAnnouncementFailed`, and
+`PetichEngineConfig(requireAnnouncementFailureHandler = true)` refuses at construction to build an
+engine in that state. The `reason` is an exception's own message: it carries whatever the far side
+put there — a recipient's address, a URL with its query string — and what the handler returns goes
+out through a relay, so forwarding it verbatim is a choice rather than a default.
+
 A member whose effect is a remote call wants its own idempotency key, and the money-shaped ones want
 the remote side to honour it — which is the rule below.
 
