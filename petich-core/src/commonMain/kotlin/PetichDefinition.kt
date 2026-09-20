@@ -241,6 +241,37 @@ public interface PetichMemberContext {
      */
     public val idempotencyKey: String get() = "${petich.id}:$stepKey"
 
+    /**
+     * The same name for a member that makes **more than one call**, told apart by [discriminator].
+     *
+     * [idempotencyKey] is issued per member, not per call, and that is right for one call retried —
+     * a re-run after a version conflict must arrive under the name the far side has already seen.
+     * [resuspendFor] describes the other shape and the model went out of its way to support it
+     * (B-37): a member that acts repeatedly **at its own position**, a cascade offering a ride to one
+     * driver and then the next. Handed the plain key on every attempt, the second call arrives under
+     * the first call's name — and a far side that deduplicates answers with the first call's result,
+     * so the refusal is silent (B-47).
+     *
+     * ```kotlin
+     * // asking one candidate after another, each ask named for the candidate
+     * board.offer(ctx.idempotencyKey(driverId), payload.rideId, driverId)
+     * ```
+     *
+     * **The discriminator has to be derivable again inside the compensation**, which is what makes
+     * it a discriminator rather than a counter: the driver's id, the attempt number the member keeps
+     * in its own record or enriched payload — anything the member can read back. A random value
+     * names a call nobody can cancel.
+     *
+     * **A member that issued several has to cancel all of them**, not the last. petich cannot do
+     * that for it: which discriminators were used is the member's own knowledge, and keeping them is
+     * part of the price of acting more than once.
+     *
+     * Here rather than left to the member for the reason the plain key is: the forward pass and the
+     * rollback have to spell it identically, and a string spelled twice is a string spelled
+     * differently once.
+     */
+    public fun idempotencyKey(discriminator: String): String = "$idempotencyKey:$discriminator"
+
     /** Merge into the payload the saga carries forward. */
     public fun enrich(payload: EnrichedPayload)
 }
