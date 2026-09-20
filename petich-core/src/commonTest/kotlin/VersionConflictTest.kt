@@ -9,18 +9,14 @@ class VersionConflictTest {
         val data: String,
     ) : PetichPayload()
 
-    class ProceedInterceptor : PetichInterceptor<TestPayload> {
-        override val phase: PetichPhase = PetichPhase.EXECUTION
-
-        override fun supports(payload: PetichPayload) = true
-
-        override suspend fun intercept(
-            petich: Petich,
+    class ProceedInterceptor : PetichStep<TestPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: TestPayload,
-        ): InterceptorResult = InterceptorResult.Proceed()
+        ) = Unit
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: TestPayload,
         ) {}
     }
@@ -78,8 +74,8 @@ class VersionConflictTest {
             val repo = RetryRepository(petichObj)
             val engine =
                 PetichEngine(
-                    listOf(interceptor),
-                    repo,
+                    repository = repo,
+                    definitions = listOf(petich<TestPayload>("type") { step("proceeds", interceptor) }),
                 )
 
             val result = engine.process(petichObj)
@@ -97,18 +93,14 @@ class VersionConflictTest {
     @Test
     fun testCompensationVersionConflictCausesInconsistentRetry() =
         runBlocking {
-            class CompensateInterceptor : PetichInterceptor<TestPayload> {
-                override val phase: PetichPhase = PetichPhase.EXECUTION
-
-                override fun supports(payload: PetichPayload) = true
-
-                override suspend fun intercept(
-                    petich: Petich,
+            class CompensateInterceptor : PetichStep<TestPayload> {
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: TestPayload,
-                ): InterceptorResult = InterceptorResult.Compensate("Fail")
+                ) = ctx.fail("Fail")
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: TestPayload,
                 ) {
                 }
@@ -139,7 +131,11 @@ class VersionConflictTest {
 
             val repo = ConflictRepository()
             val interceptor = CompensateInterceptor()
-            val engine = PetichEngine(listOf(interceptor), repo)
+            val engine =
+                PetichEngine(
+                    repository = repo,
+                    definitions = listOf(petich<TestPayload>("type") { step("compensates", interceptor) }),
+                )
 
             val payload = TestPayload("test")
             val petichObj =

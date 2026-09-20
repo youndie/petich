@@ -19,22 +19,18 @@ class TerminalReplayTest {
     ) : PetichPayload()
 
     private class ReplayInterceptor(
-        override val phase: PetichPhase,
-        override val priority: Int,
-        private val result: () -> InterceptorResult,
-    ) : PetichInterceptor<ReplayPayload> {
+        private val result: (PetichStepContext) -> Unit,
+    ) : PetichStep<ReplayPayload> {
         var compensations = 0
             private set
 
-        override fun supports(payload: PetichPayload) = payload is ReplayPayload
-
-        override suspend fun intercept(
-            petich: Petich,
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: ReplayPayload,
-        ): InterceptorResult = result()
+        ) = result(ctx)
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: ReplayPayload,
         ) {
             compensations++
@@ -56,7 +52,7 @@ class TerminalReplayTest {
         }
     }
 
-    private fun petich(id: String) =
+    private fun row(id: String) =
         Petich(
             id = id,
             type = "replay",
@@ -67,15 +63,22 @@ class TerminalReplayTest {
     @Test
     fun `a rolled back petich answers a repeat the same way it answered the pass that rolled it back`() =
         runBlocking {
-            val work = ReplayInterceptor(PetichPhase.EXECUTION, priority = 10) { InterceptorResult.Proceed() }
-            val fault =
-                ReplayInterceptor(PetichPhase.EXECUTION, priority = 5) {
-                    InterceptorResult.Compensate("downstream refused after the work was done")
-                }
+            val work = ReplayInterceptor { }
+            val fault = ReplayInterceptor { it.fail("downstream refused after the work was done") }
             val repository = ReplayRepository()
-            val engine = PetichEngine(listOf(work, fault), repository)
+            val engine =
+                PetichEngine(
+                    repository = repository,
+                    definitions =
+                        listOf(
+                            petich<ReplayPayload>("replay") {
+                                step("work", work)
+                                step("fault", fault)
+                            },
+                        ),
+                )
 
-            val first = engine.process(petich("rolled-back"))
+            val first = engine.process(row("rolled-back"))
             assertTrue(
                 first is PetichResult.Error,
                 "a rolled-back saga is a business outcome; expected Error, got $first",
@@ -84,7 +87,7 @@ class TerminalReplayTest {
             assertEquals(1, work.compensations)
 
             // Exactly what a client does when repeating a request with the same idempotency key.
-            val repeat = engine.process(petich("rolled-back"))
+            val repeat = engine.process(row("rolled-back"))
             assertTrue(
                 repeat is PetichResult.Error,
                 "replaying a finished petich is not a server fault; expected Error, got $repeat",
@@ -100,23 +103,24 @@ class TerminalReplayTest {
             val okRepository = ReplayRepository()
             val okEngine =
                 PetichEngine(
-                    listOf(ReplayInterceptor(PetichPhase.EXECUTION, priority = 10) { InterceptorResult.Proceed() }),
-                    okRepository,
+                    repository = okRepository,
+                    definitions = listOf(petich<ReplayPayload>("replay") { step("work", ReplayInterceptor { }) }),
                 )
-            okEngine.process(petich("done"))
-            assertTrue(okEngine.process(petich("done")) is PetichResult.Success)
+            okEngine.process(row("done"))
+            assertTrue(okEngine.process(row("done")) is PetichResult.Success)
 
             val rejectedRepository = ReplayRepository()
             val rejectedEngine =
                 PetichEngine(
-                    listOf(
-                        ReplayInterceptor(PetichPhase.VALIDATION, priority = 10) {
-                            InterceptorResult.Reject("no")
-                        },
-                    ),
-                    rejectedRepository,
+                    repository = rejectedRepository,
+                    definitions =
+                        listOf(
+                            petich<ReplayPayload>("replay") {
+                                authorize("refuses", ReplayInterceptor { it.reject("no") })
+                            },
+                        ),
                 )
-            rejectedEngine.process(petich("rejected"))
-            assertTrue(rejectedEngine.process(petich("rejected")) is PetichResult.Error)
+            rejectedEngine.process(row("rejected"))
+            assertTrue(rejectedEngine.process(row("rejected")) is PetichResult.Error)
         }
 }

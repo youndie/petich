@@ -106,7 +106,7 @@ class StepRecordTest {
         }
     }
 
-    private fun petich(id: String) =
+    private fun row(id: String) =
         Petich(id = id, type = "order", status = PetichStatus.PROCESSING, payload = OrderPayload("sku-1"))
 
     private fun engineOver(
@@ -129,7 +129,7 @@ class StepRecordTest {
                     step("charge", Charge(log, fail = true))
                 }
 
-            engineOver(repository, definition).process(petich("p-recorded"))
+            engineOver(repository, definition).process(row("p-recorded"))
 
             assertTrue(
                 log.entries.contains("undo:reserve:res-for-sku-1"),
@@ -158,7 +158,7 @@ class StepRecordTest {
                     step("charge", Charge(log))
                 }
 
-            engineOver(repository, definition).process(petich("p-threw"))
+            engineOver(repository, definition).process(row("p-threw"))
 
             assertEquals(
                 listOf("undo:reserve:nothing-to-undo"),
@@ -188,7 +188,7 @@ class StepRecordTest {
                     step("charge", Charge(log, throwInstead = true))
                 }
 
-            engineOver(repository, definition).process(petich("p-scoped"))
+            engineOver(repository, definition).process(row("p-scoped"))
 
             assertTrue(
                 log.entries.contains("undo:charge:own-record-absent"),
@@ -208,7 +208,7 @@ class StepRecordTest {
                 }
             val engine = engineOver(repository, definition)
 
-            val waiting = engine.process(petich("p-waited"))
+            val waiting = engine.process(row("p-waited"))
             assertTrue(waiting is PetichResult.ActionRequired, "expected a suspension: $waiting")
             assertEquals(
                 Reservation("res-for-sku-1"),
@@ -241,7 +241,7 @@ class StepRecordTest {
                     step("reserve", Reserve(log, throwAfterRecording = true))
                 }
 
-            engineOver(repository, definition).process(petich("p-threw-after"))
+            engineOver(repository, definition).process(row("p-threw-after"))
 
             assertEquals(
                 listOf("do:reserve", "undo:reserve:res-for-sku-1"),
@@ -265,7 +265,7 @@ class StepRecordTest {
                     step("charge", Charge(log))
                 }
 
-            val waiting = engineOver(repository, definition).process(petich("p-record-then-wait"))
+            val waiting = engineOver(repository, definition).process(row("p-record-then-wait"))
 
             assertTrue(waiting is PetichResult.ActionRequired, "expected a suspension: $waiting")
             assertEquals(

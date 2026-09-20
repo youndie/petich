@@ -10,23 +10,13 @@ class TimeoutTest {
         val data: String,
     ) : PetichPayload()
 
-    class SlowInterceptor : PetichInterceptor<TestPayload> {
-        override val phase: PetichPhase = PetichPhase.ENRICHMENT
-
-        override fun supports(payload: PetichPayload) = true
-
-        override suspend fun intercept(
-            petich: Petich,
+    class SlowCheck : PetichCheck<TestPayload> {
+        override suspend fun check(
+            ctx: PetichCheckContext,
             payload: TestPayload,
-        ): InterceptorResult {
+        ) {
             delay(2000) // Longer than ENRICHMENT timeout (1000ms)
-            return InterceptorResult.Proceed()
         }
-
-        override suspend fun compensate(
-            petich: Petich,
-            payload: TestPayload,
-        ) {}
     }
 
     class MockRepository : PetichRepository {
@@ -45,9 +35,12 @@ class TimeoutTest {
     @Test
     fun testPhaseTimeoutSetsFailedStatus() =
         runBlocking {
-            val interceptor = SlowInterceptor()
             val repo = MockRepository()
-            val engine = PetichEngine(listOf(interceptor), repo)
+            val engine =
+                PetichEngine(
+                    repository = repo,
+                    definitions = listOf(petich<TestPayload>("type") { enrich("slow", SlowCheck()) }),
+                )
 
             val payload = TestPayload("test")
             val petich =

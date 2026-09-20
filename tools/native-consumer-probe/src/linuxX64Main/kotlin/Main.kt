@@ -14,12 +14,13 @@
 import io.github.smyrgeorge.sqlx4k.ConnectionPool
 import io.github.smyrgeorge.sqlx4k.postgres.PostgreSQL
 import io.github.youndie.petich.EnrichedPayload
-import io.github.youndie.petich.InterceptorResult
 import io.github.youndie.petich.OutboxEvent
 import io.github.youndie.petich.Petich
 import io.github.youndie.petich.PetichClock
 import io.github.youndie.petich.PetichEngine
-import io.github.youndie.petich.PetichInterceptor
+import io.github.youndie.petich.PetichStep
+import io.github.youndie.petich.PetichStepContext
+import io.github.youndie.petich.petich
 import io.github.youndie.petich.PetichPayload
 import io.github.youndie.petich.PetichPhase
 import io.github.youndie.petich.PetichResult
@@ -50,24 +51,20 @@ private data class OrderPayload(
 ) : PetichPayload()
 
 /** The step that waits for a human — once, and the engine does not re-run it on the way back. */
-private class AwaitConfirmation : PetichInterceptor<OrderPayload> {
-    override val phase: PetichPhase = PetichPhase.EXECUTION
-
+private class AwaitConfirmation : PetichStep<OrderPayload> {
     var executions: Int = 0
         private set
 
-    override fun supports(payload: PetichPayload): Boolean = payload is OrderPayload
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: OrderPayload,
-    ): InterceptorResult {
+    ) {
         executions++
-        return InterceptorResult.Suspend("AWAIT_CONFIRMATION")
+        ctx.suspendFor("AWAIT_CONFIRMATION")
     }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: OrderPayload,
     ) = Unit
 }
@@ -81,26 +78,20 @@ private class AwaitConfirmation : PetichInterceptor<OrderPayload> {
  * the work does not do it twice. The probe's expectation was wrong and the store was right, which is
  * the sort of thing only a run tells you.
  */
-private class NotifyShipped : PetichInterceptor<OrderPayload> {
-    override val phase: PetichPhase = PetichPhase.POST_PROCESSING
-
+private class NotifyShipped : PetichStep<OrderPayload> {
     var executions: Int = 0
         private set
 
-    override fun supports(payload: PetichPayload): Boolean = payload is OrderPayload
-
-    override suspend fun intercept(
-        petich: Petich,
+    override suspend fun execute(
+        ctx: PetichStepContext,
         payload: OrderPayload,
-    ): InterceptorResult {
+    ) {
         executions++
-        return InterceptorResult.Proceed(
-            outboxEvents = listOf(event("shipped-${payload.orderId}", "order.shipped", payload.orderId)),
-        )
+        ctx.emit(event("shipped-${payload.orderId}", "order.shipped", payload.orderId))
     }
 
     override suspend fun compensate(
-        petich: Petich,
+        ctx: PetichStepContext,
         payload: OrderPayload,
     ) = Unit
 }
@@ -174,7 +165,17 @@ private suspend fun runSaga(url: String) {
     val outbox = PostgresOutboxStore(db, tables[1])
     val await = AwaitConfirmation()
     val notify = NotifyShipped()
-    val engine = PetichEngine(listOf(await, notify), store)
+    val engine =
+        PetichEngine(
+            repository = store,
+            definitions =
+                listOf(
+                    petich<OrderPayload>("order") {
+                        step("await-confirmation", await)
+                        announce("notify-shipped", notify)
+                    },
+                ),
+        )
 
     val order =
         Petich(

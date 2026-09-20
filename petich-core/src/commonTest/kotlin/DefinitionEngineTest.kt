@@ -91,7 +91,7 @@ class DefinitionEngineTest {
             override val payload = "{}"
         }
 
-    private fun petich(id: String) =
+    private fun row(id: String) =
         Petich(
             id = id,
             type = "order",
@@ -120,7 +120,7 @@ class DefinitionEngineTest {
                     step("charge", Acts("charge", log))
                 }
 
-            val result = engineFor(definition, repository).process(petich("p-happy"))
+            val result = engineFor(definition, repository).process(row("p-happy"))
 
             assertTrue(result is PetichResult.Success, "expected a completed saga: $result")
             assertEquals(listOf("check:limits", "do:reserve", "do:charge"), log.entries)
@@ -138,7 +138,7 @@ class DefinitionEngineTest {
                     step("reserve", Acts("reserve", log))
                 }
 
-            val result = engineFor(definition, repository).process(petich("p-refused"))
+            val result = engineFor(definition, repository).process(row("p-refused"))
 
             assertTrue(result is PetichResult.Error, "a refusal is not a fault: $result")
             assertEquals("over the limit", result.reason)
@@ -157,7 +157,7 @@ class DefinitionEngineTest {
                     step("charge", Acts("charge", log) { ctx -> ctx.reject("card declined") })
                 }
 
-            val result = engineFor(definition, repository).process(petich("p-step-refused"))
+            val result = engineFor(definition, repository).process(row("p-step-refused"))
 
             assertTrue(result is PetichResult.Error, "expected a refusal: $result")
             assertEquals(
@@ -183,7 +183,7 @@ class DefinitionEngineTest {
                     step("charge", Acts("charge", log) { ctx -> ctx.fail("the provider is down") })
                 }
 
-            engineFor(definition, repository).process(petich("p-fault"))
+            engineFor(definition, repository).process(row("p-fault"))
 
             assertEquals(listOf("do:reserve", "do:charge", "undo:reserve"), log.entries)
             assertEquals(PetichStatus.FAILED, repository.row?.status, "a fault is not a refusal")
@@ -205,7 +205,7 @@ class DefinitionEngineTest {
                 }
             val engine = engineFor(definition, repository)
 
-            val waiting = engine.process(petich("p-wizard"))
+            val waiting = engine.process(row("p-wizard"))
             assertTrue(waiting is PetichResult.ActionRequired, "expected a suspension: $waiting")
             assertEquals("CONFIRM", waiting.actionType)
             assertEquals(listOf("do:hold-funds"), log.entries, "the money is held once, before the wait")
@@ -232,7 +232,7 @@ class DefinitionEngineTest {
                     step("charge", Acts("charge", log) { error("the answer was lost") })
                 }
 
-            val result = engineFor(definition, repository).process(petich("p-threw"))
+            val result = engineFor(definition, repository).process(row("p-threw"))
 
             assertTrue(result is PetichResult.SystemFailure, "expected a system failure: $result")
             assertEquals(
@@ -258,7 +258,7 @@ class DefinitionEngineTest {
                     announce("notify", Acts("notify", log) { ctx -> ctx.emit(event("order-completed")) })
                 }
 
-            val result = engineFor(definition, repository).process(petich("p-announced"))
+            val result = engineFor(definition, repository).process(row("p-announced"))
 
             assertTrue(result is PetichResult.Success, "expected a completed saga: $result")
             assertEquals(listOf("order-completed"), repository.outbox, "the event rides with the write")
@@ -296,7 +296,7 @@ class DefinitionEngineTest {
                     step("charge", Acts("charge", log) { ctx -> ctx.fail("the provider is down") })
                 }
 
-            engineFor(definition, repository).process(petich("p-announced-undo"))
+            engineFor(definition, repository).process(row("p-announced-undo"))
 
             assertTrue(
                 repository.outbox.contains("reservation-released"),
@@ -322,7 +322,7 @@ class DefinitionEngineTest {
                     definitions = listOf(definition),
                 )
 
-            val result = engine.process(petich("p-wrong-type").copy(type = "ordr"))
+            val result = engine.process(row("p-wrong-type").copy(type = "ordr"))
 
             assertTrue(result is PetichResult.SystemFailure, "expected a refusal, not a success: $result")
             assertTrue(
@@ -349,22 +349,10 @@ class DefinitionEngineTest {
                 RowRepository(),
             )
 
-        assertTrue(engine.owns(petich("p-1")), "the type it was given a definition for")
+        assertTrue(engine.owns(row("p-1")), "the type it was given a definition for")
         assertFalse(
-            engine.owns(petich("p-2").copy(type = "settlement")),
+            engine.owns(row("p-2").copy(type = "settlement")),
             "and not a type it has never heard of",
         )
-    }
-
-    /**
-     * And the older model keeps what it had: its engine is a fixed list, the application's lambda
-     * was the only thing that ever decided ownership, so an interceptor engine owns what it is
-     * handed. B-33 removes this branch with the model.
-     */
-    @Test
-    fun `an engine built from interceptors owns whatever it is handed`() {
-        val engine = PetichEngine(interceptors = emptyList(), repository = RowRepository())
-
-        assertTrue(engine.owns(petich("p-1").copy(type = "anything-at-all")))
     }
 }

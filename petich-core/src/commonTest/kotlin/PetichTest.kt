@@ -12,23 +12,20 @@ class PetichTest {
 
     // Mock Interceptor
     class TestInterceptor(
-        override val phase: PetichPhase,
         val id: String,
         val shouldFail: Boolean = false,
         var compensated: Boolean = false,
-    ) : PetichInterceptor<TestPayload> {
-        override fun supports(payload: PetichPayload) = true
-
-        override suspend fun intercept(
-            petich: Petich,
+    ) : PetichStep<TestPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: TestPayload,
-        ): InterceptorResult {
+        ) {
             if (shouldFail) throw RuntimeException("Fail")
-            return InterceptorResult.Proceed()
+            return
         }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: TestPayload,
         ) {
             compensated = true
@@ -62,13 +59,19 @@ class PetichTest {
     @Test
     fun testCompensationOnFailure() =
         runBlocking {
-            val interceptor1 = TestInterceptor(PetichPhase.EXECUTION, "1")
-            val interceptor2 = TestInterceptor(PetichPhase.EXECUTION, "2", shouldFail = true)
+            val interceptor1 = TestInterceptor("1")
+            val interceptor2 = TestInterceptor("2", shouldFail = true)
 
             val engine =
                 PetichEngine(
-                    listOf(interceptor1, interceptor2),
-                    MockRepository(),
+                    repository = MockRepository(),
+                    definitions =
+                        listOf(
+                            petich<TestPayload>("type") {
+                                step("acts", interceptor1)
+                                step("fails", interceptor2)
+                            },
+                        ),
                 )
 
             val payload = TestPayload("test")
@@ -94,18 +97,14 @@ class PetichTest {
     @Test
     fun testEnrichedPayloadUpdates() =
         runBlocking {
-            class EnrichedInterceptor : PetichInterceptor<TestPayload> {
-                override val phase: PetichPhase = PetichPhase.ENRICHMENT
-
-                override fun supports(payload: PetichPayload) = true
-
-                override suspend fun intercept(
-                    petich: Petich,
+            class EnrichedInterceptor : PetichStep<TestPayload> {
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: TestPayload,
-                ): InterceptorResult = InterceptorResult.Proceed(SimpleEnrichedPayload(mapOf("key" to "value")))
+                ) = ctx.enrich(SimpleEnrichedPayload(mapOf("key" to "value")))
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: TestPayload,
                 ) {
                 }
@@ -113,8 +112,8 @@ class PetichTest {
 
             val engine =
                 PetichEngine(
-                    listOf(EnrichedInterceptor()),
-                    MockRepository(),
+                    repository = MockRepository(),
+                    definitions = listOf(petich<TestPayload>("type") { step("enriches", EnrichedInterceptor()) }),
                 )
 
             val payload = TestPayload("test")
@@ -137,36 +136,27 @@ class PetichTest {
     @Test
     fun testEnrichedPayloadMerge() =
         runBlocking {
-            class MergeInterceptor1 : PetichInterceptor<TestPayload> {
-                override val phase: PetichPhase = PetichPhase.ENRICHMENT
-
-                override fun supports(payload: PetichPayload) = true
-
-                override suspend fun intercept(
-                    petich: Petich,
+            class MergeInterceptor1 : PetichStep<TestPayload> {
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: TestPayload,
-                ): InterceptorResult = InterceptorResult.Proceed(SimpleEnrichedPayload(mapOf("key1" to "val1")))
+                ) = ctx.enrich(SimpleEnrichedPayload(mapOf("key1" to "val1")))
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: TestPayload,
                 ) {
                 }
             }
 
-            class MergeInterceptor2 : PetichInterceptor<TestPayload> {
-                override val phase: PetichPhase = PetichPhase.ENRICHMENT
-                override val priority: Int = -1 // Run after 1
-
-                override fun supports(payload: PetichPayload) = true
-
-                override suspend fun intercept(
-                    petich: Petich,
+            class MergeInterceptor2 : PetichStep<TestPayload> {
+                override suspend fun execute(
+                    ctx: PetichStepContext,
                     payload: TestPayload,
-                ): InterceptorResult = InterceptorResult.Proceed(SimpleEnrichedPayload(mapOf("key2" to "val2")))
+                ) = ctx.enrich(SimpleEnrichedPayload(mapOf("key2" to "val2")))
 
                 override suspend fun compensate(
-                    petich: Petich,
+                    ctx: PetichStepContext,
                     payload: TestPayload,
                 ) {
                 }
@@ -174,8 +164,14 @@ class PetichTest {
 
             val engine =
                 PetichEngine(
-                    listOf(MergeInterceptor1(), MergeInterceptor2()),
-                    MockRepository(),
+                    repository = MockRepository(),
+                    definitions =
+                        listOf(
+                            petich<TestPayload>("type") {
+                                step("first", MergeInterceptor1())
+                                step("second", MergeInterceptor2())
+                            },
+                        ),
                 )
 
             val payload = TestPayload("test")

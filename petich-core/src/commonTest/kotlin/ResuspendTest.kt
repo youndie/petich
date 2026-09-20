@@ -10,23 +10,20 @@ class ResuspendTest {
     ) : PetichPayload()
 
     class ResuspendInterceptor(
-        override val phase: PetichPhase,
         val id: String,
-    ) : PetichInterceptor<TestPayload> {
+    ) : PetichStep<TestPayload> {
         var callCount = 0
 
-        override fun supports(payload: PetichPayload) = true
-
-        override suspend fun intercept(
-            petich: Petich,
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: TestPayload,
-        ): InterceptorResult {
+        ) {
             callCount++
-            return InterceptorResult.Resuspend("RESUSPEND_ACTION")
+            return ctx.resuspendFor("RESUSPEND_ACTION")
         }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: TestPayload,
         ) {}
     }
@@ -53,13 +50,13 @@ class ResuspendTest {
     @Test
     fun testResuspendInterceptorIsReExecutedOnResume() =
         runBlocking {
-            val interceptor = ResuspendInterceptor(PetichPhase.EXECUTION, "1")
+            val interceptor = ResuspendInterceptor("1")
 
             val repo = MockRepository()
             val engine =
                 PetichEngine(
-                    listOf(interceptor),
-                    repo,
+                    repository = repo,
+                    definitions = listOf(petich<TestPayload>("type") { step("re-ask", interceptor) }),
                 )
 
             val payload = TestPayload("test")

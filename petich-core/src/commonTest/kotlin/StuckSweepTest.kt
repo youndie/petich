@@ -32,24 +32,19 @@ class StuckSweepTest {
 
     class Step(
         private val log: MutableList<String>,
-    ) : PetichInterceptor<OrderPayload> {
-        override val phase = PetichPhase.EXECUTION
-
-        override fun supports(payload: PetichPayload) = payload is OrderPayload
-
-        override suspend fun intercept(
-            petich: Petich,
+    ) : PetichStep<OrderPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: OrderPayload,
-        ): InterceptorResult {
-            log.add("do:${petich.id}")
-            return InterceptorResult.Proceed()
+        ) {
+            log.add("do:${ctx.petich.id}")
         }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: OrderPayload,
         ) {
-            log.add("undo:${petich.id}")
+            log.add("undo:${ctx.petich.id}")
         }
     }
 
@@ -120,7 +115,12 @@ class StuckSweepTest {
         stuckAfter: kotlin.time.Duration?,
         revived: MutableList<String>,
     ): SuspendedPetichSweeper {
-        val engine = PetichEngine(listOf(Step(log)), repository, clock = clock)
+        val engine =
+            PetichEngine(
+                repository = repository,
+                clock = clock,
+                definitions = listOf(petich<OrderPayload>("order") { step("act", Step(log)) }),
+            )
         return SuspendedPetichSweeper(
             repository = repository,
             engine = engine,

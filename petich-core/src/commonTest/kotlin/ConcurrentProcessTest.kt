@@ -31,29 +31,24 @@ class ConcurrentProcessTest {
     ) : PetichPayload()
 
     /** Counts how many times the saga's one step actually ran, and holds the window open. */
-    private class CountingStep : PetichInterceptor<Payload> {
+    private class CountingStep : PetichStep<Payload> {
         private val counter = Mutex()
         var executions: Int = 0
             private set
 
-        override val phase: PetichPhase = PetichPhase.EXECUTION
-
-        override fun supports(payload: PetichPayload) = payload is Payload
-
-        override suspend fun intercept(
-            petich: Petich,
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: Payload,
-        ): InterceptorResult {
+        ) {
             counter.withLock { executions++ }
             // Outside the counter's lock on purpose: this is the window in which a second caller
             // that was not stopped by the engine would get in. Without it the race is theoretically
             // there and practically never observed.
             delay(20)
-            return InterceptorResult.Proceed()
         }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: Payload,
         ) {}
     }
@@ -88,7 +83,7 @@ class ConcurrentProcessTest {
             val engine =
                 PetichEngine(
                     repository = LockingStore(),
-                    interceptors = listOf(step),
+                    definitions = listOf(petich<Payload>("concurrency") { step("count", step) }),
                 )
             val petich =
                 Petich(

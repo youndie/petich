@@ -9,9 +9,9 @@ import kotlin.test.assertTrue
  * B-20: a refusal undoes what ran, and is still a refusal.
  *
  * `Reject` wrote REJECTED and stopped. That is right for a validation that refuses before anything
- * has happened and is silent theft after a step has touched the outside world — and the interceptor
- * cannot tell the two apart, because whether an EARLIER step had an effect is knowledge about
- * somebody else's steps. Every `Reject` in this suite happened to sit before EXECUTION, so the
+ * has happened and is silent theft after a member has touched the outside world — and the member
+ * cannot tell the two apart, because whether an EARLIER one had an effect is knowledge about
+ * somebody else's members. Every refusal in this suite happened to sit before EXECUTION, so the
  * suite was green and said nothing about it.
  */
 class RejectRollsBackTest {
@@ -22,22 +22,18 @@ class RejectRollsBackTest {
     class Step(
         private val name: String,
         private val log: MutableList<String>,
-        override val phase: PetichPhase,
-        override val priority: Int,
         private val rejectWith: String? = null,
-    ) : PetichInterceptor<OrderPayload> {
-        override fun supports(payload: PetichPayload) = payload is OrderPayload
-
-        override suspend fun intercept(
-            petich: Petich,
+    ) : PetichStep<OrderPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
             payload: OrderPayload,
-        ): InterceptorResult {
+        ) {
             log.add("do:$name")
-            return rejectWith?.let { InterceptorResult.Reject(it) } ?: InterceptorResult.Proceed()
+            rejectWith?.let { ctx.reject(it) }
         }
 
         override suspend fun compensate(
-            petich: Petich,
+            ctx: PetichStepContext,
             payload: OrderPayload,
         ) {
             log.add("undo:$name")
@@ -64,7 +60,7 @@ class RejectRollsBackTest {
         }
     }
 
-    private fun petich(id: String) =
+    private fun row(id: String) =
         Petich(
             id = id,
             type = "order",
@@ -79,14 +75,19 @@ class RejectRollsBackTest {
             val repository = RowRepository()
             val engine =
                 PetichEngine(
-                    listOf(
-                        Step("reserve", log, PetichPhase.EXECUTION, priority = 10),
-                        Step("limits", log, PetichPhase.EXECUTION, priority = 5, rejectWith = "over the limit"),
-                    ),
-                    repository,
+                    repository = repository,
+                    definitions =
+                        listOf(
+                            // Two members of one phase, and their order is these two lines rather
+                            // than priority 10 against priority 5.
+                            petich<OrderPayload>("order") {
+                                step("reserve", Step("reserve", log))
+                                step("limits", Step("limits", log, rejectWith = "over the limit"))
+                            },
+                        ),
                 )
 
-            val result = engine.process(petich("p-rejected"))
+            val result = engine.process(row("p-rejected"))
 
             assertTrue(result is PetichResult.Error, "a refusal is not a fault: $result")
             assertEquals("over the limit", result.reason, "the reason is the step's, not the engine's")
@@ -109,14 +110,20 @@ class RejectRollsBackTest {
             val repository = RowRepository()
             val engine =
                 PetichEngine(
-                    listOf(
-                        Step("validate", log, PetichPhase.VALIDATION, priority = 10, rejectWith = "malformed"),
-                        Step("reserve", log, PetichPhase.EXECUTION, priority = 10),
-                    ),
-                    repository,
+                    repository = repository,
+                    definitions =
+                        listOf(
+                            // `authorize` rather than `validate`, because this refusal comes from a
+                            // member that COULD have acted — which is what the case is about. A
+                            // VALIDATION member is a check and has no undo to leave unused.
+                            petich<OrderPayload>("order") {
+                                authorize("validate", Step("validate", log, rejectWith = "malformed"))
+                                step("reserve", Step("reserve", log))
+                            },
+                        ),
                 )
 
-            val result = engine.process(petich("p-early"))
+            val result = engine.process(row("p-early"))
 
             assertTrue(result is PetichResult.Error, "expected a refusal: $result")
             assertEquals(
@@ -134,14 +141,19 @@ class RejectRollsBackTest {
             val repository = RowRepository()
             val engine =
                 PetichEngine(
-                    listOf(
-                        Step("reserve", log, PetichPhase.EXECUTION, priority = 10),
-                        Step("limits", log, PetichPhase.EXECUTION, priority = 5, rejectWith = "over the limit"),
-                    ),
-                    repository,
+                    repository = repository,
+                    definitions =
+                        listOf(
+                            // Two members of one phase, and their order is these two lines rather
+                            // than priority 10 against priority 5.
+                            petich<OrderPayload>("order") {
+                                step("reserve", Step("reserve", log))
+                                step("limits", Step("limits", log, rejectWith = "over the limit"))
+                            },
+                        ),
                 )
 
-            engine.process(petich("p-replay"))
+            engine.process(row("p-replay"))
             val before = log.toList()
             val replay = engine.process(repository.row!!)
 

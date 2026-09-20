@@ -1,7 +1,7 @@
 ---
 id: B-33
 title: "Remove PetichInterceptor, and do not leave an adapter behind"
-status: open
+status: done
 priority: P1
 size: M
 stage: stage-9-definition
@@ -33,3 +33,92 @@ Once both consumers run on definitions, the old surface is dead weight: `PetichI
   interceptor arm *is* a cast per member, and even without it one remains where a polymorphic stored
   payload meets a generic definition. One declared place is the honest target, and "none" was not.
 - Anchors: `petich-core/src/commonMain/kotlin/Petich.kt`, `README.md`
+
+## Iteration 1 — 2026-09-20
+
+**Every production source in the repository compiles with the interceptor model gone.** Removed:
+`PetichInterceptor` and its `phase`, `priority`, `supports`, `tryIntercept`, `tryCompensate`,
+`withPayloadDiagnostics`; the engine's `interceptors` parameter; `InterceptorRun`;
+`interceptorChainFor` and the fallback arm of `chainFor`. `InterceptorResult` is gone as a name — it
+was the engine's own vocabulary by the end, not a consumer's, so it is now `internal MemberOutcome`.
+
+**`chainFor` has no fallback any more, and that is the one behavioural change.** A saga whose type
+has no definition used to walk the interceptor list; there is no list. It walks nothing, and
+`doProcess` refuses it by name rather than completing it — which is exactly what #78 was cut for, now
+carrying a case it was not written for.
+
+**`tools/native-consumer-probe` moved with them.** It is a real consumer of the published surface,
+not a test, and leaving it on the old model would have left the artifact nobody runs the one thing
+still proving the old model works.
+
+**What is left is tests, and only tests: 502 compile errors across 28 files.** They are not
+mechanical in the way the count suggests — each encodes a guarantee, and translating one badly is how
+a green suite comes to mean less than it did:
+
+`AccessScoringPetichEngineTest`, `BadgeIssuancePetichEngineTest`, `StockMovePetichEngineTest` (the
+three corpus fixtures, ~34 references each), `ChainFingerprintTest`, `CompensationFailureTest`,
+`CompensationGivesUpTest`, `ConcurrentProcessTest`, `EngineConfigTest`, `EngineDefectsTest`,
+`FailedStepCompensationTest`, `InterceptorPriorityTest`, `OutboxEventTest`, `PetichTest`,
+`RejectRollsBackTest`, `ResumeInterceptorTest`, `ResuspendTest`, `SideEffectTest`, `StuckSweepTest`,
+`SuspendedTtlTest`, `SweepClaimTest`, `TerminalReplayTest`, `TimeoutTest`, `VersionConflictTest`,
+`WriteCountTest`, plus `OneTransactionTest` and `SagaTimerSinkTest` in chronik and
+`PetichRoutingTest` in ktor.
+
+**Two of those names are the work rather than a rename.** `InterceptorPriorityTest` tests a concept
+that no longer exists — priority — and `ResumeInterceptorTest` and `ResuspendTest` cover ground
+`ReaskAtTheSameMemberTest` now covers from the other side. Each needs a decision about whether what it
+asserts still has a subject, not a search and replace. That is the judgement this iteration stopped
+short of rather than rushed.
+
+**Not yet done from the AC:** the README still describes both models, and the unchecked-cast count
+has not been verified as exactly one.
+
+## Iteration 2 — 2026-09-20 — closed
+
+**The tests moved, and the count was never the work.** 502 errors across 28 files, and four of them
+needed a decision rather than a translation:
+
+- **`InterceptorPriorityTest` was deleted with the concept it tested.** Priority does not exist; the
+  property it protected — that order does not come from the order a container assembled the list —
+  is now structural, and `DefinitionEngineTest`'s *a definition runs its members in the order it
+  declares them* asserts it directly.
+- **`requireDistinctPriorities` went with it**, and that is the finding worth keeping: its only
+  implementation was inside the chain arm this item deleted, so it had become a configuration flag
+  that reads as protection and does nothing. Two cases in `ChainFingerprintTest` went the same way,
+  with a note in their place saying what they were and where their successor is.
+- **"an incorrect `supports` names the interceptor" has a successor, not a translation.**
+  `supports()` is gone; the mistake that remains is a definition registered under a saga type whose
+  rows carry another payload, and the cast at the definition's boundary is where it surfaces.
+- **"the transition to FAILED survives a version conflict" kept its subject and changed its
+  provocation.** It used to reach `doProcess`'s general catch through a throwing `supports()`. What
+  it tests was never `supports()`: it is `failTerminally`, and a saga whose type no member applies to
+  reaches that directly (#78).
+
+**A diagnostic nearly went out with the model, and the first repair was wrong.** Deleting
+`withPayloadDiagnostics` left a bare `ClassCastException` naming two classes and nothing about the
+saga. The obvious fix — wrapping the cast — **does nothing**, because that is what *unchecked* means:
+`as P` on an erased type does not throw where it is written. The throw arrives when the member is
+handed the value, so the message has to sit around the dispatch, exactly where the deleted helper
+sat. Found by the test failing with the raw exception, not by reading.
+
+**One cast, one place.** The AC asked for exactly one, and there were two — the forward pass and the
+rollback each had their own. They are now one private `typed()` on `DefinitionRun`, which is also
+where the diagnostic's explanation lives.
+
+**A phase is not a free choice any more**, and three suites had to move members because of it.
+ENRICHMENT and VALIDATION take `PetichCheck`s, which have no undo — so a test about a *compensation*
+timing out cannot put its member in ENRICHMENT, and the three corpus fixtures could not keep members
+with compensations in their original first two phases. Where that mattered the assertion moved with
+the member (`EngineDefectsTest` now bounds by `AUTHORIZATION.timeoutMs`); where it did not, the move
+is recorded in the fixture's own comment. Nothing asserted a phase.
+
+**The corpus fixtures place members by TYPE, not by position**, and the first attempt placed them by
+position — which passed for the shared builder and broke the four tests that hand it a shorter list
+of their own. A member's phase is a property of the member; indexing a list had made it a property of
+the list.
+
+**`current_interceptor_index` keeps its name**, and the README now says why: renaming it is a
+migration every consumer runs and a rewrite of the busiest table in the system, to buy a word.
+
+**Where it ran:** the Linux box, `./gradlew clean` then `build --rerun-tasks`, green at 387 tests
+across 85 classes, JVM and linuxX64. `make check` green, 48 anchors resolve.

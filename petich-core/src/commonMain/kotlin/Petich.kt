@@ -205,13 +205,6 @@ public data class PetichEngineConfig(
     // this engine cannot leave on its own, and with the default handler it is also silent - so the
     // first anyone hears of it is a support ticket about a reservation nobody released.
     val requireCompensationHandler: Boolean = false,
-    // Refuse a phase whose steps share a priority for the payload being processed. Off by default:
-    // equal priorities are legal and common, and since the tie is now broken by stepKey rather than
-    // by the order a dependency container assembled, they are no longer ambiguous - only unstated.
-    //
-    // Worth switching on where the order of compensations is reviewed by a person, because a tie
-    // means the order came from a name rather than from a decision.
-    val requireDistinctPriorities: Boolean = false,
 ) {
     init {
         require(maxProcessAttempts > 0) { "maxProcessAttempts must be positive" }
@@ -228,18 +221,18 @@ public data class PetichEngineConfig(
     public fun compensationTimeoutMs(phase: PetichPhase): Long = compensationTimeoutsMs?.get(phase) ?: timeoutMs(phase)
 }
 
-public sealed interface InterceptorResult {
-    public val enrichedPayload: EnrichedPayload? get() = null
+internal sealed interface MemberOutcome {
+    val enrichedPayload: EnrichedPayload? get() = null
 
-    public data class Proceed(
+    data class Proceed(
         override val enrichedPayload: EnrichedPayload? = null,
         val outboxEvents: List<OutboxEvent> = emptyList(),
         // Committed with the state change this result produces, or reported as dropped. See
         // PetichSideEffect.
         val sideEffects: List<PetichSideEffect> = emptyList(),
-    ) : InterceptorResult
+    ) : MemberOutcome
 
-    public data class Suspend(
+    data class Suspend(
         val requiredAction: String,
         override val enrichedPayload: EnrichedPayload? = null,
         // How long to await client action AT THIS PARTICULAR STEP. null takes the blanket
@@ -257,125 +250,23 @@ public sealed interface InterceptorResult {
         // side effects got a field when somebody hit the gap; the events did not, and in the
         // definition model `ctx.emit` before `ctx.suspendFor` compiled, ran, and disappeared.
         val outboxEvents: List<OutboxEvent> = emptyList(),
-    ) : InterceptorResult
+    ) : MemberOutcome
 
-    public data class Resuspend(
+    data class Resuspend(
         val requiredAction: String,
         override val enrichedPayload: EnrichedPayload? = null,
         val ttl: Duration? = null,
         val sideEffects: List<PetichSideEffect> = emptyList(),
-    ) : InterceptorResult
+    ) : MemberOutcome
 
-    public data class Reject(
+    data class Reject(
         val reason: String,
-    ) : InterceptorResult
+    ) : MemberOutcome
 
-    public data class Compensate(
+    data class Compensate(
         val reason: String,
-    ) : InterceptorResult
+    ) : MemberOutcome
 }
-
-/**
- * The main contract for every business feature.
- */
-public interface PetichInterceptor<T : PetichPayload> {
-    public val phase: PetichPhase
-    public val priority: Int get() = 0 // Defaults to 0; the higher the number, the earlier it runs
-
-    /**
-     * What this step is called, in the chain and in the fingerprint a saga carries.
-     *
-     * The class's own name by default, which is right until the class is renamed or moved: an
-     * override pins the identity to something a refactoring cannot touch. It is also the tie-break
-     * between two steps of equal priority, so it decides an order that used to be whatever the
-     * dependency container happened to hand over.
-     */
-    public val stepKey: String get() = this::class.simpleName ?: "anonymous"
-
-    public fun supports(payload: PetichPayload): Boolean
-
-    public suspend fun intercept(
-        petich: Petich,
-        payload: T,
-    ): InterceptorResult
-
-    /**
-     * Undo what [intercept] did. Two things are asked of an implementation, and both are the
-     * engine's behaviour rather than advice:
-     *
-     * **It may be called for a step that did not happen.** When [intercept] throws or times out
-     * the engine cannot tell an effect that landed from one that never did, so it compensates that
-     * step as well: `release` may arrive without a `reserve`, and must be a no-op rather than a
-     * failure. Before this, the failed step was skipped and an effect that had reached the far side
-     * was left behind.
-     *
-     * **It must be idempotent.** The rollback commits how far it has got AFTER calling this, so a
-     * rollback interrupted between the two resumes on the same step.
-     */
-    public suspend fun compensate(
-        petich: Petich,
-        payload: T,
-    )
-
-    // An optional layer over compensate(): by default it simply delegates and emits no events,
-    // so no existing override of compensate() needs touching (see OutboxEvent.kt). Compensating
-    // interceptors that must reliably announce a rollback — "the reservation was released", say —
-    // override this method instead
-    // compensate().
-    public suspend fun compensateWithEvents(
-        petich: Petich,
-        payload: T,
-    ): List<OutboxEvent> {
-        compensate(petich, payload)
-        return emptyList()
-    }
-
-    public suspend fun tryIntercept(
-        petich: Petich,
-        payload: PetichPayload,
-    ): InterceptorResult? =
-        if (supports(payload)) {
-            // supports() above has already checked the type; the compiler cannot see that link.
-            @Suppress("UNCHECKED_CAST")
-            withPayloadDiagnostics(payload) { intercept(petich, payload as T) }
-        } else {
-            null
-        }
-
-    public suspend fun tryCompensate(
-        petich: Petich,
-        payload: PetichPayload,
-    ): List<OutboxEvent> =
-        if (supports(payload)) {
-            @Suppress("UNCHECKED_CAST")
-            withPayloadDiagnostics(payload) { compensateWithEvents(petich, payload as T) }
-        } else {
-            emptyList()
-        }
-}
-
-// `payload as T` is unchecked at runtime (T is erased), so nothing stops an interceptor from
-// lying in supports(): the ClassCastException surfaces later, from the implementation bridge, and
-// reads in the log as an anonymous failure. The engine survives it either way — the petich goes to
-// SystemFailure and the process stays up (see EngineDefectsTest) — but such a log cannot tell you
-// which interceptor is at fault. All we do here is rename the error, keeping the original as the
-// cause.
-//
-// One caveat: a CCE thrown by the interceptor's own business logic gets the same message. Hence
-// the hedged wording, and hence the original exception is preserved in cause.
-private inline fun <R> PetichInterceptor<*>.withPayloadDiagnostics(
-    payload: PetichPayload,
-    block: () -> R,
-): R =
-    try {
-        block()
-    } catch (e: ClassCastException) {
-        throw IllegalStateException(
-            "Interceptor ${this::class.simpleName} rejected payload ${payload::class.simpleName}: " +
-                "its supports() probably returns true for someone else's type",
-            e,
-        )
-    }
 
 public interface PetichRepository {
     public suspend fun findById(id: String): Petich?
@@ -465,12 +356,11 @@ public sealed interface ExpireResult {
 }
 
 // The reason an expired petich goes to compensation. A constant rather than an inline literal:
-// it is what distinguishes a deadline rollback from an interceptor rejection during an incident
+// it is what distinguishes a deadline rollback from a member refusing during an incident
 // review.
 public const val EXPIRED_REASON: String = "Petich expired while waiting for the client"
 
 public class PetichEngine(
-    private val interceptors: List<PetichInterceptor<*>> = emptyList(),
     private val repository: PetichRepository,
     private val compensationFailureHandler: CompensationFailureHandler = NoOpCompensationFailureHandler(),
     private val config: PetichEngineConfig = PetichEngineConfig(),
@@ -534,7 +424,7 @@ public class PetichEngine(
         }
         require(!config.requireOutbox || repository is OutboxAwarePetichRepository) {
             "requireOutbox is set, but ${repository::class.simpleName} is not an " +
-                "OutboxAwarePetichRepository: outbox events produced by interceptors would be " +
+                "OutboxAwarePetichRepository: outbox events produced by members would be " +
                 "dropped and the sagas would still report success"
         }
     }
@@ -611,7 +501,7 @@ public class PetichEngine(
         suspend fun run(
             petich: Petich,
             payload: PetichPayload,
-        ): InterceptorResult?
+        ): MemberOutcome?
 
         suspend fun undo(
             petich: Petich,
@@ -629,25 +519,6 @@ public class PetichEngine(
          * anybody noticing: the new model accepts what the old one could not express.
          */
         fun discardedAnnouncements(): Int = 0
-    }
-
-    private class InterceptorRun(
-        private val interceptor: PetichInterceptor<*>,
-    ) : PetichMemberRun {
-        override val stepKey: String get() = interceptor.stepKey
-        override val label: String get() = "${interceptor.stepKey}(${interceptor.priority})"
-
-        override suspend fun run(
-            petich: Petich,
-            payload: PetichPayload,
-        ): InterceptorResult? = interceptor.tryIntercept(petich, payload)
-
-        override suspend fun undo(
-            petich: Petich,
-            payload: PetichPayload,
-        ): List<OutboxEvent> = interceptor.tryCompensate(petich, payload)
-
-        override fun lastRecord(): PetichStepRecord? = null
     }
 
     /**
@@ -669,7 +540,7 @@ public class PetichEngine(
         override suspend fun run(
             petich: Petich,
             payload: PetichPayload,
-        ): InterceptorResult {
+        ): MemberOutcome {
             val context = RecordingContext(petich, global.key)
             global.check.check(context, payload)
             return context.outcome()
@@ -701,28 +572,58 @@ public class PetichEngine(
 
         override fun discardedAnnouncements(): Int = discarded
 
+        /**
+         * ONE cast, in one place, for the forward pass and the rollback both.
+         *
+         * It is at the boundary where a row meets the definition its type names — rather than one
+         * per member behind a `supports()` that could lie about anyone's payload. It cannot be
+         * removed while a stored payload is polymorphic and a definition is generic; what this
+         * stage changed is that there is a single declared place for it to be wrong.
+         *
+         * **It cannot announce itself here**, which is what "unchecked" means: `as P` on an erased
+         * type does not throw on this line. The ClassCastException arrives later, when the member is
+         * actually handed the value — so the diagnostic sits around the dispatch, exactly where
+         * `withPayloadDiagnostics` sat for the older model.
+         */
+        @Suppress("UNCHECKED_CAST")
+        private fun typed(payload: PetichPayload): P = payload as P
+
         override val stepKey: String get() = member.key
         override val label: String get() = member.key + if (member.undoes) "" else " (check)"
 
         override suspend fun run(
             petich: Petich,
             payload: PetichPayload,
-        ): InterceptorResult {
+        ): MemberOutcome {
             val context = RecordingContext(petich, member.key)
             // ONE cast, at the boundary where a row meets the definition its type names — rather
             // than one per member behind a `supports()` that could lie about anyone's payload. It
             // cannot be removed while a stored payload is polymorphic and a definition is generic;
             // what changed is that there is a single declared place for it to be wrong.
-
-            @Suppress("UNCHECKED_CAST")
-            val typed = payload as P
+            val typed = typed(payload)
             // IN A FINALLY, because the case that matters most is the one where `execute` does not
             // return. A member that records what it did and then throws is the ambiguous failure
             // B-18 exists for: its own compensation is called, and without the record it concludes
             // "the step did not happen" about a step that may well have. Read after the fact, the
             // record survives however the member left.
             try {
-                member.step?.execute(context, typed) ?: member.check?.check(context, typed)
+                try {
+                    member.step?.execute(context, typed) ?: member.check?.check(context, typed)
+                } catch (e: ClassCastException) {
+                    // The unchecked cast above, failing where it actually shows: a definition
+                    // declared for one payload and registered under a saga type whose rows carry
+                    // another. Bare, this is two class names and nothing about the saga.
+                    //
+                    // It can mis-attribute — a ClassCastException from inside the member's own body
+                    // is relabelled too — and that trade was already made for the older model, which
+                    // wrapped its call the same way. A message naming the wrong cause is cheaper
+                    // than one naming no cause at all, and the original is kept as the cause.
+                    throw IllegalStateException(
+                        "member `${member.key}` of saga type `${petich.type}` was handed a " +
+                            "${payload::class.simpleName}, which its definition is not declared for",
+                        e,
+                    )
+                }
             } finally {
                 recorded = context.written()
             }
@@ -739,8 +640,7 @@ public class PetichEngine(
         ): List<OutboxEvent> {
             val step = member.step ?: return emptyList()
 
-            @Suppress("UNCHECKED_CAST")
-            val typed = payload as P
+            val typed = typed(payload)
             // The context a compensation gets is built from the SAGA AS STORED, so `recorded()`
             // answers with what this member wrote when it ran — or null, which is what a step that
             // never ran looks like from inside its own undo.
@@ -759,7 +659,7 @@ public class PetichEngine(
     ) : PetichCheckContext,
         PetichStepContext {
         private var enriched: EnrichedPayload? = null
-        private var decided: InterceptorResult? = null
+        private var decided: MemberOutcome? = null
         private var written: PetichStepRecord? = null
         private val events = mutableListOf<OutboxEvent>()
         private val effects = mutableListOf<PetichSideEffect>()
@@ -791,22 +691,22 @@ public class PetichEngine(
             action: String,
             ttl: Duration?,
         ) {
-            decided = InterceptorResult.Suspend(requiredAction = action, enrichedPayload = enriched, ttl = ttl)
+            decided = MemberOutcome.Suspend(requiredAction = action, enrichedPayload = enriched, ttl = ttl)
         }
 
         override fun resuspendFor(
             action: String,
             ttl: Duration?,
         ) {
-            decided = InterceptorResult.Resuspend(requiredAction = action, enrichedPayload = enriched, ttl = ttl)
+            decided = MemberOutcome.Resuspend(requiredAction = action, enrichedPayload = enriched, ttl = ttl)
         }
 
         override fun reject(reason: String) {
-            decided = InterceptorResult.Reject(reason)
+            decided = MemberOutcome.Reject(reason)
         }
 
         override fun fail(reason: String) {
-            decided = InterceptorResult.Compensate(reason)
+            decided = MemberOutcome.Compensate(reason)
         }
 
         /**
@@ -816,17 +716,17 @@ public class PetichEngine(
          * or a fault leads to a rollback whose writes are the compensations', so anything announced
          * there belongs to the member that did the undoing rather than to this one.
          */
-        fun outcome(): InterceptorResult =
+        fun outcome(): MemberOutcome =
             when (val decision = decided) {
                 null -> {
-                    InterceptorResult.Proceed(enriched, events.toList(), effects.toList())
+                    MemberOutcome.Proceed(enriched, events.toList(), effects.toList())
                 }
 
-                is InterceptorResult.Suspend -> {
+                is MemberOutcome.Suspend -> {
                     decision.copy(sideEffects = effects.toList(), outboxEvents = events.toList())
                 }
 
-                is InterceptorResult.Resuspend -> {
+                is MemberOutcome.Resuspend -> {
                     // The same rule as Suspend, and for the same reason: a re-ask commits a write of
                     // its own, so what the member asked to have committed rides with it. Resuspend
                     // has no field for outbox events either, which is B-35's other half — an
@@ -892,43 +792,10 @@ public class PetichEngine(
         definitionFor(type)?.let { definition ->
             return cross + definition.members.filter { it.phase == phase }.map { DefinitionRun(it) }
         }
-        return cross + interceptorChainFor(phase, payload).map { InterceptorRun(it) }
-    }
-
-    /**
-     * The interceptors of one phase that apply to this payload, in the order they run — the older
-     * model's arm of [chainFor], and the one B-33 removes.
-     *
-     * **The tie-break is [PetichInterceptor.stepKey], not the order the list arrived in.** Kotlin's
-     * sort is stable, so two steps of equal priority used to run in whatever order the dependency
-     * container assembled them. Ordering by the name makes it a property of the steps themselves.
-     *
-     * Ties are still worth refusing outright, and [PetichEngineConfig.requireDistinctPriorities]
-     * does that. It cannot be checked at construction, because `supports()` takes a payload
-     * INSTANCE: two steps of one phase and equal priority for payload types that never meet are
-     * legitimate, and only here is it known whether they meet.
-     */
-    private fun interceptorChainFor(
-        phase: PetichPhase,
-        payload: PetichPayload,
-    ): List<PetichInterceptor<*>> {
-        val chain =
-            interceptors
-                .filter { it.phase == phase && it.supports(payload) }
-                .sortedWith(compareByDescending<PetichInterceptor<*>> { it.priority }.thenBy { it.stepKey })
-
-        if (config.requireDistinctPriorities) {
-            val collisions =
-                chain
-                    .groupBy { it.priority }
-                    .filterValues { it.size > 1 }
-                    .map { (priority, steps) -> "$priority: ${steps.joinToString { it.stepKey }}" }
-            require(collisions.isEmpty()) {
-                "requireDistinctPriorities is set, and $phase has steps sharing a priority for " +
-                    "${payload::class.simpleName}: ${collisions.joinToString("; ")}"
-            }
-        }
-        return chain
+        // NO FALLBACK ANY MORE. A saga whose type has no definition used to walk the interceptor
+        // list; there is no list, so it walks nothing — and `doProcess` refuses a saga no member of
+        // any phase applies to rather than completing it (#78), which is what that refusal is for.
+        return cross
     }
 
     /**
@@ -1053,9 +920,9 @@ public class PetichEngine(
         // a distributed system, and the engine sees exactly what it sees when the call never landed.
         // It cannot tell the two apart, so it rolls back the one that might have happened — and the
         // price is paid in the contract instead: compensate() may be called for a step that did not
-        // happen (see PetichInterceptor.compensate).
+        // happen (see PetichStep.compensate).
         //
-        // NOT set for InterceptorResult.Compensate. That is a reported outcome — the step is alive
+        // NOT set for MemberOutcome.Compensate. That is a reported outcome — the step is alive
         // and said what it wants; a step that did work and then decided to roll back has its own
         // body to undo it in. Ambiguity is what this flag is about, and there is none there.
         //
@@ -1571,7 +1438,7 @@ public class PetichEngine(
                                     continue
                                 }
 
-                                is InterceptorResult.Reject -> {
+                                is MemberOutcome.Reject -> {
                                     // A refusal UNDOES WHAT RAN, and still ends REJECTED.
                                     //
                                     // It used to write REJECTED and stop, compensating nothing —
@@ -1596,7 +1463,7 @@ public class PetichEngine(
                                     break
                                 }
 
-                                is InterceptorResult.Compensate -> {
+                                is MemberOutcome.Compensate -> {
                                     result =
                                         triggerCompensation(
                                             currentPetich,
@@ -1605,7 +1472,7 @@ public class PetichEngine(
                                     break
                                 }
 
-                                is InterceptorResult.Suspend -> {
+                                is MemberOutcome.Suspend -> {
                                     metrics.onSuspend(currentPetich.type)
                                     val deadline = suspendDeadline(interceptorResult.ttl)
                                     val updated =
@@ -1631,7 +1498,7 @@ public class PetichEngine(
                                     break
                                 }
 
-                                is InterceptorResult.Resuspend -> {
+                                is MemberOutcome.Resuspend -> {
                                     metrics.onSuspend(currentPetich.type)
                                     // A bug found while integrating a wizard on top of the engine:
                                     // capturing `val updated` and using it below. Previously — and
@@ -1667,7 +1534,7 @@ public class PetichEngine(
                                     break
                                 }
 
-                                is InterceptorResult.Proceed -> {
+                                is MemberOutcome.Proceed -> {
                                     val moved =
                                         currentPetich.copy(
                                             currentInterceptorIndex = index + 1,
