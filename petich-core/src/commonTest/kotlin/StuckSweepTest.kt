@@ -17,6 +17,19 @@ class StuckSweepTest {
         val sku: String,
     ) : PetichPayload()
 
+    /** A member that exists only so a definition is not empty; it is never reached. */
+    class Inert : PetichStep<OrderPayload> {
+        override suspend fun execute(
+            ctx: PetichStepContext,
+            payload: OrderPayload,
+        ) = Unit
+
+        override suspend fun compensate(
+            ctx: PetichStepContext,
+            payload: OrderPayload,
+        ) = Unit
+    }
+
     class Step(
         private val log: MutableList<String>,
     ) : PetichInterceptor<OrderPayload> {
@@ -110,7 +123,7 @@ class StuckSweepTest {
         val engine = PetichEngine(listOf(Step(log)), repository, clock = clock)
         return SuspendedPetichSweeper(
             repository = repository,
-            engineFor = { engine },
+            engine = engine,
             clock = clock,
             stuckAfter = stuckAfter,
             onRevived = { revived.add(it) },
@@ -186,10 +199,18 @@ class StuckSweepTest {
             val swept =
                 SuspendedPetichSweeper(
                     repository = repository,
-                    engineFor = { null },
+                    // AN ENGINE THAT KNOWS A DIFFERENT TYPE. There is no mapping to leave an
+                    // entry out of any more, so a saga is unowned exactly when its type has no
+                    // definition here (B-31); the saga below is an `order`.
+                    engine =
+                        PetichEngine(
+                            repository = repository,
+                            clock = clock,
+                            definitions = listOf(petich<OrderPayload>("something-else") { step("x", Inert()) }),
+                        ),
                     clock = clock,
                     stuckAfter = 5.minutes,
-                    onUnowned = { unowned.add(it.id) },
+                    onUnknownType = { unowned.add(it.id) },
                 ).sweepStuck()
 
             assertEquals(0, swept)

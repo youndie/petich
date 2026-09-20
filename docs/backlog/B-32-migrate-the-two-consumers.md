@@ -181,3 +181,11 @@ uncommitted work on `build/take-sborka-0.4.0.84` (`gradle/libs.versions.toml`, `
 This is not a shortage of time and a fifth attempt will not change it — **it needs a person to land or
 drop that work.** Everything else in this item is finished, so what remains of B-32 is shashki and
 nothing else.
+
+## Handover from B-31 — 2026-09-20
+
+**konekt's sweeper and timer-sink wiring must lose `engineFor`.** B-31 replaced it with one engine
+that answers `owns` for itself, and renamed `onUnowned` to `onUnknownType`. konekt is edited only in
+this item's iterations, so the change waits here rather than being made from B-31's branch. It is
+also where konekt's two engines over one saga table — the workaround its own composition root
+describes — stop being necessary.

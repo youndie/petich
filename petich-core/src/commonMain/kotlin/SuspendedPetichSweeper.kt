@@ -62,14 +62,12 @@ public interface ExpiringPetichRepository : PetichRepository {
 // anywhere and will be picked up by the next pass, so "log and carry on" loses nothing here.
 public class SuspendedPetichSweeper(
     private val repository: ExpiringPetichRepository,
-    // Which engine owns the petich. Not one engine for everything: an application usually keeps
-    // several, sharing ONE petich storage but each with its own interceptor list. Rolling back a
-    // saga of one type with another type's engine would run the wrong compensations, or none, and
-    // the expired-petiches query is common to all of them.
-    //
-    // null means "no owner": such a petich is skipped (see onUnowned) rather than rolled back at
-    // random.
-    private val engineFor: (Petich) -> PetichEngine?,
+    // ONE ENGINE, and it answers for itself which sagas are its (B-31). This was
+    // `engineFor: (Petich) -> PetichEngine?` — a mapping the application kept because several
+    // engines shared one saga store and only it knew which owned which. `PetichDefinition` is the
+    // value that says what an "order" saga is, so `engine.owns` answers the question the lambda
+    // was asked, and there is no mapping left to forget an entry in.
+    private val engine: PetichEngine,
     private val clock: PetichClock,
     private val pollInterval: Duration = 30.seconds,
     private val batchSize: Int = 50,
@@ -95,10 +93,24 @@ public class SuspendedPetichSweeper(
     // client ("the confirmation window has passed") or to record a metric. A failure in the
     // handler does not undo the rollback: by that point it has already happened.
     private val onExpired: (String) -> Unit = {},
-    // An expired petich whose type has no engine. Skipping it silently is not acceptable: it
-    // means someone introduced a new petich type and forgot to register it here, and such petiches
-    // will pile up expired forever.
-    private val onUnowned: (Petich) -> Unit = {},
+    /**
+     * A row whose type this engine has no definition for — and the cause has changed, which is why
+     * the name did (B-31).
+     *
+     * It used to mean "somebody introduced a saga type and forgot to register an engine for it".
+     * That cause is gone: there is one engine, and a type with no definition cannot be **started**
+     * either — `process` refuses it by name, at the caller, the moment anyone tries. What is left
+     * is the case the old name never described: a row written when a definition existed and read
+     * after it stopped existing, which is a rollback or a decommission rather than a bug.
+     *
+     * **Skipped rather than failed, deliberately.** The engine's own answer to an unknown type is
+     * to end the saga `FAILED`, which is right on the forward path and wrong here: a deploy that
+     * drops a definition would have this worker walk every expired saga of that type and end them
+     * all, irreversibly, for a reason that is fixed by deploying again. Skipping leaves them
+     * exactly where they were. This callback is how anybody finds out, and a non-zero rate means a
+     * definition is missing rather than a saga is broken.
+     */
+    private val onUnknownType: (Petich) -> Unit = {},
     // Called for every saga picked up after the process that was running it died. Worth a log line
     // and a counter: a rate that is normally zero and suddenly is not says that instances are
     // dying mid-saga, which nothing else in this library is in a position to notice.
@@ -160,9 +172,8 @@ public class SuspendedPetichSweeper(
         for (status in listOf(PetichStatus.PROCESSING, PetichStatus.COMPENSATING)) {
             repository.findStuck(status, threshold, batchSize).forEach { petich ->
                 try {
-                    val engine = engineFor(petich)
-                    if (engine == null) {
-                        onUnowned(petich)
+                    if (!engine.owns(petich)) {
+                        onUnknownType(petich)
                         return@forEach
                     }
 
@@ -206,9 +217,8 @@ public class SuspendedPetichSweeper(
         var expired = 0
         repository.findExpired(clock.nowEpochMs(), batchSize).forEach { petich ->
             try {
-                val engine = engineFor(petich)
-                if (engine == null) {
-                    onUnowned(petich)
+                if (!engine.owns(petich)) {
+                    onUnknownType(petich)
                     return@forEach
                 }
                 // The engine makes the decision under its own lock: by now the client may have

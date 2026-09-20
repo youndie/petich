@@ -490,12 +490,38 @@ public class PetichEngine(
      * had already reduced "which members run in this phase" to a single function.
      */
     private val definitions: List<PetichDefinition<*>> = emptyList(),
+    /**
+     * Members that apply to every saga, declared once — limits, audit, anti-fraud (B-30).
+     *
+     * Last, and after [definitions], so that every positional call written before this still
+     * compiles. They are not a second chain: [chainFor] puts them in front of the declared members
+     * of their phase, which is why [describeChain] shows them inline and the fingerprint covers
+     * them without either having to know they exist.
+     */
+    private val globals: List<PetichGlobal> = emptyList(),
 ) {
     init {
         // Deliberately a construction failure and not a warning. A warning about events that will
         // be dropped is read, if at all, in the logs of a process that is already serving traffic,
         // and it competes with everything else printed at startup; the whole difficulty with this
         // mistake is that nothing downstream of it looks wrong.
+        // ONE NAMESPACE FOR EVERY KEY IN A CHAIN, refused at construction rather than discovered
+        // from a record that overwrote another. A key is the member's identity in the saga's row —
+        // `stepRecords` is keyed by it and the fingerprint is built from it — so two members
+        // sharing one in the same chain make both ambiguous, and a global shares its chain with
+        // every definition there is.
+        globals.groupBy { it.key }.forEach { (key, sharing) ->
+            require(sharing.size == 1) { "two globals are declared under the key `$key`" }
+        }
+        globals.forEach { global ->
+            definitions.forEach { definition ->
+                require(definition.members.none { it.key == global.key }) {
+                    "the global `${global.key}` collides with a member of `${definition.type}`: a key " +
+                        "is what identifies a member in the saga's row, and a chain cannot hold two"
+                }
+            }
+        }
+
         require(!config.requireSideEffects || repository is SideEffectAwarePetichRepository) {
             "requireSideEffects is set, but ${repository::class.simpleName} is not a " +
                 "SideEffectAwarePetichRepository: work an interceptor asks to have committed with " +
@@ -620,6 +646,40 @@ public class PetichEngine(
             petich: Petich,
             payload: PetichPayload,
         ): List<OutboxEvent> = interceptor.tryCompensate(petich, payload)
+
+        override fun lastRecord(): PetichStepRecord? = null
+    }
+
+    /**
+     * A member that applies to every saga, run the same way a declared check is.
+     *
+     * No cast, unlike [DefinitionRun]: a global's check is declared over `PetichPayload` because it
+     * has to accept whatever saga it lands in, so there is no narrower type to assert.
+     */
+    private class GlobalRun(
+        private val global: PetichGlobal,
+    ) : PetichMemberRun {
+        override val stepKey: String get() = global.key
+
+        // NAMED AS A GLOBAL WHERE THE CHAIN IS READ. The point of rendering these inline is that a
+        // reader of one saga sees what will run; the point of saying "global" is that they can tell
+        // which lines are not in the definition they are holding.
+        override val label: String get() = "${global.key} (global check)"
+
+        override suspend fun run(
+            petich: Petich,
+            payload: PetichPayload,
+        ): InterceptorResult {
+            val context = RecordingContext(petich, global.key)
+            global.check.check(context, payload)
+            return context.outcome()
+        }
+
+        /** Nothing, and that is the type's whole argument (D9): a global leaves no rollback behind. */
+        override suspend fun undo(
+            petich: Petich,
+            payload: PetichPayload,
+        ): List<OutboxEvent> = emptyList()
 
         override fun lastRecord(): PetichStepRecord? = null
     }
@@ -781,6 +841,24 @@ public class PetichEngine(
         fun discarded(): Int = discardedAnnouncements
     }
 
+    /**
+     * Whether this engine has a definition for [petich]'s type — the question an application used
+     * to answer with a mapping of its own (B-31).
+     *
+     * `SuspendedPetichSweeper` and `SagaTimerSink` took an `engineFor: (Petich) -> PetichEngine?`
+     * because several engines shared one saga store and only the application knew which owned
+     * which. `Petich.type` carried that identity all along; what was missing was a value on the
+     * other side of it, and `PetichDefinition` is now that value. The mapping was a thing to
+     * maintain, and the way it failed was silence: a type introduced and not registered produced
+     * sagas that piled up expired forever, unless somebody had wired the optional callback.
+     *
+     * **An engine with no definitions owns everything it is given.** That is the interceptor
+     * model, where the engine is a fixed list and the application's lambda was the only thing that
+     * ever decided ownership — so this answers exactly as before for it, and B-33 removes the
+     * branch along with the model.
+     */
+    public fun owns(petich: Petich): Boolean = definitions.isEmpty() || definitionFor(petich.type) != null
+
     private fun definitionFor(type: String?): PetichDefinition<*>? =
         type?.let { wanted -> definitions.firstOrNull { it.type == wanted } }
 
@@ -789,10 +867,15 @@ public class PetichEngine(
         payload: PetichPayload,
         type: String? = null,
     ): List<PetichMemberRun> {
+        // IN FRONT, AND THROUGH THE SAME SEAM as everything else. Every question anybody asks about
+        // a chain — what runs, in what order, what the fingerprint covers, what a mismatch prints —
+        // is answered by this one function, so a global added here is inline everywhere by
+        // construction rather than by four places remembering to include it (B-30).
+        val cross = globals.filter { it.phase == phase }.map { GlobalRun(it) }
         definitionFor(type)?.let { definition ->
-            return definition.members.filter { it.phase == phase }.map { DefinitionRun(it) }
+            return cross + definition.members.filter { it.phase == phase }.map { DefinitionRun(it) }
         }
-        return interceptorChainFor(phase, payload).map { InterceptorRun(it) }
+        return cross + interceptorChainFor(phase, payload).map { InterceptorRun(it) }
     }
 
     /**
@@ -842,9 +925,18 @@ public class PetichEngine(
      * Print it at startup, or snapshot it in a test: then a chain that changed shows up in a diff
      * rather than in a saga.
      */
-    public fun describeChain(payload: PetichPayload): String =
+    public fun describeChain(
+        payload: PetichPayload,
+        type: String? = null,
+    ): String =
         PetichPhase.entries.joinToString("\n") { phase ->
-            val steps = chainFor(phase, payload)
+            // WITH THE TYPE, which it never had and could not work without. `chainFor` resolves a
+            // definition BY TYPE, so every call that omitted it described the interceptor chain —
+            // for a consumer on definitions, the empty one. The diagnostic that exists to say "the
+            // chain here is" printed five dashes to exactly the people this stage is built for
+            // (B-30). Defaulted, so every existing call still compiles and the interceptor model
+            // keeps the behaviour it had.
+            val steps = chainFor(phase, payload, type)
             val body = if (steps.isEmpty()) "-" else steps.joinToString(" -> ") { it.label }
             "$phase: $body"
         }
@@ -917,7 +1009,7 @@ public class PetichEngine(
             "the interceptor chain changed under saga ${petich.id}: it recorded $recorded for the steps " +
                 "it had run and this process computes $current, so ${petich.currentPhase} index " +
                 "${petich.currentInterceptorIndex} no longer means the same step. Nothing was run. " +
-                "The chain here is:\n${describeChain(petich.payload)}",
+                "The chain here is:\n${describeChain(petich.payload, petich.type)}",
         )
     }
 
