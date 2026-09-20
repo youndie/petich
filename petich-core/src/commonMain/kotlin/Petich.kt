@@ -794,6 +794,13 @@ public class PetichEngine(
             decided = InterceptorResult.Suspend(requiredAction = action, enrichedPayload = enriched, ttl = ttl)
         }
 
+        override fun resuspendFor(
+            action: String,
+            ttl: Duration?,
+        ) {
+            decided = InterceptorResult.Resuspend(requiredAction = action, enrichedPayload = enriched, ttl = ttl)
+        }
+
         override fun reject(reason: String) {
             decided = InterceptorResult.Reject(reason)
         }
@@ -817,6 +824,16 @@ public class PetichEngine(
 
                 is InterceptorResult.Suspend -> {
                     decision.copy(sideEffects = effects.toList(), outboxEvents = events.toList())
+                }
+
+                is InterceptorResult.Resuspend -> {
+                    // The same rule as Suspend, and for the same reason: a re-ask commits a write of
+                    // its own, so what the member asked to have committed rides with it. Resuspend
+                    // has no field for outbox events either, which is B-35's other half — an
+                    // announcement from a member that then re-asks is still dropped, and still
+                    // counted rather than silent.
+                    if (events.isNotEmpty()) discardedAnnouncements = events.size
+                    decision.copy(sideEffects = effects.toList())
                 }
 
                 else -> {
