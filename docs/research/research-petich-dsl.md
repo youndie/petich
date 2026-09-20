@@ -221,6 +221,22 @@ then throws is the ambiguous failure B-18 exists for — its own compensation is
 read only after `execute` returns is a record that is never there when it is most needed. It is read
 in a `finally` and folded in by the failure paths as well as the ordinary one.
 
+**Correction found while implementing B-54, and it is the bullet about price that was too quiet.**
+"Storage changes are not free here" reads as a cost to weigh. It is not: it is a **second edit that
+has to happen**, and the way it fails is silence. B-53 added `compensatingFromIndex` to the model,
+wrote it at both parking sites, read it at expiry and shipped a green test — while neither store had
+the column. Every field the engine keeps about a saga in flight needs four edits (`PetichTable`,
+`ExposedPetichRepository`, the native store's three SQL sites, `Schema.kt`) and a fifth to make the
+omission audible: a **non-default value in the conformance corpus**, because a field left at its
+default cannot tell a store that writes the column from one that has never heard of it. The tests
+that said B-53 worked used the in-memory repository, which keeps the `Petich` object whole and so
+answers every question about persistence with a yes.
+
+The general shape, and it is not about storage: **a test whose double is more generous than
+production is a test of the double.** The same failure had already been found in shashki (B-92), by
+a mock that accepted a request production would refuse. Nothing in the model layer can catch it —
+only a check that runs against the real thing, which is what the corpus is for.
+
 ### D5. A definition is a value, and the engine keeps a registry of them by type
 
 Decision: `petichDefinition<P>("order") { … }` returns a `PetichDefinition<P>`; the engine holds definitions

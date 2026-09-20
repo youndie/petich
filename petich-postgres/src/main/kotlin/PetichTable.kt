@@ -38,6 +38,20 @@ public class PetichTable(
     // table at all. petich ships no migrations, so the generated statement is what a consumer runs.
     public val compensationAttempts: Column<Int> = integer("compensation_attempts").default(0)
 
+    // WHERE A ROLLBACK RESTARTS, and WHAT IT WILL END AS (B-54).
+    //
+    // Neither was stored until now, and the first was believed to be: `triggerCompensation`'s own
+    // comment said a resumed rollback never takes its fallback "because its value was persisted by
+    // the loop further down". No column ever held it, so every resumed rollback re-derived its
+    // starting point — and after B-53, which writes that point when a member parks, the write went
+    // nowhere at all.
+    //
+    // Nullable and defaulted to null, so a row written before these columns existed keeps the old
+    // behaviour rather than having a better one guessed for it.
+    public val compensatingFromIndex: Column<Int?> = integer("compensating_from_index").nullable()
+
+    public val compensatingTowards: Column<String?> = varchar("compensating_towards", 32).nullable()
+
     // When this row was last written, from the clock the store was given. Not part of Petich: the
     // engine has no use for it and a domain field would have to be carried, compared and kept in
     // step by every caller — exactly as outbox_events.created_at is the store's business and not

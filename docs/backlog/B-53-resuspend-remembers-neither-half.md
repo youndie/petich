@@ -73,3 +73,17 @@ test that could not have caught it an hour ago.
 
 **Verification.** Full `build --rerun-tasks` on the Linux box, exit code read rather than piped: 477
 tests across `jvmTest`, `linuxX64Test` and `test`.
+
+## Iteration 2 — 2026-09-21, from B-54
+
+**The fix above did not survive a real store, and the tests that said it did could not have seen
+it.** `compensatingFromIndex` was added to the model and written at both parking sites, but neither
+`PetichTable` nor the native store had the column, so every value this item writes was dropped at
+the first write and every resumed rollback read `null` — the exact `?:` the comment in
+`triggerCompensation` claimed was never taken. `ParkedCascadeIsUndoneTest` passed because its
+repository keeps the `Petich` object whole.
+
+Corrected in [B-54](B-54-what-a-rollback-will-end-as.md): both stores write and read the column, and
+`PetichStoreConformance` carries a **non-default** value for it, so a store that forgets it fails by
+name. Nothing here needed changing — this item's logic was right; what it was missing was somewhere
+to put the number.

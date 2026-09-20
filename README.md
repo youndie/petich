@@ -130,6 +130,8 @@ that difference is stated here, column by column, so it can be copied into your 
 | `updated_at` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0;` |
 | `chain_fingerprint` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS chain_fingerprint VARCHAR(64);` |
 | `step_records` | 0.4.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS step_records TEXT NOT NULL DEFAULT '{}';` |
+| `compensating_from_index` | 0.4.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS compensating_from_index INT;` |
+| `compensating_towards` | 0.4.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS compensating_towards VARCHAR(32);` |
 
 `current_interceptor_index` still says *interceptor*, and the model it was named for is gone. The
 column keeps the name on purpose: renaming it is a migration every consumer has to run, and a table
@@ -150,6 +152,13 @@ by `petichPostgresSchema()`, and it is green: Exposed writes and reads a `json()
 disagrees with its own table declaration, which a consumer's tooling will keep offering to fix — which
 is how it was found. The two are not being unified: changing a shipped column's type rewrites the
 busiest table in a consumer's system to buy tidiness.
+
+The last two are what a rollback in progress knows about itself: where to carry on undoing from, and
+what the saga is to be called once it is undone. Both are nullable and both are empty for a saga that
+is not rolling back, so a schema without them loses nothing until a process dies mid-rollback — at
+which point the pass that picks the saga up starts from the wrong step and finishes a refusal as a
+system failure. A saga interrupted mid-rollback under the old schema and resumed under the new one
+still carries nothing in these columns, and is finished the old way.
 
 Every one of the 0.3.0 columns carries a default or is nullable, so each `ALTER` is a catalogue
 change rather than a table rewrite — and none of them stops a saga written by the previous version

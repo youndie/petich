@@ -52,6 +52,12 @@ public fun petichPostgresSchema(
             -- sagas: petich ships no migrations, and a NOT NULL column with no default cannot be
             -- added to a non-empty table at all.
             compensation_attempts INT NOT NULL DEFAULT 0,
+            -- Where a rollback restarts, and what it will end as (B-54). Neither was stored until
+            -- now, and the first was believed to be — so every resumed rollback re-derived its
+            -- starting point, and an interrupted refusal was finished as a fault. Nullable, so a
+            -- row written before these columns keeps the old behaviour rather than a guessed one.
+            compensating_from_index INT,
+            compensating_towards VARCHAR(32),
             -- When the row was last written, from the clock the store was given. DEFAULT 0 so the
             -- column can be added by ALTER to a table that already holds sagas; every write from
             -- this store sets it.
