@@ -1,7 +1,7 @@
 ---
 id: B-43
 title: "The guard the README recommends is blind in the case it exists for"
-status: open
+status: wip
 priority: P1
 size: M
 stage: stage-10-review
