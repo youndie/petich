@@ -1,7 +1,7 @@
 ---
 id: B-54
 title: "A resumed rollback forgets it was a refusal, and can drag a terminal saga back"
-status: open
+status: wip
 priority: P1
 size: S
 stage: stage-11-review
