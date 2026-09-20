@@ -146,6 +146,28 @@ public interface PetichEngineMetrics {
     ): Unit = Unit
 
     /**
+     * A call into the application's own code failed and the engine carried on regardless (B-52).
+     *
+     * [callback] names which one — `compensationFailureHandler.handle`,
+     * `announcementFailureHandler.failed`, and so on. Bounded, because it is a short list written
+     * here rather than anything an application supplies.
+     *
+     * **A non-zero rate here means a handler is broken, not that a saga is.** The engine used to let
+     * these decide outcomes: a throw from `handle` skipped the attempt's own bookkeeping, so
+     * `maxCompensationAttempts` stopped bounding anything; a throw from `failed` rolled a finished
+     * saga back. Both are impossible now, and this is what is left to notice that the handler needs
+     * fixing.
+     *
+     * Metrics themselves are guarded too and report nowhere when they fail: there is nothing left to
+     * report to, and a second channel for it would have the same problem.
+     */
+    public fun onHandlerFailed(
+        type: String,
+        callback: String,
+        reason: String,
+    ): Unit = Unit
+
+    /**
      * An announcement threw, and the saga carried on (B-41).
      *
      * **Read it as a delivery problem, never as a saga problem.** By the time an announcement runs

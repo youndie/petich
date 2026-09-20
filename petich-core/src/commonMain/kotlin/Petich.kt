@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.coroutines.cancellation.CancellationException
@@ -362,7 +363,7 @@ public const val EXPIRED_REASON: String = "Petich expired while waiting for the 
 
 public class PetichEngine(
     private val repository: PetichRepository,
-    private val compensationFailureHandler: CompensationFailureHandler = NoOpCompensationFailureHandler(),
+    compensationFailureHandler: CompensationFailureHandler = NoOpCompensationFailureHandler(),
     private val config: PetichEngineConfig = PetichEngineConfig(),
     // Needed only for the deadlines of suspended petiches. The default throws: the clock is
     // consulted exactly when a TTL is actually configured, so existing code that never enabled a
@@ -370,7 +371,7 @@ public class PetichEngine(
     private val clock: PetichClock = PetichClock { error("PetichClock is not set, yet a suspend TTL is enabled") },
     // Counters. A no-op by default: existing code pays nothing and changes nothing (see
     // PetichEngineMetrics on why they exist at all).
-    private val metrics: PetichEngineMetrics = PetichEngineMetrics.NoOp,
+    metrics: PetichEngineMetrics = PetichEngineMetrics.NoOp,
     /**
      * Sagas described as definitions, by type. Last in the list so that every existing positional
      * call still compiles: the two models live side by side until B-33 removes the older one.
@@ -394,8 +395,16 @@ public class PetichEngine(
      *
      * Last, and defaulted, so every positional call written before this still compiles.
      */
-    private val announcementFailureHandler: AnnouncementFailureHandler = NoOpAnnouncementFailureHandler(),
+    announcementFailureHandler: AnnouncementFailureHandler = NoOpAnnouncementFailureHandler(),
 ) {
+    // WRAPPED ONCE, SO NO CALL SITE HAS TO REMEMBER (B-52). Everything below this line calls the
+    // guarded copies; the constructor parameters are the application's and are not used directly.
+    private val metrics: PetichEngineMetrics = GuardedMetrics(metrics)
+    private val compensationFailureHandler: CompensationFailureHandler =
+        GuardedCompensationFailureHandler(compensationFailureHandler, this.metrics)
+    private val announcementFailureHandler: AnnouncementFailureHandler =
+        GuardedAnnouncementFailureHandler(announcementFailureHandler, this.metrics)
+
     init {
         // Deliberately a construction failure and not a warning. A warning about events that will
         // be dropped is read, if at all, in the logs of a process that is already serving traffic,
@@ -504,6 +513,18 @@ public class PetichEngine(
         val stepKey: String
         val label: String
 
+        /**
+         * Whether [run] applies its own deadline, so the phase loop must not apply one (B-52).
+         *
+         * **An announcement is the only member that does**, and the reason is that a deadline
+         * imposed from outside cannot be caught: `withTimeout` completes the coroutine
+         * exceptionally, and a `TimeoutCancellationException` is a `CancellationException`, so
+         * everything downstream is obliged to let it through. An announcement that HUNG therefore
+         * rolled a finished saga back, while B-41 had made one that THREW harmless. Catching the
+         * timeout inside the member does not help; the outer bound has to not be there.
+         */
+        val boundsItsOwnTime: Boolean get() = false
+
         suspend fun run(
             petich: Petich,
             payload: PetichPayload,
@@ -573,7 +594,11 @@ public class PetichEngine(
         private val petichType: String,
         private val metrics: PetichEngineMetrics,
         private val onAnnouncementFailure: AnnouncementFailureHandler,
+        /** This member's phase deadline, which an announcement applies to itself (B-52). */
+        private val timeoutMs: Long,
     ) : PetichMemberRun {
+        override val boundsItsOwnTime: Boolean get() = member.announcement != null
+
         private var recorded: PetichStepRecord? = null
         private var discarded = 0
 
@@ -669,24 +694,31 @@ public class PetichEngine(
             context: PetichAnnouncementContext,
             typed: P,
         ) {
-            try {
-                announcement.announce(context, typed)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                val reason = e.message ?: e::class.simpleName ?: "unknown"
-                metrics.onAnnouncementFailed(petichType, member.key, reason)
-                // AND THE FACT LEAVES THE DATABASE, if the application says what it should say
-                // (B-49). Emitted through the same context the member itself used, so it rides with
-                // this member's own commit rather than a write of its own: one transaction, no extra
-                // write, and every rule an outbox event already follows.
-                //
-                // AFTER the counter, and after whatever the member emitted before it threw, because
-                // the order in the outbox is the order things happened.
-                onAnnouncementFailure
-                    .failed(context.petich, member.key, reason)
-                    .forEach(context::emit)
-            }
+            val reason =
+                try {
+                    // ITS OWN DEADLINE, AND THAT IS THE POINT (B-52). `withTimeout` from the phase
+                    // loop cancels this coroutine, and a cancelled coroutine cannot report anything:
+                    // the handler below would not run, and the TimeoutCancellationException would
+                    // reach the phase loop and roll a finished saga back. `withTimeoutOrNull` ends
+                    // the body and RETURNS, so everything after this line still happens.
+                    val finished = withTimeoutOrNull(timeoutMs) { announcement.announce(context, typed) }
+                    if (finished == null) "timed out after ${timeoutMs}ms" else return
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    e.message ?: e::class.simpleName ?: "unknown"
+                }
+            metrics.onAnnouncementFailed(petichType, member.key, reason)
+            // AND THE FACT LEAVES THE DATABASE, if the application says what it should say
+            // (B-49). Emitted through the same context the member itself used, so it rides with
+            // this member's own commit rather than a write of its own: one transaction, no extra
+            // write, and every rule an outbox event already follows.
+            //
+            // AFTER the counter, and after whatever the member emitted before it threw, because
+            // the order in the outbox is the order things happened.
+            onAnnouncementFailure
+                .failed(context.petich, member.key, reason)
+                .forEach(context::emit)
         }
 
         override suspend fun undo(
@@ -742,7 +774,15 @@ public class PetichEngine(
             return cross +
                 definition.members
                     .filter { it.phase == phase }
-                    .map { DefinitionRun(it, definition.type, metrics, announcementFailureHandler) }
+                    .map {
+                        DefinitionRun(
+                            it,
+                            definition.type,
+                            metrics,
+                            announcementFailureHandler,
+                            config.timeoutMs(phase),
+                        )
+                    }
         }
         // NO FALLBACK ANY MORE. A saga whose type has no definition used to walk the interceptor
         // list; there is no list, so it walks nothing — and `doProcess` refuses a saga no member of
@@ -1380,11 +1420,20 @@ public class PetichEngine(
 
                             val interceptorResult =
                                 try {
-                                    withTimeout(config.timeoutMs(phase)) {
+                                    if (interceptor.boundsItsOwnTime) {
+                                        // No outer deadline: this member's own is catchable and an
+                                        // imposed one is not (B-52).
                                         interceptor.run(
                                             petich = currentPetich,
                                             payload = currentPetich.payload,
                                         )
+                                    } else {
+                                        withTimeout(config.timeoutMs(phase)) {
+                                            interceptor.run(
+                                                petich = currentPetich,
+                                                payload = currentPetich.payload,
+                                            )
+                                        }
                                     }
                                 } catch (e: TimeoutCancellationException) {
                                     currentPetich = withRecordOf(interceptor, currentPetich)
