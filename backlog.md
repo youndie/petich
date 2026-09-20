@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-55](docs/backlog/B-55-the-sweeper-counts-a-refusal-as-a-rescue.md) `[ ]` | The sweeper counts a refusal as a rescue, and one failure blocks both queues | P2 | S | - |
+| [B-55](docs/backlog/B-55-the-sweeper-counts-a-refusal-as-a-rescue.md) `[~]` | The sweeper counts a refusal as a rescue, and one failure blocks both queues | P2 | S | - |
 | [B-57](docs/backlog/B-57-the-constructor-tail-and-two-leaks.md) `[ ]` | The engine's constructor grows a tail, and a reason string reaches the outbox | P2 | S | - |
 | [B-56](docs/backlog/B-56-d14-is-wrong-about-the-stuck-queue.md) `[ ]` | D14 says nothing is written, and on the stuck queue something is | P3 | S | - |
 

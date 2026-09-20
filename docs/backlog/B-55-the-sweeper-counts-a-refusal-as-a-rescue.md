@@ -1,7 +1,7 @@
 ---
 id: B-55
 title: "The sweeper counts a refusal as a rescue, and one failure blocks both queues"
-status: open
+status: wip
 priority: P2
 size: S
 stage: stage-11-review
