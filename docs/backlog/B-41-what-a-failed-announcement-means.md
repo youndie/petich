@@ -1,7 +1,7 @@
 ---
 id: B-41
 title: "announce takes a full step, and its failure has no defensible meaning"
-status: open
+status: wip
 priority: P2
 size: M
 stage: stage-10-review

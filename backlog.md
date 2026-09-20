@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-41](docs/backlog/B-41-what-a-failed-announcement-means.md) `[ ]` | announce takes a full step, and its failure has no defensible meaning | P2 | M | - |
+| [B-41](docs/backlog/B-41-what-a-failed-announcement-means.md) `[~]` | announce takes a full step, and its failure has no defensible meaning | P2 | M | - |
 | [B-42](docs/backlog/B-42-the-builder-shares-a-name-with-the-instance.md) `[ ]` | petich<T>() returns a definition and Petich is an instance | P2 | S | - |
 
 ## Closed (40)
