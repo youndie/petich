@@ -1220,10 +1220,56 @@ public class PetichEngine(
         throw OptimisticLockException()
     }
 
-    // The emergency transition to a terminal status. A separate method because this used to be a
-    // direct repository.update(...) with the result discarded: on a version conflict the write was
-    // silently lost, the client got a SystemFailure, and the petich stayed in an intermediate
-    // status forever with nobody to pick it up.
+    /**
+     * A fault thrown OUTSIDE a member's own call, which until B-51 wrote `FAILED` and undid nothing.
+     *
+     * Everything that is not a member's own exception lands here: a transient storage fault on the
+     * write that records a member's progress, the write that parks a suspension, an application's
+     * metrics implementation. **The member itself succeeded in every one of those cases** — its
+     * effect happened and only the bookkeeping failed — so `FAILED` with no rollback left a saga
+     * holding a reservation and money, in a status the stranded queue does not look at
+     * (`PROCESSING`, `COMPENSATING`) and nothing would ever pick up.
+     *
+     * `failTerminally` predates the sweeper, and its reason was exactly that: "do not leave a saga
+     * in an intermediate status, nobody will pick it up". Since B-26 somebody will, and the
+     * intermediate status is now the recoverable one while the terminal one is the trap.
+     *
+     * **No test of whether an effect has happened, deliberately.** Only a step has a `compensate`;
+     * a check has none and an announcement has none, so a rollback over a saga that has run nothing
+     * but checks walks members with nothing to undo and does nothing. The predicate would be a
+     * second thing to keep in step with the phase model for no behaviour of its own.
+     *
+     * `stepOutcomeUnknown = true` because the member at the current index ran and its position was
+     * not committed — which is exactly the ambiguity B-18 named, arriving through a different door.
+     *
+     * **And if the rollback cannot even be started, the row is left where it is.** The fault that
+     * brought us here is often the store itself, and a saga that stays `PROCESSING` is one the
+     * sweeper re-drives; a saga written `FAILED` by a process that could not reach the store anyway
+     * is one nobody re-drives. When the choice is between a recoverable lie and an unrecoverable
+     * one, neither is written.
+     */
+    private suspend fun unwind(
+        petich: Petich,
+        reason: String,
+    ): PetichResult =
+        try {
+            triggerCompensation(petich, reason, isSystemFailure = true, stepOutcomeUnknown = true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            PetichResult.SystemFailure(
+                "$reason (and the rollback could not be started: ${e.message ?: e::class.simpleName}; " +
+                    "the saga is left in ${petich.status} for the sweeper)",
+            )
+        }
+
+    // The emergency transition to a terminal status, for the one case that is still legitimate: a
+    // saga no definition applies to, which has therefore run nothing and has nothing to undo. Every
+    // other caller went to `unwind` with B-51.
+    //
+    // A separate method because this used to be a direct repository.update(...) with the result
+    // discarded: on a version conflict the write was silently lost, the client got a SystemFailure,
+    // and the petich stayed in an intermediate status forever with nobody to pick it up.
     private suspend fun failTerminally(
         petich: Petich,
         details: String,
@@ -1543,13 +1589,13 @@ public class PetichEngine(
             if (!repository.update(completed)) throw OptimisticLockException()
             return PetichResult.Success(completed)
         } catch (e: TimeoutCancellationException) {
-            return failTerminally(currentPetich, "Timeout")
+            return unwind(currentPetich, "Timeout")
         } catch (e: CancellationException) {
             throw e
         } catch (e: OptimisticLockException) {
             throw e
         } catch (e: Exception) {
-            return failTerminally(currentPetich, e.message ?: "Unknown error")
+            return unwind(currentPetich, e.message ?: "Unknown error")
         }
     }
 }

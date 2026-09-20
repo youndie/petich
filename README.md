@@ -469,6 +469,17 @@ whether the work comes back:
 step may refuse too. `fail` is the step's alone: a fault in something that has nothing to undo is an
 exception, and the engine already turns one of those into a rollback. An announcement has neither.
 
+**And the engine's own faults obey the same rule** (B-51). A fault thrown outside a member — a
+storage write that records a member's progress, an application's metrics implementation — used to
+write `FAILED` and undo nothing, which left a saga holding money in the one status the sweeper does
+not look at. It rolls back now, including the member whose effect landed while the write that
+recorded it did not. `FAILED` means what ran was undone, on every path that reaches it. The single
+exception is a saga no definition applies to: it has run nothing, so there is nothing to undo.
+
+Where the rollback cannot even be started — usually because the store is the thing that broke — the
+row is **left where it is** and the caller is told so. `PROCESSING` is what the sweeper re-drives;
+`FAILED` written by a process that could not reach the store is what nobody re-drives.
+
 Pick by what the client should be told, which is the question a member can answer about itself. A
 refusal used to compensate nothing, which was right for a validation refusing before anything had
 happened and silent theft after a member had touched the outside world — and telling those apart
