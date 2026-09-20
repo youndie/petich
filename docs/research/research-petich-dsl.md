@@ -176,6 +176,23 @@ also gives the rollback the order it should have had: released before unheld. **
 holds moved with it and both still suspend from `step`**, so waiting was never the property this
 phase guarded. D9's argument is untouched: a global is still a check, for its own reason.
 
+**A phase carries even less than the correction above assumes, and moving the consumers is what
+surfaced it.** Two of shashki's tests reconstruct a dead process by hand and assert that the next one
+does not take the money twice; with the hold in AUTHORIZATION they read as proof that a *committed
+phase boundary* protects a member that is not idempotent. It does not, and never did. The engine
+writes nothing when a phase ends — the phase loop's `copy(currentPhase = …)` is in memory only — and
+commits `currentInterceptorIndex = index + 1` after **every** member that proceeds. So the row a
+death leaves names a member, and the phase in it is simply whichever phase that member belonged to.
+
+That is worth keeping in view because it cuts both ways. It is why the move costs nothing
+operationally: both fixtures needed one number changed, from "the start of EXECUTION" to "the member
+after the one that took the money", and the guarantee they test is the same guarantee expressed in
+the units that actually carry it. It is also why the phase must mean something *statically*: it is a
+promise about what a reader may assume of the code, and it was never a promise about what the
+database holds. A design that leans on a phase at runtime is leaning on the wrong thing — which is
+the second time in this document that the phase turned out to be documentation wearing a type's
+clothes.
+
 ### D4. What a step did is recorded per step, not in the shared payload
 
 Decision: `ctx.record(value)` / `ctx.recorded<T>()`, persisted beside the step's key and readable
