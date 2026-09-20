@@ -1,7 +1,7 @@
 ---
 id: B-30
 title: "A cross-cutting check must be visible where the saga is read"
-status: wip
+status: done
 priority: P2
 size: M
 stage: stage-9-definition
@@ -33,3 +33,47 @@ in at a phase boundary is a member of the chain that is **not written where the 
 - AC: a global appears in `describeChain` for every saga it applies to, in the position it will run;
   adding one changes the fingerprint, proved by a test that resumes a saga across the change.
 - Anchors: `petich-core/src/commonMain/kotlin/Petich.kt`, `docs/research/research-petich-dsl.md`
+
+## Findings — 2026-09-20
+
+**The open question is answered: a global is a `PetichCheck` and cannot be a `PetichStep`** (research
+D9). A member that acts has to be undone, and a global's undo would run inside every saga's rollback
+at a position no saga's author wrote — the defect this stage removes, arriving from the other side.
+Stated honestly, the rule is not "a global is pure": it may act through its own ports, and what the
+type forbids is acting in a way that leaves petich owing somebody an undo. It also cannot announce,
+`emit` having moved to the step context for the same reason (B-35).
+
+**One line in `chainFor`, and that was the whole design.** Every question about a chain — what runs,
+in what order, what the fingerprint covers, what a mismatch prints — already went through that single
+function. Globals go in front of their phase's declared members there, so `describeChain` renders
+them inline and the fingerprint covers them **by construction**, not by four call sites remembering
+to. The rejected alternative, a table of globals beside each chain, is a hand-written list next to a
+growing set.
+
+**A defect found on the way, and the item could not be verified without fixing it.** `describeChain`
+took a *payload* and resolved the chain by it; a definition is resolved by *type*. Every saga on the
+definition model therefore had its **interceptor** chain described — the empty one — including inside
+the message a chain mismatch prints, whose entire job is to tell a reader what the chain is. The
+diagnostic built for this stage printed five dashes to the people the stage is for. Now defaulted
+`type` parameter; the interceptor model keeps its behaviour.
+
+**Keys are one namespace, refused at construction.** A key identifies a member in the saga's row and
+a global shares its chain with every definition, so two members under one key would overwrite each
+other's record and make the fingerprint ambiguous.
+
+**Five cases, three mutations, each firing what it should:**
+
+| what was broken | what failed |
+| --- | --- |
+| globals stop entering the definition chain | four of five |
+| `describeChain` forgets the type again | only the rendering case |
+| the key-collision guard stops guarding | only the construction case |
+
+The second is the one worth noting: it fires **alone**, so the `describeChain` repair is guarded on
+its own rather than incidentally by the tests about globals.
+
+- AC — a global appears in `describeChain` for every saga it applies to, in the position it runs:
+  covered by *a global is written into the chain where the saga is read*.
+- AC — adding one changes the fingerprint, proved by a test that resumes a saga across the change:
+  covered by *a global added before a suspended saga's position stops it rather than moving it*,
+  which suspends a saga, deploys the global into a phase already walked, and resumes.
