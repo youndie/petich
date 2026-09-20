@@ -74,6 +74,14 @@ cases of their own with the opposite assertion.
 spelled both in the engine's chain dump and in `PetichDefinition.describeChain`. Adding the
 announcement to one left the other calling every announcement a check. Both now read one `kind`.
 
+**The main build does not compile every consumer petich ships.** `./gradlew build` was green and CI
+was not: `tools/native-consumer-probe`, a Kotlin/Native program built against the *published*
+artefacts rather than against the source, still declared its announcing member as a `PetichStep`. It
+lives outside the Gradle build on purpose — that is what makes it a consumer — and the cost is that
+the only thing which compiles it is a CI step. Worth knowing before the next change to a public type:
+the local signal for that step is `python3 tools/native-consumer-probe.py <version> --expect resolve`
+against a `publishToMavenLocal`, and it takes half a minute.
+
 **Verification.** Full build on the Linux box, 413 tests across `jvmTest`, `linuxX64Test` and `test`,
 result files checked for freshness. The engine change was mutated after being committed — letting the
 announcement's exception propagate fails three of the five new cases. The consumers were built
