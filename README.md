@@ -123,6 +123,21 @@ that difference is stated here, column by column, so it can be copied into your 
 | `chain_fingerprint` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS chain_fingerprint VARCHAR(64);` |
 | `step_records` | 0.4.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS step_records TEXT NOT NULL DEFAULT '{}';` |
 
+**These statements are `petichPostgresSchema()`'s spelling, and the two stores differ on one point.**
+The native store spells every JSON-shaped column `TEXT`; `PetichTable` declares the same ones with
+Exposed's `json()`, which Postgres creates as `json`. A consumer on `petich-postgres` should write
+`JSON NOT NULL DEFAULT '{}'::json` where the `step_records` row above says `TEXT NOT NULL DEFAULT
+'{}'`, so that the column matches what its own `PetichTable` declares and its schema tooling proposes
+no further migration. `payload` and `enriched_payload` are the same difference, from 0.1.0.
+
+**Either spelling works, and that is measured rather than assumed.** `NativeSchemaCompatibilityTest`
+runs the Exposed store's entire conformance corpus — step records included — against a database built
+by `petichPostgresSchema()`, and it is green: Exposed writes and reads a `json()` column against a
+`text` one without complaint. The difference costs nothing at runtime; what it costs is a schema that
+disagrees with its own table declaration, which a consumer's tooling will keep offering to fix — which
+is how it was found. The two are not being unified: changing a shipped column's type rewrites the
+busiest table in a consumer's system to buy tidiness.
+
 Every one of the 0.3.0 columns carries a default or is nullable, so each `ALTER` is a catalogue
 change rather than a table rewrite — and none of them stops a saga written by the previous version
 from being read by this one. **Until they exist, every saga fails**: the store selects the columns by

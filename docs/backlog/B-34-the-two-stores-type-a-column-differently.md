@@ -1,7 +1,7 @@
 ---
 id: B-34
 title: "The two stores type the same column differently, and the audit cannot see it"
-status: wip
+status: done
 priority: P1
 size: S
 stage: stage-9-definition
@@ -47,3 +47,43 @@ its own table declaration.
 - A conformance test writes a saga with one store and reads it with the other against a database
   created by each schema in turn, so "both work" stops being an assumption.
 - The payload columns' divergence is recorded with a decision — changed, or kept with the reason.
+
+## Findings — 2026-09-20
+
+**The question the item was filed on has an answer, and it is no.** The mismatch does not break
+anything the store promises. `NativeSchemaCompatibilityTest` creates a database from
+`petichPostgresSchema()` — TEXT for every JSON-shaped column — and runs the Exposed store's entire
+`PetichStoreConformance` corpus against it. Green, including the rule that writes a map of step
+records and reads it back, which is the newest column and the one this item was filed about. Exposed
+writes and reads a `json()` column against a `text` one without complaint.
+
+That makes the two decisions easy and they are recorded rather than assumed:
+
+- **`step_records` is not aligned.** Aligning the newest column alone would leave `payload` and
+  `enriched_payload` on the other spelling with no rule to explain which is which — one column
+  tidied and two exceptions created. The stores keep their own spellings, consistently.
+- **`payload` and `enriched_payload` keep theirs, with the reason.** Both work; changing a shipped
+  column's type rewrites the busiest table in a consumer's system to buy tidiness. Shipped since
+  0.1.0 and never a data hazard.
+
+**What the divergence actually costs**, now stated in the README: a consumer on the Exposed store
+whose schema was built from the README's line has a column disagreeing with its own `PetichTable`
+declaration, so its tooling keeps proposing a migration. That is how konekt found it — its schema
+guard reported the DEFAULT, never the type, because Exposed's migration statements compare defaults
+and not types. The upgrade notes now say to write `json` on that store.
+
+**The audit gained the rule, not an exemption list.** `tools/schema-notes-audit.py` now reads the
+Exposed *builder* as well as the column name, and requires that a column declared `json()` is `TEXT`
+in the native schema. A list of the three known-divergent columns would have gone blind on the
+fourth; the rule states the agreement the two stores actually keep, so a new JSON column spelled
+`JSON` natively fails and a new one spelled `TEXT` passes.
+
+**Both guards were checked by mutation, and the second one alone.** Spelling `step_records` as `JSON`
+natively fires both the old README-vs-native check and the new rule — which proves nothing about the
+new rule, since the old one already caught it. Moving the README to `JSON` as well makes the two SQL
+texts agree with each other, the old check goes quiet, and the new rule fires alone. That is the
+blind spot this item was about, and it is the only mutation that demonstrates it.
+
+**The docstring says what it cannot do.** The audit compares SQL to SQL; `PetichTable` spells types
+in Kotlin and the builder name is as close to a type as the source gets without compiling it. The
+docstring now names `NativeSchemaCompatibilityTest` as what answers the question the audit cannot.

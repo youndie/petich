@@ -31,6 +31,22 @@ comparable directly.
 
 WHAT IT DOES NOT CHECK: the `since` column. Which release a column arrived in is history, and this
 script has no access to history that would not be a guess.
+
+AND WHAT IT COULD NOT SEE UNTIL B-34. `PetichTable` spells its types in Kotlin, so a three-way
+comparison of SQL text can only compare the two sources written in SQL — the native schema and the
+README — and from the Exposed table it took the column NAME and nothing else. The two stores had
+been disagreeing in that blind spot since 0.1.0: every JSON-shaped column is `json()` on the Exposed
+side and `TEXT` on the native one. A consumer found the tail of it (konekt's schema guard reported
+the DEFAULT and never mentioned the type, because Exposed's migration statements compare defaults
+and not types) and the README, which prints one line per column, was handing the native spelling to
+both.
+
+What closes it is below as a RULE rather than a list of exemptions: a column `PetichTable` declares
+with `json(` must be `TEXT` in the native schema. Stated that way, a new JSON column spelled `JSON`
+natively fails and a new one spelled `TEXT` passes, which is the actual agreement between the two
+stores. Whether that agreement is safe is not this script's question and cannot be — it is
+`NativeSchemaCompatibilityTest`, which runs the Exposed store's whole conformance corpus against a
+database built by `petichPostgresSchema()`.
 """
 import os
 import re
@@ -53,7 +69,7 @@ README = os.path.join(ROOT, "README.md")
 # missing from a file that declares it. A guard that goes partially blind names the wrong subject,
 # which is worse than one that fails: the obvious repair is to edit the document it accuses.
 EXPOSED_COLUMN = re.compile(
-    r"^\s+public val \w+: Column<.+?>\s*=\s*\w+[^(\n]*\(\"([a-z_]+)\"", re.M
+    r"^\s+public val \w+: Column<.+?>\s*=\s*(\w+)[^(\n]*\(\"([a-z_]+)\"", re.M
 )
 
 # The body of the CREATE TABLE for the sagas, up to its closing paren.
@@ -74,7 +90,11 @@ def read(path):
 
 
 def main():
-    exposed = set(EXPOSED_COLUMN.findall(read(TABLE)))
+    declared = EXPOSED_COLUMN.findall(read(TABLE))
+    exposed = set(name for _, name in declared)
+    # The Exposed builder each column was declared with, which is as close to a type as Kotlin
+    # source gets without compiling it.
+    exposed_builders = {name: builder for builder, name in declared}
 
     body = NATIVE_TABLE.search(read(SCHEMA))
     if not body:
@@ -125,6 +145,26 @@ def main():
                 "consumer following the README builds a different column".format(
                     column, declared, stated
                 )
+            )
+
+    # THE RULE THE TWO STORES ACTUALLY KEEP, checked rather than assumed. Exposed's `json()` creates
+    # a `json` column; the native schema spells every one of them `TEXT`. That disagreement is
+    # deliberate and survivable — `NativeSchemaCompatibilityTest` runs the Exposed store's whole
+    # corpus against a database the native DDL built — but it is only survivable while it stays THIS
+    # disagreement. A new JSON column spelled `JSON` in the native schema would be a third spelling
+    # nobody has run, and this is what says so.
+    for column, builder in sorted(exposed_builders.items()):
+        if builder != "json":
+            continue
+        declaration = native_declarations.get(column)
+        if declaration is None:
+            continue
+        if not declaration.upper().startswith("TEXT"):
+            problems.append(
+                "  `{0}` is `json()` in PetichTable and `{1}` in the native schema: the two stores "
+                "agree that an Exposed json() column is a native TEXT one, and this is a third "
+                "spelling. If it is deliberate, NativeSchemaCompatibilityTest is where it becomes "
+                "true rather than hoped.".format(column, declaration)
             )
 
     if problems:

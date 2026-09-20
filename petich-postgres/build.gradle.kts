@@ -36,6 +36,10 @@ dependencies {
     // currently be run, and nothing smaller than the real database answers them — an in-memory fake
     // decides for itself when a write becomes visible, which is half of what is being asked.
     testImplementation(projects.petichConformance)
+    // THE NATIVE STORE'S SCHEMA, called rather than copied (NativeSchemaCompatibilityTest). Its
+    // jvm() target exists so the corpus can run on both; this borrows it for one function that
+    // builds SQL strings and opens nothing.
+    testImplementation(projects.petichSqlx4kPostgres)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.postgres.driver)
 
