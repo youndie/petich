@@ -1,7 +1,7 @@
 ---
 id: B-47
 title: "The idempotency rule and resuspendFor contradict each other"
-status: wip
+status: done
 priority: P1
 size: S
 stage: stage-10-review
@@ -40,3 +40,41 @@ receiver answers with the first offer's result, and the refusal is silent.
   is the thing B-43 argued against when it refused to let a member build the base key itself.
 - shashki's cascade is checked against whichever is chosen, and the accident above is written down
   where the cascade is declared so the next port change does not quietly remove it.
+
+## Findings
+
+**The rule now says per member, and gives the per-call form.** `ctx.idempotencyKey(discriminator)`
+returns `"<saga id>:<member key>:<discriminator>"`. It is a helper rather than a sentence for the
+reason B-43 refused to let a member build the base key: the forward pass and the rollback have to
+spell it identically, and that argument is *stronger* here, because there are now N of them.
+
+**The half petich cannot do is stated as the member's debt.** A member that issued several sub-keys
+owes cancelling all of them, and which discriminators it used is its own knowledge — so the
+discriminator must be derivable again inside the compensation. A random value names a call nobody can
+cancel; that is why the rule asks for the candidate's id or the attempt number the member already
+keeps.
+
+**The item's own premise about shashki was wrong, and the truth is duller.** It was filed saying the
+cascade survives "by accident of the port's shape" — that `board.post(Offer(rideId, driverId, …))`
+already carries the driver. True, and not what saves it. `OfferBoard` is an `InMemoryOfferBoard` and
+`OfferTimeouts` is a map of timers: neither is remote, neither even suspends, and **the rule does not
+reach that cascade at all**, being about naming a remote effect. A near miss would have been a better
+story than the truth, which is the reason to check.
+
+So the fourth criterion is met differently than written: there is no accident to record. What is
+recorded, at the call rather than in a document, is why the rule does not apply and exactly what
+would change the day either port leaves the process — `youndie/shashki`,
+`docs/cascade-effects-are-in-process`.
+
+**The defect is kept as a live control rather than described.** `CascadeKeyTest` models the far side
+that matters — one that deduplicates — and runs the same three-candidate cascade twice. On the plain
+key, `a cascade on the plain key offers the second ride to the first driver`: two candidates asked,
+neither reached, the board still showing the first, every call having returned something plausible.
+On the discriminated key, all three. Two more cover the rollback: withdrawing only the last sub-key
+leaves the rest outstanding, withdrawing all of them leaves nothing.
+
+**Checked by mutation after the implementation was committed:** making the discriminator do nothing —
+`idempotencyKey(discriminator) = idempotencyKey` — fails three of the five. Restored, tree clean.
+
+**Verification.** Full `build --rerun-tasks` on the Linux box: 439 tests across `jvmTest`,
+`linuxX64Test` and `test`, result-file freshness checked. shashki built green with the note.
