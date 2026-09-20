@@ -1,7 +1,7 @@
 ---
 id: B-49
 title: "A failed announcement leaves a counter and nothing else"
-status: wip
+status: done
 priority: P2
 size: S
 stage: stage-10-review
@@ -40,3 +40,36 @@ turns "which orders were never announced" from a question about a graph into a q
   and is dropped and counted, which is worse. Decide which.
 - A test where the announcement throws **before** `emit` and the fact still leaves the database. A
   test where it throws after `emit` proves nothing here.
+
+## Findings
+
+**A seam, not an event of petich's own**, and the argument is `exhausted`'s unchanged: petich does not
+know what an unannounced saga means to the system it lives in. `AnnouncementFailureHandler.failed`
+returns outbox events and is defaulted to nothing, so no existing wiring changes.
+
+**The implementation is smaller than this item assumed, and that is worth recording.** It proposed
+attaching the event to "the same final commit that completes the saga". That write is
+`repository.update(completed)` — the overload carrying no events — so the proposal meant routing it
+through `updatePetich` and touching the one status write that deliberately bypasses
+`forceUpdateStateWithRetry`. None of it is needed: **an announcement that throws still proceeds**, and
+the Proceed branch already commits through the outbox-aware path. Emitting through the member's own
+context puts the fact in the write the member was making anyway — one transaction, no extra write.
+
+**The third criterion answered itself.** It asked whether the event should be suppressed when the
+repository cannot store an outbox, or dropped and counted. Neither is decided here: riding the normal
+path means `onDroppedEvents` counts it and `requireOutbox` refuses that wiring at construction,
+exactly as for any other event. Inventing a rule for this one would have been the mistake.
+
+**The test separates the case the counter cannot describe.** `an announcement that dies before
+emitting still leaves a row in the outbox` is the acceptance; a member that throws *after* emitting
+proves nothing here, because what it asked for is committed either way (B-41) — so that case is a
+second test asserting **both** rows, in the order they happened. Six cases in all, including the
+no-handler default and the repository that cannot store events.
+
+**Checked by mutation after the implementation was committed:** removing the emission fails four of
+the six. Restored, tree clean.
+
+**Verification.** Full `build --rerun-tasks` on the Linux box, exit code read rather than piped: 461
+tests across `jvmTest`, `linuxX64Test` and `test`. The README's examples were compiled against a local
+publication of this change through B-46's new probe, which is the first item to have that check
+available.
