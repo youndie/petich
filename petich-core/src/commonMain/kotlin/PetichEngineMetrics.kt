@@ -55,6 +55,33 @@ public interface PetichEngineMetrics {
     ): Unit = Unit
 
     /**
+     * A saga was refused because the chain it recorded is not the chain this process assembles, and
+     * **the saga was left exactly as it was** (B-44).
+     *
+     * Refusing is right: the row's position is an index, and a deploy that moved a member re-points
+     * it at a different one. Nothing is repaired, because repairing means guessing what the index
+     * used to mean. What the refusal costs is that the saga keeps whatever it held — a hold, a
+     * reservation, a driver — for as long as the deploy stands, and until this counter existed
+     * nothing said so: the row still reads PROCESSING or PENDING_SIGNATURE, which is what a healthy
+     * saga reads.
+     *
+     * **It fires on every pass over the same saga, and that is the intent rather than an oversight.**
+     * The condition is not an event that happened once; it holds for as long as the two versions
+     * disagree, and a signal that goes quiet after the first sweep would read as "resolved" when
+     * nothing resolved. A stuck condition should keep alerting while it is stuck.
+     *
+     * So read the RATE, not the total: non-zero means sagas are refused right now. The remedy is a
+     * deploy, not a repair — see the README's runbook.
+     *
+     * Deliberately no saga id: a counter is the wrong place for an unbounded dimension. The message
+     * on the refusal names the saga and both fingerprints, and that is where the identity belongs.
+     */
+    public fun onChainRefused(
+        type: String,
+        phase: PetichPhase,
+    ): Unit = Unit
+
+    /**
      * The chain for a saga could not be assembled — a member whose construction threw, most
      * plainly — so the saga is written WITHOUT a chain fingerprint and the guard that would refuse
      * a moved member is off for it from then on.
