@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-51](docs/backlog/B-51-failed-without-being-undone.md) `[ ]` | A storage error after an effect writes FAILED and undoes nothing | P0 | M | - |
+| [B-51](docs/backlog/B-51-failed-without-being-undone.md) `[~]` | A storage error after an effect writes FAILED and undoes nothing | P0 | M | - |
 | [B-52](docs/backlog/B-52-foreign-code-inside-the-catch.md) `[ ]` | A hung announcement rolls the saga back, and a handler that throws decides its fate | P1 | M | - |
 | [B-53](docs/backlog/B-53-resuspend-remembers-neither-half.md) `[ ]` | A parked cascade is not undone, and its phase is not remembered | P1 | M | - |
 | [B-54](docs/backlog/B-54-what-a-rollback-will-end-as.md) `[ ]` | A resumed rollback forgets it was a refusal, and can drag a terminal saga back | P1 | S | - |

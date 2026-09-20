@@ -1,7 +1,7 @@
 ---
 id: B-51
 title: "A storage error after an effect writes FAILED and undoes nothing"
-status: open
+status: wip
 priority: P0
 size: M
 stage: stage-11-review
