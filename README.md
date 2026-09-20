@@ -325,6 +325,22 @@ have to spell it **identically**, and a string spelled twice is a string spelled
 is derived from values the row already carries, so it costs no storage and the write budget below is
 unchanged.
 
+**The key is issued per member, not per call**, and a member that makes more than one call has to say
+which. `ctx.resuspendFor(...)` describes exactly such a member — a cascade asking one candidate after
+another, where the member *is* the cascade — and handed the plain key on every attempt, the second
+call arrives under the first call's name. A far side that deduplicates answers with the first call's
+result, and the refusal is silent. `ctx.idempotencyKey(discriminator)` is the discriminated form:
+
+```kotlin
+board.offer(ctx.idempotencyKey(driverId), payload.rideId, driverId)
+```
+
+The discriminator has to be **derivable again inside the compensation** — the candidate's id, the
+attempt number the member already keeps in its record or enriched payload — because a member that
+issued several sub-keys owes cancelling **all** of them, not the last. petich cannot do that part:
+which discriminators were used is the member's own knowledge, and keeping them is the price of acting
+more than once.
+
 The far side has to honour it; where it will not, an effect that cannot be named cannot be reliably
 undone, and that is a property of the integration rather than of this engine. Not to be confused with
 `petich-idempotency`, which is about an inbound request key arriving twice with different parameters.

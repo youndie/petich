@@ -602,6 +602,27 @@ here, because its `PaymentGateway` port cannot express a caller-chosen name yet.
 *needs*. What it cannot be is evidence that the effect happened, because that is a fact only the far
 side has. D4 stands; this is the other half of it.
 
+**Correction found while implementing B-47 — the decision above was written for one call, and the
+model has a verb for a member that makes many.** `resuspendFor` exists because a member can *be* a
+cascade (B-37): it asks one candidate, is answered, asks the next, at its own position. Handed the
+per-member key on every attempt, its second call arrives under the first call's name — and the far
+side this matters against is by definition one that deduplicates, so it answers with the first call's
+result. Every call returns something plausible and the refusal is silent.
+
+So `idempotencyKey(discriminator)` joins it, and the second half of the rule is the part petich
+cannot do: **a member that issued several sub-keys owes cancelling all of them**, and which
+discriminators it used is its own knowledge. The discriminator must therefore be derivable again
+inside the compensation — the candidate's id, the attempt number already kept in the record or the
+enriched payload — which is what makes it a discriminator rather than a counter.
+
+**A correction to the correction, found by reading the consumer instead of assuming it.** The item
+was filed saying shashki's cascade survives "by accident of the port's shape", because
+`board.post(Offer(rideId, driverId, …))` already carries the driver. That is true and is not what
+saves it. `OfferBoard` is an `InMemoryOfferBoard` and `OfferTimeouts` is a map of timers; neither is
+remote and neither even suspends. **The rule does not reach that cascade at all** — it is about
+naming a remote effect — and calling it a near miss would have been a nicer story than the truth. The
+note now sits at the call, saying what would change the day either port leaves the process.
+
 ### D14. A refused chain is counted, not marked — because the condition is recoverable
 
 Decision: `chainMismatch` fires `PetichEngineMetrics.onChainRefused(type, phase)` on every pass and
