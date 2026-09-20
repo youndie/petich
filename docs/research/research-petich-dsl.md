@@ -731,6 +731,39 @@ own context puts the fact in the write the member was making anyway.
 wiring at construction — exactly as for any other event. The item asked which of those two should
 happen; the answer is that neither is decided here, because both were decided already.
 
+### D16. Values go in the config, collaborators go in the constructor
+
+Decision: `PetichEngine`'s tail of defaulted parameters — `metrics`, `definitions`, `globals`,
+`compensationFailureHandler`, `announcementFailureHandler` — stays where it is.
+`PetichEngineConfig` keeps holding numbers, durations, booleans and maps, and the next parameter is
+placed by that rule rather than by precedent.
+
+Why:
+
+- **the proposal's stated ground does not hold, and the bytecode is what says so.** B-57 asked to
+  move the tail into the config because a published signature turns every later parameter into a
+  breaking change. Both classes take defaulted parameters, so both compile to
+  `(…, int mask, DefaultConstructorMarker)` — verified with `javap` on
+  `PetichEngineConfig.class` and `PetichEngine.class`. Adding a field to the config changes that
+  descriptor exactly as adding one to the engine does. The move relocates the problem without
+  touching it;
+- **what would actually buy binary compatibility is a value the caller builds and `copy`s**, and
+  that is a different decision with a consumer migration in it. It is not refused here; it is not
+  what was asked;
+- **the `require*` flags only read as policy while they are not the wiring.** `requireOutbox`,
+  `requireSideEffects`, `requireCompensationHandler` and now `requireAnnouncementFailureHandler`
+  are assertions *about* the collaborators. Put the collaborators in the same object and each flag
+  becomes a field asserting about its neighbour;
+- **and "config" is the name of a thing you load from a file.** Nothing in `PetichEngineConfig`
+  has behaviour; every member of the tail is called into, and three of the five are wrapped in
+  guards at construction (D-less, but see `Guarded.kt`). That is the line, and it is the only one
+  of the two that a reader can apply without asking.
+
+**The tail's own comments were the evidence, not the argument.** Four parameters in a row each say
+"last, and defaulted, so every positional call written before this still compiles" — which is a true
+sentence about each of them and no reason for any of them. The rule is now written once, beside the
+last of them, so the next parameter has somewhere to be decided.
+
 ---
 
 ## 4. What happens next
