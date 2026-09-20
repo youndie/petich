@@ -81,7 +81,7 @@ class ChainFingerprintTest {
         repository = repository,
         definitions =
             listOf(
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     keys.forEach { key -> step(key, Step(key, log, suspendHere = key == suspendAt)) }
                 },
             ),

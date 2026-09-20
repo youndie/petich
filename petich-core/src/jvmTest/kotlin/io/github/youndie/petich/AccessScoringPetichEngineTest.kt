@@ -321,7 +321,7 @@ class AccessNotificationInterceptor(
  * middle — does not depend on which phase they sit in, and nothing here asserts a phase.
  */
 private fun accessScoring(members: List<Any>) =
-    petich<AccessScoringPayload>("access_scoring") {
+    petichDefinition<AccessScoringPayload>("access_scoring") {
         members.forEachIndexed { index, member ->
             val key = member::class.simpleName ?: "member-$index"
             when (member) {

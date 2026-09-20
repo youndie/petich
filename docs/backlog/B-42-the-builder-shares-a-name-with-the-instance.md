@@ -1,6 +1,6 @@
 ---
 id: B-42
-title: "petich<T>() returns a definition and Petich is an instance"
+title: "petichDefinition<T>() returns a definition and Petich is an instance"
 status: wip
 priority: P2
 size: S
@@ -10,7 +10,7 @@ blocked_by: []
 
 # B-42 — one word for two concepts, and the tests found it first
 
-`petich<OrderPayload>("order") { … }` returns a `PetichDefinition`. `Petich` in a member's signature
+`petichDefinition<OrderPayload>("order") { … }` returns a `PetichDefinition`. `Petich` in a member's signature
 is the **instance** — a row with an id, a status and a version. Two different things under one word,
 and D6 chose it deliberately: the vocabulary is `Petich*` and "saga" stays in prose.
 

@@ -131,7 +131,7 @@ class SweepClaimTest {
                     clock = clock,
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", Step("reserve", log))
                                 step("confirm", Step("confirm", log, suspendHere = true))
                             },
@@ -173,7 +173,7 @@ class SweepClaimTest {
                     clock = clock,
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", Step("reserve", log))
                                 step("confirm", Step("confirm", log, suspendHere = true))
                             },
@@ -224,7 +224,10 @@ class SweepClaimTest {
                 PetichEngine(
                     repository = repository,
                     clock = clock,
-                    definitions = listOf(petich<OrderPayload>("order") { step("reserve", Step("reserve", log)) }),
+                    definitions =
+                        listOf(
+                            petichDefinition<OrderPayload>("order") { step("reserve", Step("reserve", log)) },
+                        ),
                 )
 
             repository.seed(row("p-taken"), stampedAt = now - 9.minutes.inWholeMilliseconds)
@@ -256,7 +259,7 @@ class SweepClaimTest {
                     clock = clock,
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("confirm", Step("confirm", log, suspendHere = true))
                             },
                         ),

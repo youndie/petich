@@ -61,7 +61,7 @@ class ResumeInterceptorTest {
                     repository = repo,
                     definitions =
                         listOf(
-                            petich<TestPayload>("type") {
+                            petichDefinition<TestPayload>("type") {
                                 step("first", interceptor1)
                                 step("waits", interceptor2)
                             },

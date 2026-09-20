@@ -119,7 +119,7 @@ class StuckSweepTest {
             PetichEngine(
                 repository = repository,
                 clock = clock,
-                definitions = listOf(petich<OrderPayload>("order") { step("act", Step(log)) }),
+                definitions = listOf(petichDefinition<OrderPayload>("order") { step("act", Step(log)) }),
             )
         return SuspendedPetichSweeper(
             repository = repository,
@@ -206,7 +206,10 @@ class StuckSweepTest {
                         PetichEngine(
                             repository = repository,
                             clock = clock,
-                            definitions = listOf(petich<OrderPayload>("something-else") { step("x", Inert()) }),
+                            definitions =
+                                listOf(
+                                    petichDefinition<OrderPayload>("something-else") { step("x", Inert()) },
+                                ),
                         ),
                     clock = clock,
                     stuckAfter = 5.minutes,

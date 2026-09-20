@@ -348,7 +348,7 @@ public interface PetichStepContext :
     public fun fail(reason: String)
 }
 
-/** The builder behind [petich]. Its refusals are the model's rules, stated where they are broken. */
+/** The builder behind [petichDefinition]. Its refusals are the model's rules, stated where broken. */
 public class PetichDefinitionBuilder<P : PetichPayload> internal constructor(
     private val type: String,
 ) {
@@ -466,7 +466,7 @@ public class PetichDefinitionBuilder<P : PetichPayload> internal constructor(
  * Declare what a saga of [type] is.
  *
  * ```kotlin
- * val orderPetich = petich<OrderPayload>("order") {
+ * val order = petichDefinition<OrderPayload>("order") {
  *     validate("limits", CheckLimits(limits))
  *     authorize("confirm", RequireConfirmation(ttl = 5.minutes))
  *     step("reserve-stock", ReserveStock(stock))
@@ -474,11 +474,23 @@ public class PetichDefinitionBuilder<P : PetichPayload> internal constructor(
  * }
  * ```
  *
+ * **It used to be `petich(…)`, and that was one word for two things** (B-42). [Petich] is the
+ * INSTANCE — a row with an id, a status and a version — and `ctx.petich` hands it to every member;
+ * this returns a [PetichDefinition], which is the shape all of those rows share. The collision was
+ * not theoretical: migrating the suite off the interceptor model meant renaming a private
+ * `fun petich(id: String): Petich` in THIRTEEN test files, because each one shadowed this the moment
+ * its file needed both. They are `row(id)` now, and every consumer writing a fixture would have met
+ * the same thing.
+ *
+ * The name says what it returns, which also keeps [D6][PetichDefinition] as it stands: the types are
+ * `Petich*` and "saga" belongs to prose. `saga<T>(…)` is the shorter alternative and reopens that
+ * decision, so it is a person's to make rather than this rename's.
+ *
  * The keys are stored identities rather than labels: a saga's row records the key of the member it
  * stopped at, so renaming one is a migration and the fingerprint refuses a saga whose recorded
  * prefix no longer matches (B-21).
  */
-public fun <P : PetichPayload> petich(
+public fun <P : PetichPayload> petichDefinition(
     type: String,
     declare: PetichDefinitionBuilder<P>.() -> Unit,
 ): PetichDefinition<P> {

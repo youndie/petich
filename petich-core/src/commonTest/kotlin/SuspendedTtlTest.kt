@@ -111,7 +111,7 @@ private fun engineWith(
     repository = repository,
     config = PetichEngineConfig(defaultSuspendTtl = defaultTtl),
     clock = clock,
-    definitions = listOf(petich<TtlPayload>("test") { step("confirm", member) }),
+    definitions = listOf(petichDefinition<TtlPayload>("test") { step("confirm", member) }),
 )
 
 class SuspendDeadlineTest {
@@ -282,7 +282,7 @@ class ExpireSuspendedTest {
                     clock = clock,
                     definitions =
                         listOf(
-                            petich<TtlPayload>("test") {
+                            petichDefinition<TtlPayload>("test") {
                                 // Both in one phase, in this order: phases run in their own order,
                                 // so a member declared in EXECUTION would not have run before the
                                 // AUTHORIZATION one suspended - and then there would be nothing to
@@ -378,7 +378,10 @@ class SuspendedPetichSweeperTest {
                         PetichEngine(
                             repository = repository,
                             clock = clock,
-                            definitions = listOf(petich<TtlPayload>("something-else") { step("x", TtlInert()) }),
+                            definitions =
+                                listOf(
+                                    petichDefinition<TtlPayload>("something-else") { step("x", TtlInert()) },
+                                ),
                         ),
                     clock = clock,
                     onUnknownType = { skipped += it.id },

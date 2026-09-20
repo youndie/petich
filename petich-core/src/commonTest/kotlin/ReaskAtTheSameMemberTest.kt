@@ -115,7 +115,7 @@ class ReaskAtTheSameMemberTest {
                     clock = PetichClock { 1_000L },
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("offer", Cascade(log, mutableListOf("declined", "accepted")))
                                 step("assign", After(log))
                             },
@@ -151,7 +151,7 @@ class ReaskAtTheSameMemberTest {
                     clock = PetichClock { 1_000L },
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("offer", WaitsOnce(log))
                                 step("assign", After(log))
                             },

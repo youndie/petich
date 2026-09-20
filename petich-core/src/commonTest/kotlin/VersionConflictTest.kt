@@ -75,7 +75,7 @@ class VersionConflictTest {
             val engine =
                 PetichEngine(
                     repository = repo,
-                    definitions = listOf(petich<TestPayload>("type") { step("proceeds", interceptor) }),
+                    definitions = listOf(petichDefinition<TestPayload>("type") { step("proceeds", interceptor) }),
                 )
 
             val result = engine.process(petichObj)
@@ -134,7 +134,7 @@ class VersionConflictTest {
             val engine =
                 PetichEngine(
                     repository = repo,
-                    definitions = listOf(petich<TestPayload>("type") { step("compensates", interceptor) }),
+                    definitions = listOf(petichDefinition<TestPayload>("type") { step("compensates", interceptor) }),
                 )
 
             val payload = TestPayload("test")

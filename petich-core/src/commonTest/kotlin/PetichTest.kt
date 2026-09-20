@@ -67,7 +67,7 @@ class PetichTest {
                     repository = MockRepository(),
                     definitions =
                         listOf(
-                            petich<TestPayload>("type") {
+                            petichDefinition<TestPayload>("type") {
                                 step("acts", interceptor1)
                                 step("fails", interceptor2)
                             },
@@ -113,7 +113,10 @@ class PetichTest {
             val engine =
                 PetichEngine(
                     repository = MockRepository(),
-                    definitions = listOf(petich<TestPayload>("type") { step("enriches", EnrichedInterceptor()) }),
+                    definitions =
+                        listOf(
+                            petichDefinition<TestPayload>("type") { step("enriches", EnrichedInterceptor()) },
+                        ),
                 )
 
             val payload = TestPayload("test")
@@ -167,7 +170,7 @@ class PetichTest {
                     repository = MockRepository(),
                     definitions =
                         listOf(
-                            petich<TestPayload>("type") {
+                            petichDefinition<TestPayload>("type") {
                                 step("first", MergeInterceptor1())
                                 step("second", MergeInterceptor2())
                             },

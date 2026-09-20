@@ -115,7 +115,7 @@ class AnnouncementPerOutcomeTest {
     fun `a member that proceeds has its announcement committed`() =
         runBlocking {
             val repository = RowRepository()
-            val definition = petich<OrderPayload>("order") { step("ship", Announces("ship")) }
+            val definition = petichDefinition<OrderPayload>("order") { step("ship", Announces("ship")) }
 
             engineFor(definition, repository).process(row("p-proceed"))
 
@@ -132,7 +132,7 @@ class AnnouncementPerOutcomeTest {
         runBlocking {
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("hold", Announces("hold") { it.suspendFor("CONFIRM", 5.minutes) })
                 }
 
@@ -152,7 +152,7 @@ class AnnouncementPerOutcomeTest {
             val repository = RowRepository()
             val metrics = Recorder()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("ship", Announces("ship") { it.reject("out of stock") })
                 }
 
@@ -176,7 +176,7 @@ class AnnouncementPerOutcomeTest {
             val repository = RowRepository()
             val metrics = Recorder()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("ship", Announces("ship") { it.fail("the courier is down") })
                 }
 

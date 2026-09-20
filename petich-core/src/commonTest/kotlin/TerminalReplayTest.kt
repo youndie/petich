@@ -71,7 +71,7 @@ class TerminalReplayTest {
                     repository = repository,
                     definitions =
                         listOf(
-                            petich<ReplayPayload>("replay") {
+                            petichDefinition<ReplayPayload>("replay") {
                                 step("work", work)
                                 step("fault", fault)
                             },
@@ -104,7 +104,10 @@ class TerminalReplayTest {
             val okEngine =
                 PetichEngine(
                     repository = okRepository,
-                    definitions = listOf(petich<ReplayPayload>("replay") { step("work", ReplayInterceptor { }) }),
+                    definitions =
+                        listOf(
+                            petichDefinition<ReplayPayload>("replay") { step("work", ReplayInterceptor { }) },
+                        ),
                 )
             okEngine.process(row("done"))
             assertTrue(okEngine.process(row("done")) is PetichResult.Success)
@@ -115,7 +118,7 @@ class TerminalReplayTest {
                     repository = rejectedRepository,
                     definitions =
                         listOf(
-                            petich<ReplayPayload>("replay") {
+                            petichDefinition<ReplayPayload>("replay") {
                                 step("refuses", ReplayInterceptor { it.reject("no") })
                             },
                         ),

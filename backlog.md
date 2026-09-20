@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-42](docs/backlog/B-42-the-builder-shares-a-name-with-the-instance.md) `[~]` | petich<T>() returns a definition and Petich is an instance | P2 | S | - |
+| [B-42](docs/backlog/B-42-the-builder-shares-a-name-with-the-instance.md) `[~]` | petichDefinition<T>() returns a definition and Petich is an instance | P2 | S | - |
 
 ## Closed (41)
 

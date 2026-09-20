@@ -120,7 +120,7 @@ class WriteCountTest {
      * no member losing its undo — and since B-39 a member that can act has one phase to be in.
      */
     private fun sixSteps(suspendAt: String? = null) =
-        petich<OrderPayload>("order") {
+        petichDefinition<OrderPayload>("order") {
             step("enrich", Step("enrich"))
             step("validate", Step("validate"))
             step("authorise", Step("authorise", suspendHere = suspendAt == "authorise"))

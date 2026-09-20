@@ -326,7 +326,7 @@ class NotificationInterceptor(
  * middle — does not depend on which phase they sit in, and nothing here asserts a phase.
  */
 private fun stockMove(members: List<Any>) =
-    petich<StockMovePayload>("move") {
+    petichDefinition<StockMovePayload>("move") {
         members.forEachIndexed { index, member ->
             val key = member::class.simpleName ?: "member-$index"
             when (member) {

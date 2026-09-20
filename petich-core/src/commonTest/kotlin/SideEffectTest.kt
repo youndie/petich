@@ -79,7 +79,7 @@ class SideEffectTest {
         repository = repository,
         config = config,
         metrics = metrics,
-        definitions = listOf(petich<Payload>("t") { step("suspend", step) }),
+        definitions = listOf(petichDefinition<Payload>("t") { step("suspend", step) }),
     )
 
     private fun saga(id: String = "s1") =

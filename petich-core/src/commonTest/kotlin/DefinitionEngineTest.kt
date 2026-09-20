@@ -129,7 +129,7 @@ class DefinitionEngineTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     validate("limits", Decides("limits", log))
                     step("reserve", Acts("reserve", log))
                     step("charge", Acts("charge", log))
@@ -148,7 +148,7 @@ class DefinitionEngineTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     validate("limits", Decides("limits", log, refuse = "over the limit"))
                     step("reserve", Acts("reserve", log))
                 }
@@ -167,7 +167,7 @@ class DefinitionEngineTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", Acts("reserve", log))
                     step("charge", Acts("charge", log) { ctx -> ctx.reject("card declined") })
                 }
@@ -193,7 +193,7 @@ class DefinitionEngineTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", Acts("reserve", log))
                     step("charge", Acts("charge", log) { ctx -> ctx.fail("the provider is down") })
                 }
@@ -211,7 +211,7 @@ class DefinitionEngineTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step(
                         "hold-funds",
                         Acts("hold-funds", log) { ctx -> ctx.suspendFor("CONFIRM", 5.minutes) },
@@ -242,7 +242,7 @@ class DefinitionEngineTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", Acts("reserve", log))
                     step("charge", Acts("charge", log) { error("the answer was lost") })
                 }
@@ -268,7 +268,7 @@ class DefinitionEngineTest {
             val log = Log()
             val repository = RowRepository()
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("charge", Acts("charge", log))
                     announce("notify", Announces("notify", log) { ctx -> ctx.emit(event("order-completed")) })
                 }
@@ -306,7 +306,7 @@ class DefinitionEngineTest {
                     }
                 }
             val definition =
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve", undoing)
                     step("charge", Acts("charge", log) { ctx -> ctx.fail("the provider is down") })
                 }
@@ -329,7 +329,7 @@ class DefinitionEngineTest {
         runBlocking {
             val log = Log()
             val repository = RowRepository()
-            val definition = petich<OrderPayload>("order") { step("charge", Acts("charge", log)) }
+            val definition = petichDefinition<OrderPayload>("order") { step("charge", Acts("charge", log)) }
             val engine =
                 PetichEngine(
                     repository = repository,
@@ -360,7 +360,7 @@ class DefinitionEngineTest {
         val log = Log()
         val engine =
             engineFor(
-                petich<OrderPayload>("order") { step("reserve", Acts("reserve", log)) },
+                petichDefinition<OrderPayload>("order") { step("reserve", Acts("reserve", log)) },
                 RowRepository(),
             )
 

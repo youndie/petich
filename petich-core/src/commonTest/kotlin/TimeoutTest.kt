@@ -39,7 +39,7 @@ class TimeoutTest {
             val engine =
                 PetichEngine(
                     repository = repo,
-                    definitions = listOf(petich<TestPayload>("type") { enrich("slow", SlowCheck()) }),
+                    definitions = listOf(petichDefinition<TestPayload>("type") { enrich("slow", SlowCheck()) }),
                 )
 
             val payload = TestPayload("test")

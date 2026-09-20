@@ -72,7 +72,7 @@ class CompensationFailureTest {
                     compensationFailureHandler = handler,
                     definitions =
                         listOf(
-                            petich<TestPayload>("type") {
+                            petichDefinition<TestPayload>("type") {
                                 step("acts", FailsToCompensate())
                                 step("throws", FailsOutright())
                             },

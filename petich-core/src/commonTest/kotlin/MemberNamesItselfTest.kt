@@ -94,7 +94,7 @@ class MemberNamesItselfTest {
             val log = mutableListOf<String>()
 
             engineFor(
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     validate("in-service-area", ChecksItself(log))
                     step("reserve-stock", NamesItself(log))
                 },
@@ -114,7 +114,7 @@ class MemberNamesItselfTest {
             val log = mutableListOf<String>()
 
             engineFor(
-                petich<OrderPayload>("order") {
+                petichDefinition<OrderPayload>("order") {
                     step("reserve-stock", NamesItself(log))
                     step("charge-card", NamesItself(log, failAfter = true))
                 },

@@ -78,7 +78,7 @@ class EngineConfigTest {
                 PetichEngine(
                     repository = repository,
                     config = PetichEngineConfig(phaseTimeoutsMs = mapOf(PetichPhase.ENRICHMENT to 50)),
-                    definitions = listOf(petich<TestPayload>("test") { enrich("slow", slow) }),
+                    definitions = listOf(petichDefinition<TestPayload>("test") { enrich("slow", slow) }),
                 )
 
             val result = engine.process(row("short-timeout"))
@@ -147,7 +147,7 @@ class EngineConfigTest {
                     config = PetichEngineConfig(compensationTimeoutsMs = mapOf(PetichPhase.EXECUTION to 100)),
                     definitions =
                         listOf(
-                            petich<TestPayload>("test") {
+                            petichDefinition<TestPayload>("test") {
                                 step("hangs", hanging)
                                 step("fails", failing)
                             },
@@ -214,7 +214,7 @@ class EngineConfigTest {
             val engine =
                 PetichEngine(
                     repository = StatelessRepository(),
-                    definitions = listOf(petich<TestPayload>("test") { step("overlaps", overlapping) }),
+                    definitions = listOf(petichDefinition<TestPayload>("test") { step("overlaps", overlapping) }),
                 )
 
             // Releasing the lock by reference count is the very change that could break mutual
@@ -258,7 +258,7 @@ class EngineConfigTest {
             val engine =
                 PetichEngine(
                     repository = RecordingRepository(),
-                    definitions = listOf(petich<OtherPayload>("test") { step("mismatched", mismatched) }),
+                    definitions = listOf(petichDefinition<OtherPayload>("test") { step("mismatched", mismatched) }),
                 )
             val result = engine.process(row("mismatched"))
 

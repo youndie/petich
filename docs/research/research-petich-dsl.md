@@ -223,7 +223,7 @@ in a `finally` and folded in by the failure paths as well as the ordinary one.
 
 ### D5. A definition is a value, and the engine keeps a registry of them by type
 
-Decision: `petich<P>("order") { … }` returns a `PetichDefinition<P>`; the engine holds definitions
+Decision: `petichDefinition<P>("order") { … }` returns a `PetichDefinition<P>`; the engine holds definitions
 keyed by `type`.
 
 Why:
@@ -235,6 +235,33 @@ Why:
 - naming matters and is not free: `Petich` is the **instance** — a row with an id, a status and a
   version. `PetichDefinition` is what a builder returns. A function `petich(…)` beside a class
   `Petich` is legal Kotlin and would read badly if the result were not named for what it is.
+
+**Correction found while implementing B-42, and the sentence above is the one that was not
+followed.** The builder shipped as `petich(…)` — the exact shape this bullet calls out, with the
+result not named for what it is. The cost arrived where the bullet predicted and was paid without the
+prediction being reread: migrating the suite off the interceptor model meant renaming a private
+`fun petich(id: String): Petich` in **thirteen** test files, each of which shadowed the builder the
+moment its file needed both. Three such helpers survive in modules whose tests never needed a
+definition, which is why the collision looked smaller than it is.
+
+It is `petichDefinition(…)` now. The case for renaming rather than restating D6 comes off the code
+rather than off taste:
+
+- **D6's reason is scoped to types** — "every type in the library is already `Petich*`, and a lone
+  `SagaStep` would be the exception". A top-level function is not a type, so D6 never argued about
+  this identifier;
+- **`petich` was the library's only bare public function.** Every other public function in the
+  published surface is an extension or a `fun interface`. So a lowercase `petich` in this package
+  meant the package or the instance — `PetichMemberContext.petich` hands the instance to every member
+  — and the builder was the single exception to that too;
+- **naming it for its return type keeps D6 exactly as it stands**: the types are `Petich*`, and
+  "saga" stays in prose.
+
+**`saga<T>(…)` is still available and is a person's decision, not this rename's**, because it puts
+the domain word into an identifier and that is what D6 settled. Recorded here so the choice is made
+knowingly rather than by default: the switch is a substitution over about 110 call sites and a
+version bump in two consumers, which is what this rename cost and is the measurement rather than an
+estimate.
 
 **Correction found while implementing B-31: "and `onUnowned`" was too strong, and removing it would
 have replaced a silence with something worse.** The decision above bundled two things that turned out

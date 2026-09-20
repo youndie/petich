@@ -117,7 +117,7 @@ class AnnouncementCannotFailTest {
                     metrics = metrics,
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", Reserve(log))
                                 announce("notify", AnnouncesThenDies(emitFirst = false))
                             },
@@ -141,7 +141,7 @@ class AnnouncementCannotFailTest {
                     metrics = metrics,
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", Reserve(mutableListOf()))
                                 announce("notify", AnnouncesThenDies(emitFirst = false))
                             },
@@ -167,7 +167,7 @@ class AnnouncementCannotFailTest {
                     repository = repository,
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", Reserve(mutableListOf()))
                                 announce("notify", AnnouncesThenDies(emitFirst = true))
                             },
@@ -194,7 +194,7 @@ class AnnouncementCannotFailTest {
                     metrics = metrics,
                     definitions =
                         listOf(
-                            petich<OrderPayload>("order") {
+                            petichDefinition<OrderPayload>("order") {
                                 step("reserve", Reserve(mutableListOf()))
                                 announce("notify", Announces())
                             },
@@ -211,7 +211,7 @@ class AnnouncementCannotFailTest {
     @Test
     fun `a chain dump names an announcement as one`() {
         val dump =
-            petich<OrderPayload>("order") {
+            petichDefinition<OrderPayload>("order") {
                 step("reserve", Reserve(mutableListOf()))
                 announce("notify", Announces())
             }.describeChain()

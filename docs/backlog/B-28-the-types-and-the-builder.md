@@ -15,7 +15,7 @@ whose `supports` accepts the payload and sorts them in their head. This item rep
 definition.
 
 ```kotlin
-val orderPetich = petich<OrderPayload>("order") {
+val orderPetich = petichDefinition<OrderPayload>("order") {
     enrich(LoadCustomer(customers))
     validate(CheckLimits(limits))
     authorize(RequireConfirmation(ttl = 5.minutes))

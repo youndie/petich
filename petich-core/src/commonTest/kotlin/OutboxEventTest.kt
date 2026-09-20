@@ -94,7 +94,7 @@ class OutboxEventTest {
         metrics = metrics,
         definitions =
             listOf(
-                petich<TestPayload>("type") {
+                petichDefinition<TestPayload>("type") {
                     members.forEach { (key, member) -> step(key, member) }
                 },
             ),
