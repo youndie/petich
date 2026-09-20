@@ -207,7 +207,7 @@ class SweepClaimTest {
         revived: MutableList<String>,
     ) = SuspendedPetichSweeper(
         repository = repository,
-        engineFor = { engine },
+        engine = engine,
         clock = clock,
         stuckAfter = 5.minutes,
         onRevived = { revived.add(it) },
