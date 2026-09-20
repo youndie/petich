@@ -1167,7 +1167,17 @@ public class PetichEngine(
                 status = PetichStatus.COMPENSATING,
                 // Written here rather than left null so the rollback that follows computes the same
                 // starting point it would have computed for itself.
-                compensatingFromIndex = petich.currentInterceptorIndex,
+                // READ, NOT RE-DERIVED (B-53). This used to be `currentInterceptorIndex`, on the
+                // assumption that the number means "one past the member to undo" — which is true of
+                // a row `suspendFor` wrote and false of one `resuspendFor` wrote, where it is the
+                // member itself. A cascade that had offered a ride and was waiting for the answer
+                // was therefore left out of its own rollback: it never withdrew the offers it had
+                // made, which is precisely what `CascadeKeyTest` says such a member owes.
+                //
+                // Both parking branches now write it, so there is nothing to infer. The fallback is
+                // for rows parked before this change, and it keeps their old behaviour rather than
+                // guessing a better one for them.
+                compensatingFromIndex = petich.compensatingFromIndex ?: petich.currentInterceptorIndex,
                 suspendedUntilEpochMs = null,
                 version = petich.version + 1,
             )
@@ -1537,6 +1547,18 @@ public class PetichEngine(
                                                 it.copy(
                                                     currentInterceptorIndex = index + 1,
                                                     currentPhase = phase,
+                                                    // WRITTEN, NOT DERIVED (B-53). An expiry used to
+                                                    // read `currentInterceptorIndex` and hope it meant
+                                                    // the same thing whichever verb had written it. It
+                                                    // does not: `suspendFor` stores one PAST this
+                                                    // member and `resuspendFor` stores this member, so
+                                                    // the derived start silently excluded a re-asking
+                                                    // member from its own rollback.
+                                                    //
+                                                    // `index + 1` in both, because the member acted
+                                                    // and then parked — it is part of what has to be
+                                                    // undone either way.
+                                                    compensatingFromIndex = index + 1,
                                                     suspendedUntilEpochMs = deadline,
                                                 )
                                             },
@@ -1574,6 +1596,21 @@ public class PetichEngine(
                                             {
                                                 it.copy(
                                                     currentInterceptorIndex = index,
+                                                    // THE PHASE, which this branch did not write
+                                                    // (B-53). Without it the row kept whatever phase
+                                                    // `latest` carried, and when the re-asking member
+                                                    // is the FIRST of its phase that is the PREVIOUS
+                                                    // phase with `index = 0` — so every resume re-ran
+                                                    // all of that phase's members. Wasted work for a
+                                                    // plain check, and a second one-time code for a
+                                                    // check that asks for one.
+                                                    currentPhase = phase,
+                                                    // The same start the sibling branch writes, and
+                                                    // for the same reason: this member acted before it
+                                                    // parked, so it is part of its own rollback. The
+                                                    // number it used to be derived from means one
+                                                    // thing here and another there.
+                                                    compensatingFromIndex = index + 1,
                                                     suspendedUntilEpochMs = deadline,
                                                 )
                                             },
@@ -1591,6 +1628,11 @@ public class PetichEngine(
                                     val moved =
                                         currentPetich.copy(
                                             currentInterceptorIndex = index + 1,
+                                            // CLEARED BY MOVING (B-53). Parking writes the point a
+                                            // rollback would start from; going forward makes that
+                                            // point wrong, and a stale one would undo too little.
+                                            // Anything that parks again writes its own.
+                                            compensatingFromIndex = null,
                                             enrichedPayload = currentEnrichedPayload,
                                             version = currentPetich.version + 1,
                                             // The petich has moved on and no longer awaits the
