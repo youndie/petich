@@ -111,3 +111,43 @@ branch is a fix nobody else gets until the migration finishes.
 **Next:** konekt's purchase saga, whose `HoldFundsInterceptor` holds money and suspends in one step —
 the member the new types have to earn their keep on. Then its tariff saga, then shashki, whose tree
 was still carrying another session's work at the start of this iteration.
+
+## Iteration 3 — 2026-09-20
+
+**Correction to Iteration 2: konekt had already found the unknown-type defect, written it down twice,
+and engineered around it.** Its composition root says, of two engines over one saga table, that petich
+"resolves nothing by type itself — an engine is a fixed interceptor list — so handing a top-up to the
+purchase engine finds no step that supports its payload, completes a saga that did nothing, and
+reports success", and `PurchaseModule` repeats it for the Koin qualifier. Reporting it as *found by
+migrating a consumer* was flattering and wrong: the consumer found it, described it precisely, and
+paid for a workaround, and the library never learned. What the migration did was remove the
+workaround. **B-31 is that workaround's removal**, and its justification is sitting in konekt's wiring
+comment rather than in this backlog.
+
+**The purchase saga is migrated, and the member it was filed for held up.** `HoldFunds` acts and then
+suspends in one member — `authorize` takes a step as well as a check precisely for it (D3, which
+names konekt) — and the reversal it announces moved from an overridden `compensateWithEvents` to
+`ctx.emit` inside `compensate`. No type had to be bent and the member was not cut in two.
+
+**B-29's record was verified through a path petich's own suite cannot reach.** The hold records
+`Held` before suspending; its undo runs after a resume, in a different process-lifetime, having
+crossed the database. Mutation: delete `ctx.record(Held(…))` and two tests fail — *a purchase nobody
+confirms is rolled back and the balance returns* and *a declined provider rolls the purchase back and
+the screen says why*. Those are the suspend→expire→compensate and suspend→confirm→fail→compensate
+paths. A record that survives a suspension is the claim B-29 makes; this is the first time anything
+ran it.
+
+**A new hole in the model, filed as B-35.** `RecordingContext.outcome()` carries events on `Proceed`
+and drops them on `Suspend`, `Reject` and `Compensate`. The old model could not express an event on a
+suspending step — `InterceptorResult.Suspend` has no field for one — so the new model turned a
+missing capability into a silent drop. konekt's purchase validation writes its refusal through its own
+ledger port and so is unaffected; the comment there now says why, because `ctx.emit` is the reading
+anybody would reach for next.
+
+**A behaviour change, stated rather than smuggled:** `Provision` records `Provisioned` and its undo
+revokes only against it. Before, a rollback interrupted between the capture and the grant revoked an
+allowance nobody had added. That is konekt#48's shape at a different member, and it is a change to
+what konekt does, not a rewrite of how it says it.
+
+**Left:** konekt's tariff-change saga, then shashki. konekt's petich pin is still `0.4.0.70`, which
+predates #78 — its green run does not exercise the unknown-type refusal, and nothing here needs it to.
