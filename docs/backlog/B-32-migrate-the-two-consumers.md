@@ -1,7 +1,7 @@
 ---
 id: B-32
 title: "Rewrite konekt's and shashki's sagas in the new model — the acceptance"
-status: wip
+status: done
 priority: P1
 size: L
 stage: stage-9-definition
@@ -69,6 +69,119 @@ so it waits for a clean tree.
 **Next:** konekt's three sagas — top-up first, since its step is the one with a record to make.
 
 
+## Iteration 2 — 2026-09-20
+
+**An engine handed a saga whose type matches no definition ran zero members across five phases and
+wrote `COMPLETED`.** The caller was told the work succeeded, the money never moved, and every
+assertion anyone naturally writes about the result passed. konekt's type constant reads `top_up`; the
+definition, spelled by hand, read `topup`. Nothing in the model made the two meet, and the engine's
+answer to "no member applies" was the same as its answer to "every member succeeded". Closed in
+`72e0c49` — a saga no member of any phase applies to now fails terminally and names the types the
+engine does know. **This is the second defect this stage owes to migrating a consumer rather than to
+its own suite**, and the first that the suite could not have found: a test writes the type it
+declared.
+
+**The README hands one DDL to two stores that type the column differently.** `step_records TEXT NOT
+NULL DEFAULT '{}'` is the native store's spelling; konekt is an Exposed consumer, where
+`PetichTable` declares `json()`. Its schema guard caught the **default** and said nothing about the
+**type** — Exposed's migration statements compare defaults, not types — and
+`tools/schema-notes-audit.py` cannot catch it either, because it reads names from `PetichTable` and
+compares declarations only between the two SQL-spelled sources. Filed as B-34 rather than folded in:
+konekt is verified without it, and the payload columns carry the same divergence with eleven months
+of shipped rows behind them.
+
+**A consumer's house rules are part of what a migration costs.** konekt forbids `/* */` in production
+sources, because its clock-usage guard strips line comments only and the ban is what keeps that
+shortcut from rotting. The migrated file was written in KDoc and failed a test that has nothing to do
+with sagas. Discoverable only by running the consumer's own suite — reading its code would not have
+shown it.
+
+**Done here:** konekt's top-up saga runs on the definition model (`TopUpSteps.kt` replaces
+`TopUpInterceptors.kt`), `Credited : PetichStepRecord` replaces the ledger lookup behind
+youndie/konekt#48, `ValidateTopUp` is a `PetichCheck` with no `compensate` to write, `AnnounceTopUp`
+uses `ctx.emit`, and V13 migrates the four 0.3.0/0.4.0 columns. konekt's full build is green — 47
+test classes on `:server` alone.
+
+**Done 2026-09-20:** that fix is out of this branch and on `main` as `383068c` (#78), so every later
+item branches from a `main` that has it. Its test was re-checked by mutation on the way out — guard
+disabled, `DefinitionEngineTest` reported `type=ordr, status=COMPLETED`, the defect verbatim. The
+lesson to keep is the one that put it here: a correctness fix committed onto a long-lived migration
+branch is a fix nobody else gets until the migration finishes.
+
+**Next:** konekt's purchase saga, whose `HoldFundsInterceptor` holds money and suspends in one step —
+the member the new types have to earn their keep on. Then its tariff saga, then shashki, whose tree
+was still carrying another session's work at the start of this iteration.
+
+## Iteration 3 — 2026-09-20
+
+**Correction to Iteration 2: konekt had already found the unknown-type defect, written it down twice,
+and engineered around it.** Its composition root says, of two engines over one saga table, that petich
+"resolves nothing by type itself — an engine is a fixed interceptor list — so handing a top-up to the
+purchase engine finds no step that supports its payload, completes a saga that did nothing, and
+reports success", and `PurchaseModule` repeats it for the Koin qualifier. Reporting it as *found by
+migrating a consumer* was flattering and wrong: the consumer found it, described it precisely, and
+paid for a workaround, and the library never learned. What the migration did was remove the
+workaround. **B-31 is that workaround's removal**, and its justification is sitting in konekt's wiring
+comment rather than in this backlog.
+
+**The purchase saga is migrated, and the member it was filed for held up.** `HoldFunds` acts and then
+suspends in one member — `authorize` takes a step as well as a check precisely for it (D3, which
+names konekt) — and the reversal it announces moved from an overridden `compensateWithEvents` to
+`ctx.emit` inside `compensate`. No type had to be bent and the member was not cut in two.
+
+**B-29's record was verified through a path petich's own suite cannot reach.** The hold records
+`Held` before suspending; its undo runs after a resume, in a different process-lifetime, having
+crossed the database. Mutation: delete `ctx.record(Held(…))` and two tests fail — *a purchase nobody
+confirms is rolled back and the balance returns* and *a declined provider rolls the purchase back and
+the screen says why*. Those are the suspend→expire→compensate and suspend→confirm→fail→compensate
+paths. A record that survives a suspension is the claim B-29 makes; this is the first time anything
+ran it.
+
+**A new hole in the model, filed as B-35.** `RecordingContext.outcome()` carries events on `Proceed`
+and drops them on `Suspend`, `Reject` and `Compensate`. The old model could not express an event on a
+suspending step — `InterceptorResult.Suspend` has no field for one — so the new model turned a
+missing capability into a silent drop. konekt's purchase validation writes its refusal through its own
+ledger port and so is unaffected; the comment there now says why, because `ctx.emit` is the reading
+anybody would reach for next.
+
+**A behaviour change, stated rather than smuggled:** `Provision` records `Provisioned` and its undo
+revokes only against it. Before, a rollback interrupted between the capture and the grant revoked an
+allowance nobody had added. That is konekt#48's shape at a different member, and it is a change to
+what konekt does, not a rewrite of how it says it.
+
+**Left:** konekt's tariff-change saga, then shashki. konekt's petich pin is still `0.4.0.70`, which
+predates #78 — its green run does not exercise the unknown-type refusal, and nothing here needs it to.
+
+## Iteration 4 — 2026-09-20
+
+**konekt is done, and holds no reference to the interceptor model at all.** The tariff-change saga was
+the last of its three; two test doubles moved with it, so `PetichInterceptor` and `InterceptorResult`
+now appear nowhere in the repository. `./gradlew build --rerun-tasks` green — 47 test classes on
+`:server`, 7 on purchases, every task genuinely executed rather than replayed.
+
+**The model does not ask every acting member for a record, and the tariff saga is the proof.** The
+purchase releases money and the top-up reverses a credit, and both are wrong when they run against
+work that never happened — so both record. Both tariff compensations are `changes.cancel(id)` against
+a row keyed by the saga's own id: no row, no update, no harm. A record there would have been ceremony,
+and writing one because the other two have one is how a model's vocabulary turns into a ritual. The
+question a record answers is *can this undo tell?* — not *did this member act?*
+
+**A comment corrected, not a behaviour.** The applying member's undo read "back to pending rather
+than to nothing … the step before this one owns the withdrawal", while the code called `cancel` —
+and `TariffChanges` has no operation that returns a row to pending. The sentence described a design
+nobody had built. Behaviour left exactly as it was, because it is right; the prose now says what runs.
+Found only because migrating forces every comment to be re-read beside its code.
+
+**Verified through the real path:** mutation on `RecordTariffChange.compensate` — blanked, and *an
+unconfirmed change past its deadline leaves the current tariff untouched* failed, which is the
+suspend→expire→compensate path and B-21's own acceptance criterion. Restored, tree clean.
+
+**shashki has been blocked by the same thing for four iterations:** its tree carries another session's
+uncommitted work on `build/take-sborka-0.4.0.84` (`gradle/libs.versions.toml`, `settings.gradle.kts`).
+This is not a shortage of time and a fifth attempt will not change it — **it needs a person to land or
+drop that work.** Everything else in this item is finished, so what remains of B-32 is shashki and
+nothing else.
+
 ## Handover from B-31 — 2026-09-20
 
 **konekt's sweeper and timer-sink wiring must lose `engineFor`.** B-31 replaced it with one engine
@@ -76,3 +189,95 @@ that answers `owns` for itself, and renamed `onUnowned` to `onUnknownType`. kone
 this item's iterations, so the change waits here rather than being made from B-31's branch. It is
 also where konekt's two engines over one saga table — the workaround its own composition root
 describes — stop being necessary.
+
+## Iteration 5 — 2026-09-20
+
+**shashki's tree was cleared by a person and the item moved again.** Four iterations had reported it
+blocked by another session's uncommitted work; that work was two lines bumping sborka, discarded on
+request, and its intent survives in the branch name it was on.
+
+**konekt collapsed from three engines to one, which is B-31's payoff arriving.** It kept
+`single(named(PURCHASE_SAGA_TYPE))`, `…(TOP_UP…)` and `…(TARIFF_CHANGE…)` over one saga table, with
+the sweeper dispatching `get(named(saga.type))` — the workaround its own composition root described.
+One engine now holds all three definitions and answers which owns a row; the qualifiers, two
+bindings and the lambda all went. Full build green from clean with every task re-run.
+
+**A consequence worth naming rather than discovering later: petich's phase timeouts are per engine,
+not per definition.** konekt's purchase engine had a raised `EXECUTION` bound for a slow provider;
+one engine means all three sagas take it. Right way round here — the top-up settles through the same
+gateway and had been on the 10-second default, which is a rollback waiting for a slow provider, and
+the tariff change only writes a row. But a consumer whose two saga types genuinely need different
+bounds still needs two engines, and then only one of them can have the sweeper. Not filed: it is a
+real limit, not a defect, and nobody has hit it.
+
+**shashki jumped three minors in one commit — 0.1.0 from Central to 0.4.0.75.** Far cheaper than
+feared: three compile errors, not a rewrite, because the interceptor model is still there until
+B-33. `engineFor` became `engine`, `COMPENSATION_FAILED` joined the statuses that mean CANCELLED to a
+rider, and V5 added the four columns. Its 30 test classes are green.
+
+**V5 spells the new column `JSON`, not the `TEXT` the upgrade notes print** — B-34's answer in use by
+the consumer that needed it: the notes are the native store's spelling and shashki is on the Exposed
+one, whose `payload` has been `JSON` since its V1.
+
+**Stopped at the saga rewrite, on something the model cannot express — filed as B-36.** shashki wraps
+every settlement step in a tracing span named `saga.settlement.$phase.${this::class.simpleName}`,
+asserted by a test because an earlier version shipped the unexpanded template to the collector. An
+interceptor knew its own phase; a `PetichStep` does not, and `PetichMemberContext` exposes no key
+either — though the engine constructs the context *with* the key and uses it for `recordedValue()`
+and the fingerprint. A member cannot name itself. Migrating the ten members before that is answered
+would mean spelling each one's address a second time, in the class, next to the definition that
+already declares it.
+
+**Next:** B-36, then shashki's two sagas — settlement first, since `CaptureStep` is the named site
+where a ledger lookup becomes `ctx.recorded() ?: return`. The order saga has two EXECUTION members
+ordered by priority 10 and 0, which is the pair that becomes declaration order.
+
+## Iteration 6 — 2026-09-20 — closed
+
+**Both consumers run on definitions and neither references the interceptor model.** konekt since
+iteration 4; shashki now, both sagas. What the acceptance found, in the order it found it:
+
+**The engine's payoff reached konekt.** Three engines qualified by saga type, with the sweeper
+dispatching `get(named(saga.type))`, collapsed to one — the workaround its own composition root had
+described. The cost named rather than discovered: petich's phase timeouts are per engine, so the
+raised `EXECUTION` bound now covers all three sagas. Right way round here, and a consumer whose two
+saga types need different bounds still needs two engines.
+
+**shashki jumped from petich 0.1.0 to 0.4.0.77** — three minors — in three compile errors rather
+than a rewrite, because the interceptor model was still there. V5 took the four columns, spelling the
+new one `JSON` per B-34 because shashki is an Exposed consumer.
+
+**Four library gaps, each found by a member that did not fit, each fixed rather than worked around:**
+
+| what did not fit | what it produced |
+| --- | --- |
+| a span named after the step's phase, asserted by a test | B-36: a member can read its own key |
+| a cascade that must keep the next answer for itself | B-37: `resuspendFor` beside `suspendFor` |
+| an announcement on a suspending member | B-35 (iteration 3) |
+| a saga whose type matched no member reported COMPLETED | #78 (iteration 2) |
+
+**And one that no amount of reading would have found: two generic lists erase to the same type.**
+`single<List<PetichInterceptor<*>>>` beside `single<List<PetichDefinition<*>>>` compiles, and Koin
+hands out whichever it saw last — so a definition arrived where an interceptor was wanted and the
+first ride answered 500. The fix in shashki is to build the definitions at the one line that needs
+them rather than bind them; the lesson is that a model whose two halves are generic containers is a
+model a DI container cannot tell apart. Worth knowing before B-33 removes one of them, which removes
+the problem.
+
+**What the migration said about the model, as distinct from its defects:**
+
+- **Two of shashki's five settlement members and two of its six order members were checks**, and
+  every one of them had said so in its own comment — "Nothing to undo: arithmetic", "rejects rather
+  than compensates". The old model could only say it by overriding `compensate` with an empty body,
+  which is the same sentence a member that genuinely acted and had nothing to give back would write.
+- **`record` and `enrich` are different channels and both consumers needed both.** shashki's capture
+  records the charge id its own undo reads; its hold stays in the enriched payload, because
+  `SettleRideUseCase` and the ride's repository read it long after the saga finished. The tariff saga
+  records nothing at all and is right to — its undo cancels a row keyed by the saga's own id.
+- **Two EXECUTION members at `priority = 10` and `priority = 0` became two adjacent lines.** That is
+  the clearest single thing the model bought.
+
+**Verified through the real path:** konekt green from clean with every task re-run; shashki green
+from clean at 336 tests across 75 classes. Mutations: dropping shashki's `Charged` record fails *a
+tip that dies before its payout gives the money back*; turning `resuspendFor` into a plain suspend
+fails both cascade tests.

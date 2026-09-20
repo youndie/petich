@@ -351,6 +351,17 @@ anything that member emitted has no owner at all. Two answers, both taken:
 announcements. `AnnouncementPerOutcomeTest` states the rule per outcome, and each of its four cases
 was checked by breaking the folding that serves it.
 
+**Correction found while implementing B-32 — the defect D5 exists to remove was already written
+down, by the consumer, in two places.** An engine handed a saga whose type matches no member ran zero
+members and reported `COMPLETED`; that was fixed in #78 and reported here as *found by migrating a
+consumer*. It was not. konekt's composition root states it exactly — petich "resolves nothing by type
+itself — an engine is a fixed interceptor list — so handing a top-up to the purchase engine finds no
+step that supports its payload, completes a saga that did nothing, and reports success" — and its
+feature module repeats it for the Koin qualifier that works around it. The consumer diagnosed the
+defect, paid for a workaround of two engines over one saga table, and the library never heard. What
+the migration contributed was removing the workaround so the defect could surface. **The registry of
+D5 is not an ergonomic improvement; it is the removal of a workaround a consumer has been carrying.**
+
 ### D9. A global is a check, and it goes through the one seam everything else goes through
 
 Settled while closing B-30, which is where Risk 1 was to be answered.
