@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-56](docs/backlog/B-56-d14-is-wrong-about-the-stuck-queue.md) `[ ]` | D14 says nothing is written, and on the stuck queue something is | P3 | S | - |
+| [B-56](docs/backlog/B-56-d14-is-wrong-about-the-stuck-queue.md) `[~]` | D14 says nothing is written, and on the stuck queue something is | P3 | S | - |
 
 ## Closed (56)
 
