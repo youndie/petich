@@ -205,5 +205,21 @@ public interface PetichEngineMetrics {
         count: Int,
     ): Unit = Unit
 
+    /**
+     * A state write was refused because the row is already terminal (B-54).
+     *
+     * **The only outward sign that two passes are working the same saga.** Nothing else shows it:
+     * the row is correct, no exception is thrown, the client is answered. A steady line here says
+     * replicas are pausing longer than `stuckAfter` and the sweeper is picking up sagas that are
+     * still alive elsewhere — which is a `stuckAfter` too short, not a bug in anyone's saga.
+     *
+     * [attempted] is the status that did not land, because "COMPENSATING refused" (a second
+     * rollback averted) and "COMPLETED refused" (a duplicate finish) are different situations.
+     */
+    public fun onTerminalWriteRefused(
+        type: String,
+        attempted: PetichStatus,
+    ): Unit = Unit
+
     public object NoOp : PetichEngineMetrics
 }

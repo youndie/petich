@@ -98,6 +98,20 @@ public data class Petich(
     val enrichedPayload: EnrichedPayload = SimpleEnrichedPayload(),
     val version: Long = 0L,
     val compensatingFromIndex: Int? = null,
+    /**
+     * What this rollback will end as, written when it starts (B-54).
+     *
+     * **A refusal and a fault undo the same work and end under different names** (B-20), and the
+     * name was the one thing a rollback did not write down. A saga refused on business grounds whose
+     * process died mid-rollback was finished by the next pass as `FAILED`, because the resume path
+     * had nothing to read and took the default — so a client repeating the request was told the
+     * server broke rather than that it was refused. That distinction is the whole of B-20 and this
+     * was the one path that lost it.
+     *
+     * `null` for a row that is not rolling back, and for one parked before this column existed,
+     * whose resume keeps the old behaviour rather than having a better one guessed for it.
+     */
+    val compensatingTowards: PetichStatus? = null,
     val resumePayload: ResumePayload? = null,
     // The instant after which a petich awaiting client action (PENDING_SIGNATURE) counts as
     // expired. Phase timeouts (see timeoutMs) bound the EXECUTION of an interceptor, not the wait
@@ -943,6 +957,11 @@ public class PetichEngine(
         // this branch's `?:` never, because its value was persisted by the loop further down. That
         // is what keeps a resumed rollback from compensating the same step twice: the meaning of
         // the number does not depend on who wrote it.
+        //
+        // "Persisted" became true with B-54. B-53 wrote this field and this sentence while NEITHER
+        // store had the column, so every resumed rollback did take the `?:` — and the tests that
+        // said otherwise passed because the in-memory repository keeps the object whole. A field
+        // the model carries is not a field the database keeps.
         val compensateFromIdx =
             petich.compensatingFromIndex
                 ?: (petich.currentInterceptorIndex + if (stepOutcomeUnknown) 1 else 0)
@@ -955,8 +974,31 @@ public class PetichEngine(
                 petich,
                 PetichStatus.COMPENSATING,
                 petich.enrichedPayload,
-                { it.copy(currentPhase = petich.currentPhase, compensatingFromIndex = compensateFromIdx) },
+                {
+                    it.copy(
+                        currentPhase = petich.currentPhase,
+                        compensatingFromIndex = compensateFromIdx,
+                        // WRITTEN WITH THE MARK THAT STARTS IT (B-54), because the pass that
+                        // finishes this rollback may not be the one that started it.
+                        compensatingTowards = terminalStatus,
+                    )
+                },
             )
+
+        // THE MARK DID NOT LAND, BECAUSE THE ROW IS ALREADY FINISHED (B-54). Another pass rolled
+        // this saga back and named the outcome while this one was holding a stale copy. Walking the
+        // members now would compensate every one of them a second time - refunding twice, releasing
+        // a reservation somebody else has already taken - so this pass reports and does nothing.
+        //
+        // The reason is still this pass's reason: it describes why THIS call wanted a rollback, and
+        // the row says what actually became of the saga.
+        if (currentPetich.status.isTerminal()) {
+            return if (isSystemFailure) {
+                PetichResult.SystemFailure(reason)
+            } else {
+                PetichResult.Error(reason)
+            }
+        }
 
         var compensationFailed = false
         var failedOn: String? = null
@@ -1239,6 +1281,24 @@ public class PetichEngine(
         repeat(config.maxStateUpdateAttempts) { attempt ->
             if (attempt > 0) metrics.onStateUpdateRetry(petich.type)
             val latest = repository.saveOrGet(petich)
+            // A TERMINAL ROW IS THE END OF THE STORY (B-54), and this is the only place that can
+            // say so for every writer: every status the engine writes comes through here.
+            //
+            // The scenario is not a race between two members but between two PASSES. A replica
+            // paused longer than `stuckAfter` - a GC pause, a frozen VM - wakes up holding a petich
+            // it read before the pause, while another replica's sweeper has since finished the
+            // rollback. Without this line the sleeper writes COMPENSATING over FAILED and undoes
+            // everything a second time; `stuckAfter` makes that rare and nothing made it
+            // impossible.
+            //
+            // Returning `latest` rather than throwing, because the row IS the answer: the caller
+            // gets the saga as it really stands and can see for itself that it is finished. The one
+            // caller for which "not written" is not enough - a rollback that would otherwise carry
+            // on undoing - checks exactly that, in triggerCompensation.
+            if (latest.status.isTerminal()) {
+                metrics.onTerminalWriteRefused(petich.type, status)
+                return latest
+            }
             val updated =
                 additionalUpdates(
                     latest.copy(
@@ -1343,7 +1403,13 @@ public class PetichEngine(
         chainMismatch(currentPetich)?.let { return it }
 
         if (currentPetich.status == PetichStatus.COMPENSATING) {
-            return triggerCompensation(currentPetich, "Resuming compensation")
+            return triggerCompensation(
+                currentPetich,
+                "Resuming compensation",
+                // READ, NOT DEFAULTED (B-54). This took `FAILED` and turned every interrupted
+                // refusal into a fault.
+                terminalStatus = currentPetich.compensatingTowards ?: PetichStatus.FAILED,
+            )
         }
 
         if (currentPetich.status.isTerminal()) {

@@ -72,6 +72,8 @@ public class ExposedPetichRepository(
                 it[version] = petich.version
                 it[suspendedUntil] = petich.suspendedUntilEpochMs
                 it[compensationAttempts] = petich.compensationAttempts
+                it[compensatingFromIndex] = petich.compensatingFromIndex
+                it[compensatingTowards] = petich.compensatingTowards?.name
                 it[updatedAt] = clock.nowEpochMs()
                 it[chainFingerprint] = petich.chainFingerprint
                 it[stepRecords] = petich.stepRecords
@@ -106,6 +108,8 @@ public class ExposedPetichRepository(
                     it[version] = petich.version
                     it[suspendedUntil] = petich.suspendedUntilEpochMs
                     it[compensationAttempts] = petich.compensationAttempts
+                    it[compensatingFromIndex] = petich.compensatingFromIndex
+                    it[compensatingTowards] = petich.compensatingTowards?.name
                     it[updatedAt] = clock.nowEpochMs()
                     it[chainFingerprint] = petich.chainFingerprint
                     it[stepRecords] = petich.stepRecords
@@ -153,6 +157,8 @@ public class ExposedPetichRepository(
             version = this[table.version],
             suspendedUntilEpochMs = this[table.suspendedUntil],
             compensationAttempts = this[table.compensationAttempts],
+            compensatingFromIndex = this[table.compensatingFromIndex],
+            compensatingTowards = this[table.compensatingTowards]?.let(PetichStatus::valueOf),
             chainFingerprint = this[table.chainFingerprint],
             stepRecords = this[table.stepRecords],
         )

@@ -4,6 +4,7 @@ import io.github.smyrgeorge.sqlx4k.Driver
 import io.github.smyrgeorge.sqlx4k.ResultSet
 import io.github.smyrgeorge.sqlx4k.Statement
 import io.github.smyrgeorge.sqlx4k.impl.extensions.asInt
+import io.github.smyrgeorge.sqlx4k.impl.extensions.asIntOrNull
 import io.github.smyrgeorge.sqlx4k.impl.extensions.asLong
 import io.github.smyrgeorge.sqlx4k.impl.extensions.asLongOrNull
 import io.github.youndie.petich.EnrichedPayload
@@ -73,7 +74,7 @@ public class PostgresPetichStore(
                     "INSERT INTO $table ($COLUMNS) VALUES " +
                         "(:id, :type, :phase, :index, :status, :payload, :enriched, :version, " +
                         ":suspendedUntil, :compensationAttempts, :updatedAt, :chainFingerprint, " +
-                        ":stepRecords) " +
+                        ":stepRecords, :compensatingFromIndex, :compensatingTowards) " +
                         "ON CONFLICT (id) DO NOTHING",
                 ).bindState(petich)
                     // The type and the payload are written once and never updated: a saga does
@@ -109,7 +110,9 @@ public class PostgresPetichStore(
                             "compensation_attempts = :compensationAttempts, " +
                             "updated_at = :updatedAt, " +
                             "chain_fingerprint = :chainFingerprint, " +
-                            "step_records = :stepRecords " +
+                            "step_records = :stepRecords, " +
+                            "compensating_from_index = :compensatingFromIndex, " +
+                            "compensating_towards = :compensatingTowards " +
                             "WHERE id = :id AND version = :expectedVersion",
                     ).bindState(petich)
                         .bind("expectedVersion", petich.version - 1),
@@ -190,6 +193,8 @@ public class PostgresPetichStore(
             .bind("updatedAt", clock.nowEpochMs())
             .bind("chainFingerprint", petich.chainFingerprint)
             .bind("stepRecords", json.encodeToString(RECORDS, petich.stepRecords))
+            .bind("compensatingFromIndex", petich.compensatingFromIndex)
+            .bind("compensatingTowards", petich.compensatingTowards?.name)
 
     private fun ResultSet.Row.toDomain(): Petich =
         Petich(
@@ -205,6 +210,8 @@ public class PostgresPetichStore(
             compensationAttempts = get("compensation_attempts").asInt(),
             chainFingerprint = get("chain_fingerprint").asStringOrNull(),
             stepRecords = json.decodeFromString(RECORDS, get("step_records").asString()),
+            compensatingFromIndex = get("compensating_from_index").asIntOrNull(),
+            compensatingTowards = get("compensating_towards").asStringOrNull()?.let(PetichStatus::valueOf),
         )
 
     private companion object {
@@ -216,7 +223,7 @@ public class PostgresPetichStore(
         const val COLUMNS =
             "id, type, current_phase, current_interceptor_index, status, payload, enriched_payload, " +
                 "version, suspended_until, compensation_attempts, updated_at, chain_fingerprint, " +
-                "step_records"
+                "step_records, compensating_from_index, compensating_towards"
 
         /**
          * Polymorphic, because the payload hierarchy is: what is stored carries a discriminator and

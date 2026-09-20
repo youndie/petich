@@ -120,6 +120,11 @@ internal class GuardedMetrics(
         stepKey: String,
         count: Int,
     ): Unit = quietly { delegate.onAnnouncementDiscarded(type, stepKey, count) }
+
+    override fun onTerminalWriteRefused(
+        type: String,
+        attempted: PetichStatus,
+    ): Unit = quietly { delegate.onTerminalWriteRefused(type, attempted) }
 }
 
 /**

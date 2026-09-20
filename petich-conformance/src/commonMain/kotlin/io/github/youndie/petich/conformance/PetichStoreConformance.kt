@@ -125,6 +125,13 @@ public class PetichStoreConformance {
                             // would pass against a store that never writes the column, and a
                             // record that does not come back is a compensation guessing again.
                             stepRecords = mapOf("charge" to ConformanceRecord("charge-7")),
+                            // Non-default for the same reason as the three above, and with a
+                            // consequence of its own: these two are what a resumed rollback reads
+                            // to know where to unwind from and what to finish as (B-53, B-54). A
+                            // store that drops them sends the next pass back to the wrong index
+                            // and finishes a refusal as a system failure.
+                            compensatingFromIndex = 2,
+                            compensatingTowards = PetichStatus.REJECTED,
                             version = 1L,
                         )
                 val applied = subject.repository.update(next)
@@ -174,7 +181,15 @@ public class PetichStoreConformance {
                 // first write, not only a later one.
                 val gaveUp =
                     petich(id = "gave-up", status = PetichStatus.COMPENSATION_FAILED)
-                        .copy(compensationAttempts = 3)
+                        .copy(
+                            compensationAttempts = 3,
+                            // On the INSERT path for the same reason the counter is: a rollback
+                            // that has already started carries both of these, and a store that
+                            // only writes them on update loses them for a saga whose first write
+                            // is already a rollback.
+                            compensatingFromIndex = 1,
+                            compensatingTowards = PetichStatus.FAILED,
+                        )
                 subject.repository.saveOrGet(gaveUp)
                 val stored = subject.repository.findById("gave-up")
                 expect(stored == gaveUp) {
