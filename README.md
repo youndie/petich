@@ -341,8 +341,45 @@ issued several sub-keys owes cancelling **all** of them, not the last. petich ca
 which discriminators were used is the member's own knowledge, and keeping them is the price of acting
 more than once.
 
-The far side has to honour it; where it will not, an effect that cannot be named cannot be reliably
-undone, and that is a property of the integration rather than of this engine. Not to be confused with
+**A name is not always an address, and the rule above quietly assumed it was.** "Cancel whatever is
+under this key" needs a far side that can be *addressed* by the caller's name. Two kinds exist and
+they want different code:
+
+- **it cancels by your name.** `releaseByKey(key)` as written above — the compensation says the name
+  and is done, and a no-op when nothing is under it is exactly right.
+- **it only deduplicates.** The common shape: the key is a token with a lifetime, replaying the same
+  request inside the window returns the original response, and nothing can be cancelled by it. Then
+  the compensation **replays** `execute`'s request under the same key, reads the id out of the answer
+  it gets back, and cancels by that id:
+
+  ```kotlin
+  override suspend fun compensate(ctx: PetichStepContext, payload: OrderPayload) {
+      // The replay is the point: if the first call landed, this returns ITS answer and no second
+      // hold is taken; if it never landed, this creates one and the line below removes it. The net
+      // is zero either way, which is what the record could not tell us.
+      val hold = payments.hold(ctx.idempotencyKey, payload.paymentMethodId, payload.amount)
+      payments.release(hold.id)
+  }
+  ```
+
+  It costs one extra call on the rollback path, and it is the only form that works on a far side
+  which will not take a name for an answer.
+
+That second form has a precondition that is arithmetic rather than principle, and belongs beside the
+`stuckAfter` formula below: **the far side must retain the key for longer than a rollback can take.**
+The ambiguous case only arises on the pass that ran `execute`, and a rollback of that pass stretches
+over at most
+
+```
+keyRetention > maxCompensationAttempts × stuckAfter
+```
+
+— because each attempt waits a full sweep before the next. Past that window the replay is not a
+replay: it is a second effect, taken and then released, and the "net zero" argument stops holding.
+
+Where a far side does neither — no name and no replay — an effect that cannot be named cannot be
+reliably undone. petich does not pretend otherwise: it will still call `compensate`, and what that
+member can do is bounded by the integration rather than by this engine. Not to be confused with
 `petich-idempotency`, which is about an inbound request key arriving twice with different parameters.
 
 **A saga remembers which steps it has run, and refuses to resume against a different chain.** Its
@@ -468,6 +505,11 @@ stuckAfter > max(phaseTimeoutsMs ∪ compensationTimeoutsMs)
 ```
 
 — because a saga being worked on slowly by a live instance must not look stranded.
+
+It is also the second half of the retention inequality in **What it asks of a member**: a far side
+that only deduplicates has to keep an idempotency key for longer than
+`maxCompensationAttempts × stuckAfter`, so raising `stuckAfter` lengthens what you are asking of
+somebody else's system as well as of this one.
 
 **Two sweepers do not need anything built around them.** Each claims a saga with one write before
 touching it, and the row's own optimistic lock decides: on the stranded queue the claim re-stamps the
