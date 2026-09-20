@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-38](docs/backlog/B-38-ship-a-test-double-for-the-member-context.md) `[ ]` | Both consumers wrote the same context double, and it broke twice | P2 | S | - |
+| [B-38](docs/backlog/B-38-ship-a-test-double-for-the-member-context.md) `[~]` | Both consumers wrote the same context double, and it broke twice | P2 | S | - |
 
 ## Closed (37)
 

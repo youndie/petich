@@ -541,7 +541,7 @@ public class PetichEngine(
             petich: Petich,
             payload: PetichPayload,
         ): MemberOutcome {
-            val context = RecordingContext(petich, global.key)
+            val context = PetichMemberProbe(petich, global.key)
             global.check.check(context, payload)
             return context.outcome()
         }
@@ -595,7 +595,7 @@ public class PetichEngine(
             petich: Petich,
             payload: PetichPayload,
         ): MemberOutcome {
-            val context = RecordingContext(petich, member.key)
+            val context = PetichMemberProbe(petich, member.key)
             // ONE cast, at the boundary where a row meets the definition its type names — rather
             // than one per member behind a `supports()` that could lie about anyone's payload. It
             // cannot be removed while a stored payload is polymorphic and a definition is generic;
@@ -644,118 +644,12 @@ public class PetichEngine(
             // The context a compensation gets is built from the SAGA AS STORED, so `recorded()`
             // answers with what this member wrote when it ran — or null, which is what a step that
             // never ran looks like from inside its own undo.
-            val context = RecordingContext(petich, member.key)
+            val context = PetichMemberProbe(petich, member.key)
             step.compensate(context, typed)
             // A compensation may announce what it undid, in the write that records the undoing —
             // which is what `compensateWithEvents` was for in the model this replaces.
             return context.emitted()
         }
-    }
-
-    /** What a member said, collected rather than thrown — see PetichMemberContext.suspendFor. */
-    private class RecordingContext(
-        override val petich: Petich,
-        override val stepKey: String,
-    ) : PetichCheckContext,
-        PetichStepContext {
-        private var enriched: EnrichedPayload? = null
-        private var decided: MemberOutcome? = null
-        private var written: PetichStepRecord? = null
-        private val events = mutableListOf<OutboxEvent>()
-        private val effects = mutableListOf<PetichSideEffect>()
-        private var discardedAnnouncements = 0
-
-        override fun emit(event: OutboxEvent) {
-            events += event
-        }
-
-        override fun attach(effect: PetichSideEffect) {
-            effects += effect
-        }
-
-        fun emitted(): List<OutboxEvent> = events.toList()
-
-        override fun record(value: PetichStepRecord) {
-            written = value
-        }
-
-        override fun recordedValue(): PetichStepRecord? = written ?: petich.stepRecords[stepKey]
-
-        fun written(): PetichStepRecord? = written
-
-        override fun enrich(payload: EnrichedPayload) {
-            enriched = enriched?.merge(payload) ?: payload
-        }
-
-        override fun suspendFor(
-            action: String,
-            ttl: Duration?,
-        ) {
-            decided = MemberOutcome.Suspend(requiredAction = action, enrichedPayload = enriched, ttl = ttl)
-        }
-
-        override fun resuspendFor(
-            action: String,
-            ttl: Duration?,
-        ) {
-            decided = MemberOutcome.Resuspend(requiredAction = action, enrichedPayload = enriched, ttl = ttl)
-        }
-
-        override fun reject(reason: String) {
-            decided = MemberOutcome.Reject(reason)
-        }
-
-        override fun fail(reason: String) {
-            decided = MemberOutcome.Compensate(reason)
-        }
-
-        /**
-         * What the member decided, carrying whatever it asked to have committed alongside.
-         *
-         * The events and effects ride on the outcomes that produce a write of their own. A refusal
-         * or a fault leads to a rollback whose writes are the compensations', so anything announced
-         * there belongs to the member that did the undoing rather than to this one.
-         */
-        fun outcome(): MemberOutcome =
-            when (val decision = decided) {
-                null -> {
-                    MemberOutcome.Proceed(enriched, events.toList(), effects.toList())
-                }
-
-                is MemberOutcome.Suspend -> {
-                    decision.copy(sideEffects = effects.toList(), outboxEvents = events.toList())
-                }
-
-                is MemberOutcome.Resuspend -> {
-                    // The same rule as Suspend, and for the same reason: a re-ask commits a write of
-                    // its own, so what the member asked to have committed rides with it. Resuspend
-                    // has no field for outbox events either, which is B-35's other half — an
-                    // announcement from a member that then re-asks is still dropped, and still
-                    // counted rather than silent.
-                    if (events.isNotEmpty()) discardedAnnouncements = events.size
-                    decision.copy(sideEffects = effects.toList())
-                }
-
-                else -> {
-                    // A REFUSAL CARRIES NOTHING, and it is now counted rather than silent. `reject`
-                    // and `fail` both begin a rollback, and petich will not announce work it is in
-                    // the middle of undoing. A rollback's own word belongs to the compensations,
-                    // which may announce freely — but the REFUSING member's compensation does not
-                    // run, so anything it emitted has no owner at all. That is what this counts.
-                    discardedAnnouncements = events.size + effects.size
-                    decision
-                }
-            }
-
-        /**
-         * How much this member asked to have committed and lost by then refusing.
-         *
-         * Zero on every other outcome. Deliberately not folded into
-         * `PetichEngineMetrics.onDroppedEvents`, whose own documentation calls that one a mistake
-         * "reached by accident rather than by decision" — a repository with no outbox at all. This
-         * is the decision, and one counter meaning both would answer neither question.
-         */
-        fun discarded(): Int = discardedAnnouncements
     }
 
     /**

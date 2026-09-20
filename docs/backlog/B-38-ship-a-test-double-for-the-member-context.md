@@ -1,7 +1,7 @@
 ---
 id: B-38
 title: "Both consumers wrote the same context double, and it broke twice"
-status: open
+status: wip
 priority: P2
 size: S
 stage: stage-9-definition
