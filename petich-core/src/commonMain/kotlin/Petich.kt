@@ -220,6 +220,17 @@ public data class PetichEngineConfig(
     // this engine cannot leave on its own, and with the default handler it is also silent - so the
     // first anyone hears of it is a support ticket about a reservation nobody released.
     val requireCompensationHandler: Boolean = false,
+    // And the same refusal for announcement failures, which its two neighbours had and this did not
+    // (B-57). Same shape, same silence: an announcement that could not be made is counted by
+    // PetichEngineMetrics.onAnnouncementFailed and, with the default handler, leaves no other trace
+    // at all - the saga completes, its state is correct, and the consumer at the far end is simply
+    // never told.
+    //
+    // Worth switching on by anything whose announcements are somebody else's input rather than a
+    // convenience: a receipt, a webhook, a settlement notice. The asymmetry it removes was not a
+    // decision - `requireCompensationHandler` predates AnnouncementFailureHandler, and nothing came
+    // back to give the newer one the switch its neighbour had.
+    val requireAnnouncementFailureHandler: Boolean = false,
 ) {
     init {
         require(maxProcessAttempts > 0) { "maxProcessAttempts must be positive" }
@@ -410,6 +421,27 @@ public class PetichEngine(
      * Last, and defaulted, so every positional call written before this still compiles.
      */
     announcementFailureHandler: AnnouncementFailureHandler = NoOpAnnouncementFailureHandler(),
+    // THE TAIL STAYS, AND HERE IS THE RULE THAT DECIDES THE NEXT ONE (B-57).
+    //
+    // Four parameters in a row each say "last, and defaulted, so existing positional calls still
+    // compile", which reads as a list nobody chose. The proposal was to move them into
+    // [PetichEngineConfig], on the ground that a published signature makes every later parameter a
+    // breaking change.
+    //
+    // **It does not buy that**, and the bytecode says so. Both take defaulted parameters, so both
+    // compile to `(…, int mask, DefaultConstructorMarker)`; adding a field to the config changes
+    // that descriptor exactly as adding one here does. Moving the tail relocates the problem
+    // without touching it. What would actually buy binary compatibility is a value the caller
+    // builds and `copy`s, and that is a different decision with a consumer migration in it.
+    //
+    // **The line is values against collaborators.** [PetichEngineConfig] holds numbers, durations,
+    // booleans and maps — nothing with behaviour, nothing this class wraps. The `require*` flags in
+    // it are POLICY ABOUT the wiring, and they only read as policy while they are not themselves
+    // the wiring: `requireCompensationHandler` sitting beside the handler it refuses would be a
+    // thing asserting about its own neighbour.
+    //
+    // So: a number, a duration, a flag or a map goes in the config; anything the engine calls into
+    // or wraps in a guard goes here. The next parameter has a rule rather than a precedent.
 ) {
     // WRAPPED ONCE, SO NO CALL SITE HAS TO REMEMBER (B-52). Everything below this line calls the
     // guarded copies; the constructor parameters are the application's and are not used directly.
@@ -450,6 +482,17 @@ public class PetichEngine(
             "requireCompensationHandler is set, but the engine was built with the no-op handler: a " +
                 "rollback that gives up would leave the saga half undone and say nothing, and that " +
                 "is the one state it cannot leave on its own."
+        }
+        // READ FROM THE CONSTRUCTOR PARAMETER, not from the guarded property declared above it —
+        // exactly like its neighbour. `GuardedAnnouncementFailureHandler` is never a
+        // `NoOpAnnouncementFailureHandler`, so a check written against the property would be a
+        // guard that cannot fire, and the test below is what says which of the two this is.
+        require(
+            !config.requireAnnouncementFailureHandler || announcementFailureHandler !is NoOpAnnouncementFailureHandler,
+        ) {
+            "requireAnnouncementFailureHandler is set, but the engine was built with the no-op " +
+                "handler: an announcement that could not be made would be counted and nothing else, " +
+                "and the consumer at the far end would never be told at all."
         }
         require(!config.requireOutbox || repository is OutboxAwarePetichRepository) {
             "requireOutbox is set, but ${repository::class.simpleName} is not an " +
@@ -1824,6 +1867,25 @@ public sealed interface PetichResult {
  * Defaulted to nothing, so no existing wiring changes.
  */
 public interface AnnouncementFailureHandler {
+    /**
+     * [reason] is an exception's own message — or `"timed out after <n>ms"` when the announcement
+     * outran its deadline — and **petich has no idea what is in it** (B-57).
+     *
+     * It comes from `e.message`, which is whatever the far side or the client library put there. A
+     * mail transport names the recipient's address in it; an HTTP client names the full URL, query
+     * string included; a database driver names the row it was writing. Whatever this handler returns
+     * goes into the outbox, and out through a relay to wherever that relay publishes — which is
+     * usually not the place the application's logs are.
+     *
+     * petich cannot tell which of those is sensitive and does not try: cutting the message down
+     * would leave the counter, the timeout and nothing to debug with, and the one place that knows
+     * what may leave the system is the application. So the message is handed over whole and this
+     * paragraph exists so that an implementation forwarding it verbatim is choosing to, rather than
+     * finding out from somebody else's inbox.
+     *
+     * [stepKey] and [petich] are safe to publish in the sense this paragraph is about: a member's
+     * declared key and a saga's id and type are petich's own vocabulary.
+     */
     public suspend fun failed(
         petich: Petich,
         stepKey: String,
