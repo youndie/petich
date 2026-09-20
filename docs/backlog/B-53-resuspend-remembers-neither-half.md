@@ -1,7 +1,7 @@
 ---
 id: B-53
 title: "A parked cascade is not undone, and its phase is not remembered"
-status: wip
+status: done
 priority: P1
 size: M
 stage: stage-11-review
@@ -41,3 +41,35 @@ green by coincidence.
 - A definition of `validate(...)` then `step(cascade)`: after a resume the validation runs **once**.
 - `ReaskAtTheSameMemberTest` grows a member in front of the cascade, so it stops being green by
   coincidence.
+
+## Findings
+
+**The rollback's starting point is written at parking time and read at expiry**, in both branches,
+so nothing infers it. The number it used to be derived from means "one past this member" when
+`suspendFor` wrote it and "this member" when `resuspendFor` did — one field, two meanings, and the
+expiry knew only one of them.
+
+**And the change introduced a hazard of its own, which is why forward progress clears it.** A row
+that parked carries a starting point; a resume that runs further makes that point wrong, and a stale
+one would undo *too little* — the same class of defect pointing the other way. The Proceed branch
+clears it, so anything that parks again writes its own. That is not in the acceptance; it is the
+price of writing down what used to be derived, and it belongs with the change rather than in a
+follow-up.
+
+**The phase was the smaller half and the nastier symptom.** `resuspendFor` never wrote it, so a
+re-asking member that is the first of its phase left the row naming the **previous** phase with
+`index = 0`, and every resume re-ran all of that phase. For a plain check that is wasted work. For a
+check that asks for a one-time code it is a second code sent to a person.
+
+**`ReaskAtTheSameMemberTest` was green by coincidence, and the coincidence is now named in it.** Its
+cascade was the definition's only member, and `index = 0` of two different phases is the same member
+when there is only one. A `validate` in front makes them different — and the test's expectation grew
+a `check` that appears exactly **once**, which is the other half of this item asserted by a test that
+was not written for it.
+
+**Checked by two mutations, each isolating one half.** Deriving the start again fails the cascade's
+withdrawal alone; taking the phase back out of `Resuspend` fails `ReaskAtTheSameMemberTest` — the
+test that could not have caught it an hour ago.
+
+**Verification.** Full `build --rerun-tasks` on the Linux box, exit code read rather than piped: 477
+tests across `jvmTest`, `linuxX64Test` and `test`.
