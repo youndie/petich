@@ -271,12 +271,21 @@ against it is asserting against what production does.
 Five rules. They are the engine's side of the bargain stated from the other end, and a member that
 breaks them fails in ways that look like storage faults.
 
-**`execute()` must be idempotent.** The engine calls it, and only then writes the new position —
-so a call that already happened can happen again. This is not the rare case of a process dying in
-between: an optimistic-lock conflict on that write makes the engine re-read the row and run the same
-step a second time, on a healthy instance, under nothing worse than two requests touching one saga.
-A step whose effect is a remote call wants its own idempotency key, and the money-shaped ones want
-the remote side to honour it.
+**A member's body must be idempotent — a step's `execute`, a check's `check`, an announcement's
+`announce`.** The engine calls it, and only then writes the new position, so a call that already
+happened can happen again. This is not the rare case of a process dying in between: an optimistic-lock
+conflict on that write makes the engine re-read the row and run the same member a second time, on a
+healthy instance, under nothing worse than two requests touching one saga.
+
+**Including the announcement**, which is the one that surprises people, because a member with no
+`compensate` reads as a member that runs once. It is not one: the position advances *after* its body
+returns, exactly as a step's does, and a process that dies inside `announce` leaves the row pointing
+at it for `SuspendedPetichSweeper` to re-drive. An announcement that only calls `ctx.emit` is safe by
+the outbox key; **an announcement that sends a mail, or calls anything outside the process, will send
+it twice** unless it says otherwise.
+
+A member whose effect is a remote call wants its own idempotency key, and the money-shaped ones want
+the remote side to honour it — which is the rule below.
 
 **`compensate()` must be idempotent too**, for the same reason mirrored: the rollback commits how
 far it has got *after* calling the step, so an interrupted rollback re-compensates the step it was
@@ -304,8 +313,8 @@ Two outcomes are NOT this case, and both keep the old starting point: a member t
 reported its outcome and is not undone by the engine, and an expired suspension rolls back from the
 member that suspended, which committed.
 
-**A member whose effect is remote must name that effect before making the call.** `ctx.idempotencyKey`
-is that name — `"<saga id>:<member key>"`, the same string on the forward pass, on a re-run after a
+**A member whose effect is remote must name that effect before making the call — a step or an
+announcement alike.** `ctx.idempotencyKey` is that name — `"<saga id>:<member key>"`, the same string on the forward pass, on a re-run after a
 version conflict, and inside the compensation:
 
 ```kotlin
