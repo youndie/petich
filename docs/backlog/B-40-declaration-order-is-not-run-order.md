@@ -1,7 +1,7 @@
 ---
 id: B-40
 title: "A definition can read in one order and run in another"
-status: open
+status: wip
 priority: P1
 size: S
 stage: stage-10-review
