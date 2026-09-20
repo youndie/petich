@@ -90,6 +90,47 @@ public interface PetichCheck<P : PetichPayload> {
     )
 }
 
+/**
+ * A member that applies to **every** saga, declared once instead of in each definition.
+ *
+ * Limits, audit and anti-fraud are the cases, and they are the one thing the interceptor model was
+ * genuinely good at: a list filtered by `supports` attaches them without editing anything. A model
+ * where each saga spells its own order loses that unless something replaces it — and the obvious
+ * replacement reintroduces the defect this stage removes, because a member mixed in at a phase
+ * boundary is one that is **not written where the saga is read**.
+ *
+ * So globals go through the same seam as everything else: [PetichEngine.describeChain] renders them
+ * inline, in the position they run, and the chain fingerprint covers them. A deploy that adds a
+ * global is caught by the mechanism that catches a deploy which moves a step (B-21), which matters
+ * most for the case that is easy to miss — a global inserted before the current position re-points
+ * every saga in flight.
+ *
+ * **A global is a [PetichCheck] and cannot be a [PetichStep]** (D9). A member that acts has to be
+ * undone, and a global's undo would run inside every saga's rollback at a position no saga's author
+ * wrote. The author could not reason about their own rollback, which is the defect this stage
+ * exists to remove, arriving from the other side. A check has nothing petich must undo, so a global
+ * lengthens the forward pass and no rollback.
+ *
+ * That does **not** make a global pure: it may act through its own ports. What it may not do is act
+ * in a way that leaves petich owing somebody an undo — or announce, since [emit] belongs to a step
+ * for the same reason (B-35).
+ *
+ * Globals of a phase run **before** that phase's declared members, in the order this list gives.
+ * A limit that runs after the saga already acted in that phase is a limit that arrived too late.
+ */
+public class PetichGlobal(
+    /**
+     * Its identity in the chain and in the fingerprint, exactly as a member's key is.
+     *
+     * It shares one namespace with every definition's member keys, and the engine refuses a
+     * collision at construction: two members under one key in a saga's chain would write one
+     * record over the other and make the fingerprint ambiguous.
+     */
+    public val key: String,
+    public val phase: PetichPhase,
+    public val check: PetichCheck<PetichPayload>,
+)
+
 /** What every member may do, whichever kind it is. */
 public interface PetichMemberContext {
     /** The saga as it stands, for a member that needs its id or its enriched payload. */
