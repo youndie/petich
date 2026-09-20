@@ -1,7 +1,7 @@
 ---
 id: B-39
 title: "AUTHORIZATION admits an acting member, so the phase stops meaning anything"
-status: open
+status: wip
 priority: P1
 size: M
 stage: stage-10-review
