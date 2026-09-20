@@ -1,7 +1,7 @@
 ---
 id: B-45
 title: "The README describes the model as it was before stage-10"
-status: open
+status: wip
 priority: P2
 size: S
 stage: stage-10-review
