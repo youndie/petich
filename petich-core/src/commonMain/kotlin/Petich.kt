@@ -389,6 +389,12 @@ public class PetichEngine(
      * them without either having to know they exist.
      */
     private val globals: List<PetichGlobal> = emptyList(),
+    /**
+     * What to say when an announcement could not be made — see [AnnouncementFailureHandler].
+     *
+     * Last, and defaulted, so every positional call written before this still compiles.
+     */
+    private val announcementFailureHandler: AnnouncementFailureHandler = NoOpAnnouncementFailureHandler(),
 ) {
     init {
         // Deliberately a construction failure and not a warning. A warning about events that will
@@ -566,6 +572,7 @@ public class PetichEngine(
         private val member: PetichMember<P>,
         private val petichType: String,
         private val metrics: PetichEngineMetrics,
+        private val onAnnouncementFailure: AnnouncementFailureHandler,
     ) : PetichMemberRun {
         private var recorded: PetichStepRecord? = null
         private var discarded = 0
@@ -667,7 +674,18 @@ public class PetichEngine(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                metrics.onAnnouncementFailed(petichType, member.key, e.message ?: e::class.simpleName ?: "unknown")
+                val reason = e.message ?: e::class.simpleName ?: "unknown"
+                metrics.onAnnouncementFailed(petichType, member.key, reason)
+                // AND THE FACT LEAVES THE DATABASE, if the application says what it should say
+                // (B-49). Emitted through the same context the member itself used, so it rides with
+                // this member's own commit rather than a write of its own: one transaction, no extra
+                // write, and every rule an outbox event already follows.
+                //
+                // AFTER the counter, and after whatever the member emitted before it threw, because
+                // the order in the outbox is the order things happened.
+                onAnnouncementFailure
+                    .failed(context.petich, member.key, reason)
+                    .forEach(context::emit)
             }
         }
 
@@ -724,7 +742,7 @@ public class PetichEngine(
             return cross +
                 definition.members
                     .filter { it.phase == phase }
-                    .map { DefinitionRun(it, definition.type, metrics) }
+                    .map { DefinitionRun(it, definition.type, metrics, announcementFailureHandler) }
         }
         // NO FALLBACK ANY MORE. A saga whose type has no definition used to walk the interceptor
         // list; there is no list, so it walks nothing — and `doProcess` refuses a saga no member of
@@ -1556,6 +1574,43 @@ public sealed interface PetichResult {
         val details: String,
     ) : PetichResult
 }
+
+/**
+ * What an application wants said when an announcement could not be made (B-49).
+ *
+ * B-41 stopped an announcement's exception from rolling the saga back, which is right: by the time
+ * it runs the work is done. What it left was a counter and nothing else — and if the exception landed
+ * before `ctx.emit`, there is no event, the saga completes, its state is correct, and the consumer at
+ * the other end never learns. Not late. Never.
+ *
+ * This repository has already made the opposite argument twice in the same words.
+ * [PetichEngineConfig.requireOutbox] refuses at wiring time rather than counting at runtime, because
+ * "the write succeeds, the saga completes, its state is correct, and every assertion anybody
+ * naturally makes about that run passes"; and [CompensationFailureHandler.exhausted] exists so that a
+ * rollback which gave up LEAVES THE DATABASE. A failed announcement is the same shape and had
+ * neither.
+ *
+ * **Whatever this returns rides with the announcement's own commit** — the write that advances the
+ * saga past that member — so it is one transaction and costs no extra write. It therefore follows
+ * every rule any other outbox event follows: a repository that cannot store events drops it and
+ * `PetichEngineMetrics.onDroppedEvents` counts it, and `requireOutbox` is what refuses that wiring
+ * at construction. This deliberately invents no new rule for it.
+ *
+ * **The shape is the application's**, for the reason [CompensationFailureHandler.exhausted] gives
+ * about its own: petich does not know what an unannounced saga means to the system it lives in, and
+ * a library that invented a payload here would be inventing a wire format for somebody else's relay.
+ *
+ * Defaulted to nothing, so no existing wiring changes.
+ */
+public interface AnnouncementFailureHandler {
+    public suspend fun failed(
+        petich: Petich,
+        stepKey: String,
+        reason: String,
+    ): List<OutboxEvent> = emptyList()
+}
+
+public class NoOpAnnouncementFailureHandler : AnnouncementFailureHandler
 
 public interface CompensationFailureHandler {
     /**
