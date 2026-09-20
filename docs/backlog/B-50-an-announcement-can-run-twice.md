@@ -1,7 +1,7 @@
 ---
 id: B-50
 title: "An announcement is re-run after a crash and nothing says it must tolerate that"
-status: open
+status: wip
 priority: P1
 size: M
 stage: stage-10-review
