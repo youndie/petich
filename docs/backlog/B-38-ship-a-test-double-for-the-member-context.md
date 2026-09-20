@@ -1,7 +1,7 @@
 ---
 id: B-38
 title: "Both consumers wrote the same context double, and it broke twice"
-status: wip
+status: done
 priority: P2
 size: S
 stage: stage-9-definition
@@ -36,3 +36,35 @@ consumers wrote the same anonymous implementation of all eleven methods.
 - Adding a method to `PetichMemberContext` does not break a consumer's compile in a later release
   without the release notes saying so; whichever shape is chosen, that property is stated.
 - konekt's and shashki's hand-written doubles are deleted.
+
+## Findings — 2026-09-20
+
+**What is shipped is not a double, and that answers the item's real question.** A second
+implementation would have moved the problem rather than removed it: a double can disagree with the
+thing it doubles. `PetichMemberProbe` **is** the class the engine runs every member through, lifted
+out of `PetichEngine` and given public read-backs — `enrichment`, `record`, `events`, `effects`,
+`decision`. A test asserting against it asserts against what production does.
+
+**The disagreement was not hypothetical.** shashki's hand-written context answered `recordedValue()`
+from what happened in front of it. The engine's answers `written ?: petich.stepRecords[stepKey]` —
+so a record the **saga carries** from an earlier pass, which is the shape every real rollback has,
+read back as `null` in the test and as itself in production. A case asserting exactly that is in
+`MemberProbeTest`, and the mutation that removes the saga lookup fails it alone.
+
+**`decision` has a vocabulary of its own** and the engine's outcome type stays internal. A consumer
+asserting on a refusal should not be reading the type the engine dispatches on — and the probe's
+`Suspended(again = …)` says the one thing that matters about a wait: whether the next answer belongs
+to this member or to whatever comes after it (B-37).
+
+**Rejected, as the item suspected: defaults on `PetichMemberContext`.** It removes the breakage by
+letting a consumer's double silently miss a method that matters — a compile error traded for a test
+that passes while asserting nothing. With the context shipped there is no consumer implementation
+left for a new method to break, which is the same property obtained without the trade.
+
+**Both consumers' doubles are deleted**, against `0.4.0.81`. konekt's was eleven methods, shashki's
+the same eleven written independently.
+
+**A process mistake worth keeping.** The first attempt to take the snapshot pinned `0.4.0.80` because
+it was newer than the last one used — and that build predated the merge. The number is not the
+content: what settled it was fetching the jar and looking for the class in it. Same family as *влитое
+не значит выпущенное*, arriving through a version number rather than a tag.
