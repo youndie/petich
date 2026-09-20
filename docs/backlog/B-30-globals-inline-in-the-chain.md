@@ -1,7 +1,7 @@
 ---
 id: B-30
 title: "A cross-cutting check must be visible where the saga is read"
-status: open
+status: wip
 priority: P2
 size: M
 stage: stage-9-definition

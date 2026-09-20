@@ -228,7 +228,7 @@ Two things worth knowing before reading the items:
 |---|---|---|---|---|
 | [B-32](docs/backlog/B-32-migrate-the-two-consumers.md) `[~]` | Rewrite konekt's and shashki's sagas in the new model — the acceptance | P1 | L | B-29 |
 | [B-33](docs/backlog/B-33-remove-the-interceptor-model.md) `[ ]` | Remove PetichInterceptor, and do not leave an adapter behind | P1 | M | B-32 |
-| [B-30](docs/backlog/B-30-globals-inline-in-the-chain.md) `[ ]` | A cross-cutting check must be visible where the saga is read | P2 | M | B-28 |
+| [B-30](docs/backlog/B-30-globals-inline-in-the-chain.md) `[~]` | A cross-cutting check must be visible where the saga is read | P2 | M | B-28 |
 | [B-31](docs/backlog/B-31-the-engine-knows-which-definition-owns-a-saga.md) `[ ]` | engineFor and onUnowned exist because no value says what an order saga is | P2 | S | B-28 |
 
 ## Closed (31)
