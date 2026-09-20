@@ -28,7 +28,11 @@ public class PetichDefinition<P : PetichPayload> internal constructor(
                 if (here.isEmpty()) {
                     "-"
                 } else {
-                    here.joinToString(" -> ") { "${it.key}${if (it.undoes) "" else " (check)"}" }
+                    // THE SAME `kind` THE ENGINE'S OWN DUMP USES. It was spelled here a second
+                    // time, and adding the announcement to one of the two left this one calling
+                    // every announcement a check — caught by a test, which is luck rather than
+                    // design. One member, one place that says what kind it is.
+                    here.joinToString(" -> ") { "${it.key}${it.kind}" }
                 }
             "$phase: $body"
         }
@@ -40,9 +44,22 @@ public class PetichMember<P : PetichPayload> internal constructor(
     public val phase: PetichPhase,
     public val step: PetichStep<P>?,
     public val check: PetichCheck<P>?,
+    public val announcement: PetichAnnouncement<P>? = null,
 ) {
-    /** A step undoes; a check has nothing to undo, which is why it has no `compensate` to write. */
+    /**
+     * A step undoes; a check has nothing to undo, which is why it has no `compensate` to write, and
+     * an announcement has nothing to undo because by the time it ran there was nothing left to stop.
+     */
     public val undoes: Boolean get() = step != null
+
+    /** What this member is called in a chain dump, which is a reader's only view of a definition. */
+    internal val kind: String
+        get() =
+            when {
+                check != null -> " (check)"
+                announcement != null -> " (announcement)"
+                else -> ""
+            }
 }
 
 /**
@@ -80,12 +97,41 @@ public interface PetichStep<P : PetichPayload> {
  * interceptor model in the two services built on it, 12 are empty — written to satisfy a type rather
  * than to reverse anything. Those are validations and enrichments, and this is what they are.
  *
- * A check cannot be placed after a step: [PetichDefinitionBuilder] refuses it. That ordering rule,
- * not the type, is what keeps a refusal that cannot roll back from sitting after an effect.
+ * A check cannot be placed after a step, because [PetichDefinitionBuilder] refuses any member whose
+ * phase runs before the one declared above it (B-40) and every check's phase runs before every
+ * step's. That ordering rule, not the type, is what keeps a refusal that cannot roll back from
+ * sitting after an effect.
  */
 public interface PetichCheck<P : PetichPayload> {
     public suspend fun check(
         ctx: PetichCheckContext,
+        payload: P,
+    )
+}
+
+/**
+ * A member that says what happened, and cannot change it.
+ *
+ * **By the time it runs, the work is done** — the stock is reserved and the money is captured. It
+ * has no `compensate`, it cannot `reject`, `fail` or park the saga, and **an exception it throws is
+ * counted rather than rolled back**. That last part is what makes the rest true instead of merely
+ * written: a type can withhold `fail`, but nothing stops a member from throwing, and a throw used to
+ * mean the same rollback (B-41).
+ *
+ * **It may still act.** The shape a reviewer proposed — return the event, take no context — answers
+ * "may an announcement do I/O" as well as "may it fail the saga", and the portfolio says only the
+ * second question matters: shashki's settlement sends a receipt by mail *before* emitting, on the
+ * grounds, written into `SendReceiptUseCase`, that a settlement rolled back over a mail server would
+ * be the tail wagging the dog. That is this rule already, kept by discipline; this is the type that
+ * keeps it.
+ *
+ * **What it announced before it threw is still committed.** An announcement cannot be undone, so
+ * there is nothing for the engine to protect by discarding it — unlike a refusal, which carries
+ * nothing precisely because it begins a rollback (B-35).
+ */
+public interface PetichAnnouncement<P : PetichPayload> {
+    public suspend fun announce(
+        ctx: PetichAnnouncementContext,
         payload: P,
     )
 }
@@ -158,7 +204,18 @@ public interface PetichMemberContext {
 
     /** Merge into the payload the saga carries forward. */
     public fun enrich(payload: EnrichedPayload)
+}
 
+/**
+ * What a member that may **decide the saga's fate** can do, beyond reading it and enriching it.
+ *
+ * The split exists because one member cannot (B-41). An announcement runs when the work is already
+ * done: rolling the saga back because a notification did not go is the wrong answer, and until this
+ * existed the type offered it as the natural one. Everything here either ends the saga, parks it, or
+ * leaves evidence for an undo that an announcement does not have — so an announcement gets none of
+ * it, by not extending this.
+ */
+public interface PetichDecidingContext : PetichMemberContext {
     /**
      * Write down what this member did, to be committed with the position it advances to and read
      * back by this member's own compensation.
@@ -227,19 +284,13 @@ public interface PetichMemberContext {
 }
 
 /**
- * What a check may do: decide, wait, or refuse. It cannot fail the saga, having nothing to undo —
- * and it cannot announce, for the same reason.
+ * What a member may have committed **in the same write as the saga's own state** — the outbox, and
+ * whatever else has to land or not land with it.
  *
- * **A check has no compensation to carry its word** (B-35). Announcing belongs to a member that
- * acted: what rides on a write is what that member did, and a check's whole contribution is whether
- * the saga continues. A check that refuses leaves nothing behind that could carry an announcement,
- * so the model does not let it produce one — rather than accepting it and dropping it, which is what
- * it used to do.
+ * It is the announcement's whole context and part of a step's. A check has neither, because a check
+ * leaves nothing behind that could carry either one (B-35).
  */
-public interface PetichCheckContext : PetichMemberContext
-
-/** What a step may do, and the things a check may not: announce, attach, and report a fault. */
-public interface PetichStepContext : PetichMemberContext {
+public interface PetichAnnouncementContext : PetichMemberContext {
     /**
      * Announce something, committed in the same write as the state change this member produces —
      * the outbox, and the reason "the work happened but the notification never went out" is
@@ -264,13 +315,35 @@ public interface PetichStepContext : PetichMemberContext {
      * Carried on the same outcomes as [emit].
      */
     public fun attach(effect: PetichSideEffect)
+}
 
+/**
+ * What a check may do: decide, wait, or refuse. It cannot fail the saga, having nothing to undo —
+ * and it cannot announce, for the same reason.
+ *
+ * **A check has no compensation to carry its word** (B-35). Announcing belongs to a member that
+ * acted: what rides on a write is what that member did, and a check's whole contribution is whether
+ * the saga continues. A check that refuses leaves nothing behind that could carry an announcement,
+ * so the model does not let it produce one — rather than accepting it and dropping it, which is what
+ * it used to do.
+ */
+public interface PetichCheckContext : PetichDecidingContext
+
+/**
+ * What a step may do, which is everything: announce and attach like an announcement, decide and park
+ * and refuse like a check, and report a fault, which is its alone.
+ */
+public interface PetichStepContext :
+    PetichAnnouncementContext,
+    PetichDecidingContext {
     /**
      * Something went wrong that is not a business decision. Whatever ran is rolled back and the saga
      * ends `FAILED`.
      *
      * Unavailable to a check by construction: a fault in something that has nothing to undo is an
-     * exception, and the engine already turns one of those into a rollback.
+     * exception, and the engine already turns one of those into a rollback. Unavailable to an
+     * announcement for the opposite reason: by the time it runs there is nothing left that SHOULD be
+     * undone (B-41).
      */
     public fun fail(reason: String)
 }
@@ -323,16 +396,23 @@ public class PetichDefinitionBuilder<P : PetichPayload> internal constructor(
         step: PetichStep<P>,
     ): Unit = add(key, PetichPhase.EXECUTION, step = step)
 
+    /**
+     * The saga's last word, and the one member that cannot take it back (B-41).
+     *
+     * It takes a [PetichAnnouncement] rather than a [PetichStep] because the difference is not a
+     * detail of what it may do — it is whether a notification can undo a captured payment.
+     */
     public fun announce(
         key: String,
-        step: PetichStep<P>,
-    ): Unit = add(key, PetichPhase.POST_PROCESSING, step = step)
+        announcement: PetichAnnouncement<P>,
+    ): Unit = add(key, PetichPhase.POST_PROCESSING, announcement = announcement)
 
     private fun add(
         key: String,
         phase: PetichPhase,
         step: PetichStep<P>? = null,
         check: PetichCheck<P>? = null,
+        announcement: PetichAnnouncement<P>? = null,
     ) {
         require(key.isNotBlank()) { "a member of $type was declared with a blank key" }
         require(members.none { it.key == key }) {
@@ -373,7 +453,7 @@ public class PetichDefinitionBuilder<P : PetichPayload> internal constructor(
                     }
             }
         }
-        members += PetichMember(key, phase, step, check)
+        members += PetichMember(key, phase, step, check, announcement)
     }
 
     internal fun build(): PetichDefinition<P> {
@@ -420,4 +500,4 @@ public fun <P : PetichPayload> petich(
  * earlier version of the step, and a type that has since changed should read as absent rather than
  * bring the rollback down.
  */
-public inline fun <reified T : PetichStepRecord> PetichMemberContext.recorded(): T? = recordedValue() as? T
+public inline fun <reified T : PetichStepRecord> PetichDecidingContext.recorded(): T? = recordedValue() as? T

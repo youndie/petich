@@ -564,6 +564,8 @@ public class PetichEngine(
      */
     private class DefinitionRun<P : PetichPayload>(
         private val member: PetichMember<P>,
+        private val petichType: String,
+        private val metrics: PetichEngineMetrics,
     ) : PetichMemberRun {
         private var recorded: PetichStepRecord? = null
         private var discarded = 0
@@ -589,7 +591,7 @@ public class PetichEngine(
         private fun typed(payload: PetichPayload): P = payload as P
 
         override val stepKey: String get() = member.key
-        override val label: String get() = member.key + if (member.undoes) "" else " (check)"
+        override val label: String get() = member.key + member.kind
 
         override suspend fun run(
             petich: Petich,
@@ -608,7 +610,11 @@ public class PetichEngine(
             // record survives however the member left.
             try {
                 try {
-                    member.step?.execute(context, typed) ?: member.check?.check(context, typed)
+                    if (member.announcement != null) {
+                        announce(member.announcement, context, typed)
+                    } else {
+                        member.step?.execute(context, typed) ?: member.check?.check(context, typed)
+                    }
                 } catch (e: ClassCastException) {
                     // The unchecked cast above, failing where it actually shows: a definition
                     // declared for one payload and registered under a saga type whose rows carry
@@ -632,6 +638,37 @@ public class PetichEngine(
             // it, this would always answer zero.
             discarded = context.discarded()
             return outcome
+        }
+
+        /**
+         * AN ANNOUNCEMENT'S EXCEPTION IS COUNTED, NOT ROLLED BACK, which is what makes its type's
+         * promise true rather than merely written (B-41).
+         *
+         * Withholding `fail` from the context stops a member from *deciding* to end the saga; it
+         * does nothing about a member that throws, and a throw meant exactly the same rollback. By
+         * the time an announcement runs the stock is reserved and the money is captured, so undoing
+         * all of it because a notification did not go is the answer the model says is wrong.
+         *
+         * **What it asked for before it threw still rides with the saga.** A refusal carries nothing
+         * (B-35) because it begins a rollback and petich will not announce work it is undoing; there
+         * is no rollback here, so there is nothing to protect by dropping the announcement — and
+         * dropping it would lose the one write the outbox exists to make certain.
+         *
+         * `CancellationException` is not an announcement failing. It is the caller going away, and
+         * swallowing it would turn a cancelled process into one that keeps writing.
+         */
+        private suspend fun announce(
+            announcement: PetichAnnouncement<P>,
+            context: PetichAnnouncementContext,
+            typed: P,
+        ) {
+            try {
+                announcement.announce(context, typed)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                metrics.onAnnouncementFailed(petichType, member.key, e.message ?: e::class.simpleName ?: "unknown")
+            }
         }
 
         override suspend fun undo(
@@ -684,7 +721,10 @@ public class PetichEngine(
         // construction rather than by four places remembering to include it (B-30).
         val cross = globals.filter { it.phase == phase }.map { GlobalRun(it) }
         definitionFor(type)?.let { definition ->
-            return cross + definition.members.filter { it.phase == phase }.map { DefinitionRun(it) }
+            return cross +
+                definition.members
+                    .filter { it.phase == phase }
+                    .map { DefinitionRun(it, definition.type, metrics) }
         }
         // NO FALLBACK ANY MORE. A saga whose type has no definition used to walk the interceptor
         // list; there is no list, so it walks nothing — and `doProcess` refuses a saga no member of

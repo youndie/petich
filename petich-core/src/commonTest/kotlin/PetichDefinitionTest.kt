@@ -16,6 +16,14 @@ class PetichDefinitionTest {
         val sku: String,
     ) : PetichPayload()
 
+    /** POST_PROCESSING's member type: it says what happened and has no way to take it back. */
+    private class Announces : PetichAnnouncement<OrderPayload> {
+        override suspend fun announce(
+            ctx: PetichAnnouncementContext,
+            payload: OrderPayload,
+        ) = Unit
+    }
+
     private class Acts : PetichStep<OrderPayload> {
         override suspend fun execute(
             ctx: PetichStepContext,
@@ -44,7 +52,7 @@ class PetichDefinitionTest {
                 authorize("confirm", Decides())
                 step("reserve-stock", Acts())
                 step("charge", Acts())
-                announce("notify", Acts())
+                announce("notify", Announces())
             }
 
         assertEquals(
@@ -126,7 +134,7 @@ class PetichDefinitionTest {
             assertFailsWith<IllegalArgumentException> {
                 petich<OrderPayload>("order") {
                     step("reserve", Acts())
-                    announce("notify", Acts())
+                    announce("notify", Announces())
                     step("charge", Acts())
                 }
             }
@@ -150,8 +158,8 @@ class PetichDefinitionTest {
                 validate("limits", Decides())
                 step("reserve", Acts())
                 step("charge", Acts())
-                announce("receipt", Acts())
-                announce("ledger", Acts())
+                announce("receipt", Announces())
+                announce("ledger", Announces())
             }
 
         assertEquals(
@@ -185,7 +193,7 @@ class PetichDefinitionTest {
             assertFailsWith<IllegalArgumentException> {
                 petich<OrderPayload>("order") {
                     validate("limits", Decides())
-                    announce("notify", Acts())
+                    announce("notify", Announces())
                     enrich("quote", Decides())
                     step("charge", Acts())
                 }

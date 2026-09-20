@@ -298,9 +298,9 @@ class DepositInterceptor(
 
 class NotificationInterceptor(
     private val notificationLog: MutableList<String>,
-) : MoveInterceptor() {
-    override suspend fun execute(
-        ctx: PetichStepContext,
+) : PetichAnnouncement<StockMovePayload> {
+    override suspend fun announce(
+        ctx: PetichAnnouncementContext,
         payload: StockMovePayload,
     ) {
         val enriched = ctx.petich.enrichedPayload as StockMoveEnrichedPayload
@@ -325,7 +325,7 @@ class NotificationInterceptor(
  * for — the order members run in, the order they are undone in, and what a suspension does in the
  * middle — does not depend on which phase they sit in, and nothing here asserts a phase.
  */
-private fun stockMove(members: List<MoveInterceptor>) =
+private fun stockMove(members: List<Any>) =
     petich<StockMovePayload>("move") {
         members.forEachIndexed { index, member ->
             val key = member::class.simpleName ?: "member-$index"
@@ -337,7 +337,11 @@ private fun stockMove(members: List<MoveInterceptor>) =
 
                 is NotificationInterceptor -> announce(key, member)
 
-                else -> step(key, member)
+                // An announcement is no longer a step, so the fallthrough has to know which
+                // kind it is holding rather than assuming one (B-41).
+                is MoveInterceptor -> step(key, member)
+
+                else -> error("$key is neither a step nor an announcement")
             }
         }
     }

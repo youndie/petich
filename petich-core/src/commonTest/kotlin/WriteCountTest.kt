@@ -22,6 +22,30 @@ class WriteCountTest {
         val sku: String,
     ) : PetichPayload()
 
+    /**
+     * POST_PROCESSING's member, and it still costs a write: an announcement proceeds like anything
+     * else, so the position it advances to and the event it asked for are committed together.
+     */
+    class Announces(
+        private val name: String,
+        private val events: Int = 0,
+    ) : PetichAnnouncement<OrderPayload> {
+        override suspend fun announce(
+            ctx: PetichAnnouncementContext,
+            payload: OrderPayload,
+        ) {
+            repeat(events) { n ->
+                ctx.emit(
+                    object : OutboxEvent {
+                        override val id = "${ctx.petich.id}:$name:$n"
+                        override val type = "test.event"
+                        override val payload = "{}"
+                    },
+                )
+            }
+        }
+    }
+
     class Step(
         private val name: String,
         private val suspendHere: Boolean = false,
@@ -102,7 +126,7 @@ class WriteCountTest {
             step("authorise", Step("authorise", suspendHere = suspendAt == "authorise"))
             step("reserve", Step("reserve", events = 1))
             step("charge", Step("charge", events = 1))
-            announce("notify", Step("notify", events = 1))
+            announce("notify", Announces("notify", events = 1))
         }
 
     @Test

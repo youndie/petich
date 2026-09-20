@@ -291,9 +291,9 @@ class ActivationInterceptor(
 
 class AccessNotificationInterceptor(
     private val notificationLog: MutableList<String>,
-) : AccessScoringInterceptor() {
-    override suspend fun execute(
-        ctx: PetichStepContext,
+) : PetichAnnouncement<AccessScoringPayload> {
+    override suspend fun announce(
+        ctx: PetichAnnouncementContext,
         payload: AccessScoringPayload,
     ) {
         val enriched = ctx.petich.enrichedPayload as AccessScoringEnrichedPayload
@@ -320,7 +320,7 @@ class AccessNotificationInterceptor(
  * for — the order members run in, the order they are undone in, and what a suspension does in the
  * middle — does not depend on which phase they sit in, and nothing here asserts a phase.
  */
-private fun accessScoring(members: List<AccessScoringInterceptor>) =
+private fun accessScoring(members: List<Any>) =
     petich<AccessScoringPayload>("access_scoring") {
         members.forEachIndexed { index, member ->
             val key = member::class.simpleName ?: "member-$index"
@@ -331,7 +331,11 @@ private fun accessScoring(members: List<AccessScoringInterceptor>) =
 
                 is AccessNotificationInterceptor -> announce(key, member)
 
-                else -> step(key, member)
+                // An announcement is no longer a step, so the fallthrough has to know which
+                // kind it is holding rather than assuming one (B-41).
+                is AccessScoringInterceptor -> step(key, member)
+
+                else -> error("$key is neither a step nor an announcement")
             }
         }
     }
