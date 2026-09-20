@@ -1,7 +1,7 @@
 ---
 id: B-42
 title: "petich<T>() returns a definition and Petich is an instance"
-status: open
+status: wip
 priority: P2
 size: S
 stage: stage-10-review
