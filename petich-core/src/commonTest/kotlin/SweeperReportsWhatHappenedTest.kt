@@ -2,6 +2,7 @@ package io.github.youndie.petich
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -51,6 +52,9 @@ class SweeperReportsWhatHappenedTest {
         /** The failure the item's second half is about: one queue's index is unavailable. */
         var expiredQueryFails: Boolean = false
 
+        /** A query that never answers, so the worker can be cancelled while it is inside one. */
+        var expiredQueryHangs: Boolean = false
+
         /** Counted rather than logged: it is the witness that the worker is still going round. */
         var stuckQueries: Int = 0
 
@@ -87,6 +91,7 @@ class SweeperReportsWhatHappenedTest {
             limit: Int,
         ): List<Petich> {
             if (expiredQueryFails) throw IllegalStateException("the expiry index is being rebuilt")
+            if (expiredQueryHangs) awaitCancellation()
             return emptyList()
         }
 
@@ -236,17 +241,23 @@ class SweeperReportsWhatHappenedTest {
         }
 
     @Test
-    fun `a cancelled worker still stops`() =
+    fun `a worker cancelled inside a query stops rather than reporting it`() =
         runTest {
-            // The guard above must not swallow the one throw that means "the caller went away".
+            // The one throw that must get past both guards: it is the caller going away, not a
+            // queue failing. Cancelled INSIDE a query on purpose — cancelled while waiting out the
+            // poll interval never reaches either `catch`, so a test that did that would pass
+            // whatever the catches said.
             val now = 10.minutes.inWholeMilliseconds
             val clock = PetichClock { now }
             val repository = Rows(clock)
             val failures = mutableListOf<Pair<String, String>>()
 
+            repository.expiredQueryHangs = true
+
             val job =
                 sweeperOver(repository, clock, mutableListOf(), mutableListOf(), failures).start(this)
             runCurrent()
+            assertTrue(job.isActive, "the worker did not reach the query")
             job.cancel(CancellationException("shutting down"))
             runCurrent()
 
