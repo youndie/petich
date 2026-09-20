@@ -1310,6 +1310,30 @@ public class PetichEngine(
         }
 
         try {
+            // A SAGA THAT MATCHES NOTHING IS NOT A COMPLETED SAGA.
+            //
+            // Every phase empty means the engine was handed a saga it has no members for: a definition
+            // whose `type` is spelled differently from the row's, an interceptor list that is not this
+            // saga's, or a registration nobody made. Without this the walk finds nothing to do in five
+            // phases and writes COMPLETED — the caller is told the work succeeded, the money never
+            // moved, and every assertion anyone naturally writes about the RESULT passes.
+            //
+            // Found by migrating a consumer whose type constant reads `top_up` against a definition
+            // declared as `topup`. Four of its tests failed on the balance rather than on the cause, and
+            // the saga itself reported Success.
+            if (PetichPhase.entries.all { chainFor(it, currentPetich.payload, currentPetich.type).isEmpty() }) {
+                val known = definitions.joinToString { it.type }
+                return failTerminally(
+                    currentPetich,
+                    "no member of any phase applies to a saga of type `${currentPetich.type}`: " +
+                        if (definitions.isEmpty()) {
+                            "the engine has no definitions and no interceptor accepted its payload"
+                        } else {
+                            "the engine knows [$known] and none of them is it"
+                        },
+                )
+            }
+
             val startingPhaseIndex = currentPetich.currentPhase.ordinal
             val remainingPhases = PetichPhase.entries.drop(startingPhaseIndex)
             val initialPhase = currentPetich.currentPhase

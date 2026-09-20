@@ -302,4 +302,32 @@ class DefinitionEngineTest {
                 "the rollback said so, in its own write: ${repository.outbox}",
             )
         }
+
+    /**
+     * The sharpest edge the migration of a consumer found: a saga whose type matches no definition
+     * used to run zero members and report Success. Four of konekt's tests then failed on a balance
+     * that had not moved, and none of them on the cause — because the cause reported success.
+     */
+    @Test
+    fun `a saga that matches no member is refused rather than completed`() =
+        runBlocking {
+            val log = Log()
+            val repository = RowRepository()
+            val definition = petich<OrderPayload>("order") { step("charge", Acts("charge", log)) }
+            val engine =
+                PetichEngine(
+                    repository = repository,
+                    clock = PetichClock { 1_000L },
+                    definitions = listOf(definition),
+                )
+
+            val result = engine.process(petich("p-wrong-type").copy(type = "ordr"))
+
+            assertTrue(result is PetichResult.SystemFailure, "expected a refusal, not a success: $result")
+            assertTrue(
+                result.details.contains("`ordr`") && result.details.contains("order"),
+                "the refusal has to name the type it got and the ones it knows: ${result.details}",
+            )
+            assertTrue(log.entries.isEmpty(), "and nothing ran: ${log.entries}")
+        }
 }
