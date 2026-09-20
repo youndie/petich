@@ -12,6 +12,9 @@ PY ?= python3
 
 help:
 	@echo "make check   - the gate: blocking checks, exactly what CI runs"
+	@echo "               (the README's EXAMPLES are compiled by build.yaml instead:"
+	@echo "                ./gradlew publishToMavenLocal -PVERSION=<v> &&"
+	@echo "                python3 tools/readme-examples.py <v>)"
 	@echo "make report  - non-blocking reports: BDD coverage, code anchors"
 	@echo "make fix     - regenerate the backlog index, fill in missing coverage-map lines"
 

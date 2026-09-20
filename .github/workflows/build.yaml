@@ -78,6 +78,19 @@ jobs:
       - name: A Kotlin/Native consumer can resolve what was published
         run: python3 tools/native-consumer-probe.py ci-${{ github.run_number }} --expect resolve
 
+      # THE FIRST CONSUMER ANYBODY MEETS IS THE README, AND NOTHING COMPILED IT.
+      #
+      # B-45 found eight places where the page described a model the code no longer had, and every
+      # one survived because prose beside code is checked by nobody: `make check` reads documents,
+      # `./gradlew build` reads sources, and neither compiles a fenced block. The sharpest of the
+      # eight was TRUE when it was written and became false when B-41 merged four hours earlier —
+      # which is not something care at the keyboard catches.
+      #
+      # Same argument as the probe above, one level out: that one exists because the root build does
+      # not compile what a consumer compiles. The page's examples are a consumer too.
+      - name: The README's examples compile against what was published
+        run: python3 tools/readme-examples.py ci-${{ github.run_number }}
+
       # Reads two files, so it runs on a pull request rather than after a publish — this is the
       # moment a module is added, and the moment the coordinate list is not updated with it.
       - name: The consumer job covers every published module
