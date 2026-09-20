@@ -270,8 +270,53 @@ alongside*. `ctx.emit` and `ctx.attach` close it. **This is what an acceptance i
 one saga of three members to find, and no amount of reading the design would have.
 
 One asymmetry inherited rather than introduced: `InterceptorResult.Suspend` carries side effects and
-**not** outbox events, so a member that announces and then suspends loses the announcement. That was
-true before this stage and is not made worse by it; it is worth an item of its own.
+**not** outbox events, so a member that announces and then suspends loses the announcement.
+
+**Correction, and the sentence above was wrong about the part that matters (B-35).** "Not made worse
+by it" is exactly backwards. An interceptor had no channel to announce through on a suspension, so
+nobody could write the mistake; `ctx.emit` before `ctx.suspendFor` compiles, runs, and disappears.
+This stage turned a missing capability into a silent loss, which is the objection it raised against
+the empty `compensate` in the first place, made by the thing that was meant to retire it.
+
+### D8. What each outcome carries, and why a refusal carries nothing
+
+Settled while closing B-35, because "whatever the engine happens to do" is not a design.
+
+**`Proceed` and `Suspend` carry everything the member asked for.** Both commit forward progress —
+a suspension writes the row to `PENDING_SIGNATURE`, which is as real a write as any — so an
+announcement has something to ride on. konekt's authorisation is the case: it holds a subscriber's
+money and waits, in one member, and "we are holding your funds, confirm within five minutes" belongs
+in that write. `Suspend` gains an `outboxEvents` field beside the `sideEffects` it already had. That
+`sideEffects` exists at all is the tell: somebody hit this gap once, gave the durable timer a field,
+and left the announcement without one.
+
+**`Reject` and `Compensate` carry nothing, and that is a decision rather than the status quo
+preserved.** Both begin a rollback. petich will not announce work it is in the middle of undoing —
+an event committed with the write that starts a rollback describes something that is about to stop
+being true, and the outbox is at-least-once, so it cannot be recalled. **A rollback's own word
+belongs to the compensations**, which may announce freely: `undo` returns what its context emitted,
+and konekt's `HoldFunds` announces the reversal from exactly there.
+
+**The hole that leaves, named rather than waved past.** The *refusing* member's own compensation does
+not run — a reported refusal means the member did nothing, so the rollback starts before it — and so
+anything that member emitted has no owner at all. Two answers, both taken:
+
+- **A check cannot announce.** `emit` and `attach` moved from `PetichMemberContext` to
+  `PetichStepContext`. A check's entire contribution is whether the saga continues; it has no
+  compensation to inherit its word, and a check that refuses leaves nothing behind that could carry
+  one. The model stops accepting what it cannot honour — which is the whole argument of D2 applied
+  to a second question. konekt's purchase validation writes its refusal through its own ledger port
+  and is unaffected; that it had to is the evidence the hole was real.
+- **A step that announces and then refuses is counted, not dropped.**
+  `PetichEngineMetrics.onAnnouncementDiscarded(type, stepKey, count)` names the member. Deliberately
+  not `onDroppedEvents`, whose own documentation calls that one a mistake "reached by accident rather
+  than by decision" — a repository with no outbox at all. This one is the decision, and a counter
+  meaning both would answer neither question. A non-zero line is a member written as though
+  announcing and refusing could be done in one breath.
+
+**What made this findable only now:** the whole suite was green while three outcomes out of four lost
+announcements. `AnnouncementPerOutcomeTest` states the rule per outcome, and each of its four cases
+was checked by breaking the folding that serves it.
 
 **Open question 3. Is the phase list still five?** The phases came from a banking pipeline
 (`ENRICHMENT → VALIDATION → AUTHORIZATION → EXECUTION → POST_PROCESSING`). With order given by the
