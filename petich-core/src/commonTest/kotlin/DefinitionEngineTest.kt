@@ -197,7 +197,7 @@ class DefinitionEngineTest {
             val repository = RowRepository()
             val definition =
                 petich<OrderPayload>("order") {
-                    authorize(
+                    step(
                         "hold-funds",
                         Acts("hold-funds", log) { ctx -> ctx.suspendFor("CONFIRM", 5.minutes) },
                     )

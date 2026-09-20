@@ -139,16 +139,16 @@ class EngineConfigTest {
                 PetichEngine(
                     repository = RecordingRepository(),
                     compensationFailureHandler = handler,
-                    // AUTHORIZATION RATHER THAN ENRICHMENT, and the move is the model rather than
-                    // convenience: a compensation timeout needs a member that HAS a compensation,
-                    // and ENRICHMENT and VALIDATION take checks, which have none. What is under
-                    // test — a hung rollback is interrupted and reaches the failure handler — is
-                    // untouched by which phase it happens in.
-                    config = PetichEngineConfig(compensationTimeoutsMs = mapOf(PetichPhase.AUTHORIZATION to 100)),
+                    // EXECUTION, and the phase is the model rather than convenience: a compensation
+                    // timeout needs a member that HAS a compensation, and every phase before this
+                    // one takes checks, which have none (B-39). What is under test — a hung rollback
+                    // is interrupted and reaches the failure handler — is untouched by which phase
+                    // it happens in.
+                    config = PetichEngineConfig(compensationTimeoutsMs = mapOf(PetichPhase.EXECUTION to 100)),
                     definitions =
                         listOf(
                             petich<TestPayload>("test") {
-                                authorize("hangs", hanging)
+                                step("hangs", hanging)
                                 step("fails", failing)
                             },
                         ),

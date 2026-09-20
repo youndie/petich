@@ -293,20 +293,31 @@ public class PetichDefinitionBuilder<P : PetichPayload> internal constructor(
     ): Unit = add(key, PetichPhase.VALIDATION, check = check)
 
     /**
-     * `AUTHORIZATION` takes **either kind**, and that is a decision rather than an oversight (D3).
-     * konekt's authorisation holds money and then waits for a confirmation, as one step, on a
-     * recorded decision of its own; a verb that implied the type would force it to be cut in two to
-     * satisfy the model.
+     * `AUTHORIZATION` takes a check and nothing else — which it did not, until B-39.
+     *
+     * It used to take either kind, on D3's argument that konekt's authorisation holds money and then
+     * waits for a confirmation as one member, and that a verb implying the type would force it in
+     * two. The argument was about the wrong axis. **In payments, "authorization" IS the hold; in
+     * these phases it means "is this allowed, and has the human agreed"** — one word, two senses,
+     * and the overload let the second phase hold members of the first.
+     *
+     * What that cost is the only thing a phase is for. If a member here may act, then "before
+     * effects" is a sentence the author remembers rather than a property the type carries, and every
+     * reader of a definition has to check each member to learn what the boundary means. That is the
+     * shape of defect this model removed from an empty `compensate`, arriving at the phases instead.
+     *
+     * It was never about losing money: a refusal rolls back what ran (B-20), so the hold came back
+     * either way. It was about a reader being unable to use the phase at all.
+     *
+     * **A member that acts goes in [step], above the members that depend on it** — which also gives
+     * the rollback the order it should have had: what was reserved is released before what was held.
+     * Both consumers' holds are there now, and both still suspend from it: waiting was never the
+     * property this phase guarded.
      */
     public fun authorize(
         key: String,
         check: PetichCheck<P>,
     ): Unit = add(key, PetichPhase.AUTHORIZATION, check = check)
-
-    public fun authorize(
-        key: String,
-        step: PetichStep<P>,
-    ): Unit = add(key, PetichPhase.AUTHORIZATION, step = step)
 
     public fun step(
         key: String,

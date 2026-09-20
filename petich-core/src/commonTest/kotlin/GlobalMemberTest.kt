@@ -87,7 +87,7 @@ class GlobalMemberTest {
     private fun definition(log: MutableList<String>) =
         petich<OrderPayload>("order") {
             validate("limits", CheckOf("limits", log))
-            authorize("hold", Acts("hold", log, suspendHere = true))
+            step("hold", Acts("hold", log, suspendHere = true))
             step("ship", Acts("ship", log))
         }
 
@@ -157,7 +157,7 @@ class GlobalMemberTest {
             "inline and in the position it runs, and named as a global: $chain",
         )
         assertTrue(
-            chain.contains("AUTHORIZATION: hold") && chain.contains("EXECUTION: ship"),
+            chain.contains("EXECUTION: hold -> ship"),
             "and the definition's own members are still described: $chain",
         )
     }

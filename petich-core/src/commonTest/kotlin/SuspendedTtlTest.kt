@@ -287,8 +287,8 @@ class ExpireSuspendedTest {
                                 // so a member declared in EXECUTION would not have run before the
                                 // AUTHORIZATION one suspended - and then there would be nothing to
                                 // roll back, which is what this test is about.
-                                authorize("ran", executed)
-                                authorize("confirm", suspending)
+                                step("ran", executed)
+                                step("confirm", suspending)
                             },
                         ),
                 )

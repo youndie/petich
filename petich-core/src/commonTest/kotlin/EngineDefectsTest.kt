@@ -129,7 +129,7 @@ class EngineDefectsTest {
                     definitions =
                         listOf(
                             petich<TestPayload>("test") {
-                                authorize("slow-undo", slowCompensation)
+                                step("slow-undo", slowCompensation)
                                 step("fails", compensating)
                             },
                         ),
@@ -145,12 +145,12 @@ class EngineDefectsTest {
             // by default, see PetichEngineConfig.compensationTimeoutMs — and not half the hang
             // duration: in virtual time no slack for the scheduler is needed.
             //
-            // AUTHORIZATION rather than ENRICHMENT, because that is where the hanging member now
-            // sits: a compensation needs a member that HAS one, and ENRICHMENT takes checks.
+            // EXECUTION, because that is where the hanging member sits: a compensation needs a
+            // member that HAS one, and every phase before EXECUTION takes checks (B-39).
             assertTrue(
-                elapsed <= PetichPhase.AUTHORIZATION.timeoutMs,
+                elapsed <= PetichPhase.EXECUTION.timeoutMs,
                 "compensation is not bounded by a timeout: the caller waited ${elapsed}ms " +
-                    "against a phase timeout of ${PetichPhase.AUTHORIZATION.timeoutMs}ms",
+                    "against a phase timeout of ${PetichPhase.EXECUTION.timeoutMs}ms",
             )
         }
 
