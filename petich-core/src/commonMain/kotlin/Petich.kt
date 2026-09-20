@@ -823,6 +823,12 @@ public class PetichEngine(
         // nobody can touch, on top of the failure it already causes.
         val current = prefixFingerprint(petich) ?: return null
         if (recorded == current) return null
+        // COUNTED ON EVERY PASS, and the saga is left exactly as it is. Its neighbour two methods
+        // down — a chain that could not be assembled at all — has had a counter since it existed,
+        // and this one had none, so the more specific failure was the invisible one. Nothing is
+        // written here on purpose: the condition ends when the deploy does, and a row marked
+        // terminal could not be un-marked when it did (B-44).
+        metrics.onChainRefused(petich.type, petich.currentPhase)
         return PetichResult.SystemFailure(
             "the interceptor chain changed under saga ${petich.id}: it recorded $recorded for the steps " +
                 "it had run and this process computes $current, so ${petich.currentPhase} index " +

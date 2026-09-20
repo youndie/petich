@@ -320,6 +320,30 @@ The **key** each member is declared under is what that order and that fingerprin
 member reads its own through `ctx.stepKey` — which is what to name a span or a log line after, since
 it is the same string going forward and inside the member's own rollback.
 
+**A refused saga is left exactly as it was, and that is the recovery rather than an omission.** The
+engine writes nothing on a refusal — the row keeps its status, its position and its deadline — so
+the saga resumes and finishes the moment a process with the matching chain reaches it again. The
+condition is a disagreement between two deployed versions, not damage to the saga.
+
+It has a cost while it lasts: the saga keeps whatever it held, and the row reads what a healthy one
+reads. `PetichEngineMetrics.onChainRefused` is the signal — it fires on **every** pass over such a
+saga, deliberately, because the mismatch is not an event that happened once and a counter that went
+quiet after the first sweep would read as "resolved". Read the rate: non-zero means sagas are being
+refused right now.
+
+The remedy is a deploy, not a repair:
+
+1. **Roll the deploy back.** The old chain reproduces the recorded fingerprint and every refused saga
+   resumes where it stopped.
+2. **Let the sagas in flight finish**, or expire — watch `onChainRefused` fall to zero. That is what
+   says it is safe to go again, and it is why a *terminal* status was refused here: marking these
+   sagas dead would be unremovable, and the situation is recoverable.
+3. **Roll forward.** Members added at the end of a phase never cause this; it is insertion, removal
+   and reordering *before* a saga's position that does.
+
+A release that cannot wait can avoid the whole case: append the new member rather than inserting it,
+or run the old chain beside the new one until the sagas started under it are done.
+
 **A `compensate()` that throws stops the rollback below it.** The members under the one that threw are
 not undone, and the saga stays `COMPENSATING`. That is retried — the whole rollback, not just the
 step — up to `maxCompensationAttempts` separate passes, counted on the saga itself so a restart does

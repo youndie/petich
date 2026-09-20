@@ -602,6 +602,42 @@ here, because its `PaymentGateway` port cannot express a caller-chosen name yet.
 *needs*. What it cannot be is evidence that the effect happened, because that is a fact only the far
 side has. D4 stands; this is the other half of it.
 
+### D14. A refused chain is counted, not marked — because the condition is recoverable
+
+Decision: `chainMismatch` fires `PetichEngineMetrics.onChainRefused(type, phase)` on every pass and
+**still writes nothing to the row**. No new status, and the README carries the runbook instead.
+
+Why:
+
+- **the refusal was the only failure in the engine with no signal of any kind.** Its neighbour — a
+  chain that could not be assembled at all — has had `onChainUnavailable` since it existed, so the
+  more specific and more damaging case was the invisible one. The row keeps its status, its position
+  and its deadline, which is what a healthy saga's row reads;
+- **fires on every pass, deliberately.** The mismatch is not an event that happened once: it holds
+  while two deployed versions disagree. A counter that went quiet after the first sweep would read as
+  "resolved" to anybody watching, which is worse than no counter. The rate is the measurement;
+- **no saga id on the counter.** An unbounded dimension does not belong in a metric; the refusal's
+  message names the saga and both fingerprints, and that is where identity belongs.
+
+**Rejected: a terminal status, which is what the review proposed.** It is the natural answer by
+analogy with `COMPENSATION_FAILED`, and the analogy is what breaks. An exhausted rollback is damage:
+the saga is half undone and nothing will touch it again. A refused chain is a **disagreement between
+two deployed versions** — roll the deploy back and every refused saga resumes where it stopped and
+finishes. Marking those sagas dead would convert a recoverable situation into an unrecoverable one,
+because a terminal status cannot be un-set by the deploy that fixes the cause. The runbook's second
+step is a test rather than a sentence for this reason.
+
+**Left open: a non-terminal status a person could query** — `SELECT ... WHERE status = 'REFUSED'`
+answers "which sagas are stuck" in a way a counter cannot, and self-heals on the next matching pass.
+Its price is a write on the one path that currently writes nothing, a version bump that can race a
+healthy process, and a new enum value every consumer's exhaustive `when` has to handle. That is a
+person's call, not this item's, and it is recorded here so it is made knowingly rather than by
+default.
+
+**No consumer had to change**, which is the counter's other argument: the method is defaulted, and
+the only implementation in the portfolio — shashki's `RefusingMetrics` — overrides one unrelated
+method.
+
 ---
 
 ## 4. What happens next
