@@ -1,7 +1,7 @@
 ---
 id: B-48
 title: "The rule assumes the far side can cancel by the caller's name, and often it cannot"
-status: open
+status: wip
 priority: P1
 size: M
 stage: stage-10-review

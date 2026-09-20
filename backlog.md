@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-48](docs/backlog/B-48-the-far-side-may-not-cancel-by-your-name.md) `[ ]` | The rule assumes the far side can cancel by the caller's name, and often it cannot | P1 | M | - |
+| [B-48](docs/backlog/B-48-the-far-side-may-not-cancel-by-your-name.md) `[~]` | The rule assumes the far side can cancel by the caller's name, and often it cannot | P1 | M | - |
 | [B-50](docs/backlog/B-50-an-announcement-can-run-twice.md) `[ ]` | An announcement is re-run after a crash and nothing says it must tolerate that | P1 | M | - |
 | [B-46](docs/backlog/B-46-nothing-compiles-the-readme.md) `[ ]` | Nothing compiles the README, so its examples rot silently | P2 | M | - |
 | [B-49](docs/backlog/B-49-a-failed-announcement-never-leaves-the-database.md) `[ ]` | A failed announcement leaves a counter and nothing else | P2 | S | - |
