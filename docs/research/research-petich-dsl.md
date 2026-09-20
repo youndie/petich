@@ -229,8 +229,8 @@ Why:
 boundary is a step in the chain that is not written where the saga is read — which is the defect this
 whole model removes, returning by another door. Mitigation: globals are one declared, ordered list;
 `describeChain` renders them **inline** in each saga's chain; the fingerprint covers them, so a
-deploy that adds one is caught by the same mechanism as a deploy that moves a step. Open: whether a
-global may be a `PetichStep` at all, or only a `PetichCheck`.
+deploy that adds one is caught by the same mechanism as a deploy that moves a step. **Closed by
+B-30, and the open question with it — see D9.**
 
 **Risk 2. The step key becomes a migration.** Renaming `"reserve-stock"` re-points every saga in
 flight, exactly as moving a position does today — the failure mode moves rather than disappearing,
@@ -317,6 +317,44 @@ anything that member emitted has no owner at all. Two answers, both taken:
 **What made this findable only now:** the whole suite was green while three outcomes out of four lost
 announcements. `AnnouncementPerOutcomeTest` states the rule per outcome, and each of its four cases
 was checked by breaking the folding that serves it.
+
+### D9. A global is a check, and it goes through the one seam everything else goes through
+
+Settled while closing B-30, which is where Risk 1 was to be answered.
+
+**A global may not be a `PetichStep`.** A member that acts has to be undone, and a global's undo
+would run inside *every* saga's rollback, at a position no saga's author wrote. The author reads
+their definition, counts its members, and reasons about a rollback that walks more of them than
+they can see — which is the defect this whole stage removes, arriving from the other side. A check
+has nothing petich must undo (D2), so a global lengthens the forward pass and no rollback at all.
+
+**That does not make a global pure, and saying so would be the dishonest version of this rule.** A
+global may act through its own ports; plenty of audit does. What the type forbids is acting in a way
+that leaves petich owing somebody an undo. It also cannot announce, since `emit` belongs to a step
+for the same reason (D8/B-35) — so a cross-cutting concern that needs a transactional write of its
+own is a concern that wants to be a member of the sagas that care, not of all of them.
+
+**The mechanism is one line in `chainFor`, deliberately.** Every question anybody asks about a chain
+— what runs, in what order, what the fingerprint covers, what a mismatch prints — was already
+answered by that single function. Putting globals in front of their phase's declared members there
+makes them inline everywhere *by construction*, rather than by four call sites each remembering to
+include them. The alternative shape, a table of globals rendered beside each chain, is the one that
+rots: it is a hand-written list beside a growing set.
+
+**Rejected: attaching globals per saga in the definition.** Explicit, and a copy of the same three
+lines in every definition — which is what `supports` was for, badly.
+
+**Correction found while implementing.** `describeChain` took a *payload* and resolved the chain by
+it, while a definition is resolved by *type*. So for every saga on the definition model it described
+the interceptor chain — the empty one — including inside the message a chain mismatch prints, which
+exists to tell a reader what the chain is. The diagnostic built for this stage printed five dashes
+to exactly the people the stage is for. It now takes the type; the parameter is defaulted, so the
+interceptor model keeps what it had.
+
+**One namespace for keys, refused at construction.** A key identifies a member in the saga's row —
+`stepRecords` is keyed by it, the fingerprint is built from it — and a global shares its chain with
+every definition there is. Two members under one key would overwrite each other's record and make
+the fingerprint ambiguous, so the engine refuses the collision by name.
 
 **Open question 3. Is the phase list still five?** The phases came from a banking pipeline
 (`ENRICHMENT → VALIDATION → AUTHORIZATION → EXECUTION → POST_PROCESSING`). With order given by the
