@@ -133,7 +133,7 @@ class AnnouncementPerOutcomeTest {
             val repository = RowRepository()
             val definition =
                 petich<OrderPayload>("order") {
-                    authorize("hold", Announces("hold") { it.suspendFor("CONFIRM", 5.minutes) })
+                    step("hold", Announces("hold") { it.suspendFor("CONFIRM", 5.minutes) })
                 }
 
             val result = engineFor(definition, repository).process(row("p-suspend"))

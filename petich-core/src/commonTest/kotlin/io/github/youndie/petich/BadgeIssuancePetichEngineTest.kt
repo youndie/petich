@@ -367,8 +367,9 @@ class BadgeIssuanceNotificationInterceptor(
  * of their own: a member's phase is a property of the member, and indexing a list by position made
  * it a property of the list.
  *
- * **What used to sit in ENRICHMENT and VALIDATION is in AUTHORIZATION.** Those phases take
- * `PetichCheck`s, which have no undo, and every member of this corpus has one. What the corpus is
+ * **Every member is a step, so every member is in EXECUTION.** ENRICHMENT, VALIDATION and — since
+ * B-39 — AUTHORIZATION take `PetichCheck`s, which have no undo, and every member of this corpus has
+ * one. What the corpus is
  * for — the order members run in, the order they are undone in, and what a suspension does in the
  * middle — does not depend on which phase they sit in, and nothing here asserts a phase.
  */
@@ -385,7 +386,7 @@ private fun badgeIssuance(members: List<BadgeIssuanceInterceptor>) =
 
                 is BadgeIssuanceNotificationInterceptor -> announce(key, member)
 
-                else -> authorize(key, member)
+                else -> step(key, member)
             }
         }
     }

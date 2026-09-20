@@ -113,11 +113,12 @@ class RejectRollsBackTest {
                     repository = repository,
                     definitions =
                         listOf(
-                            // `authorize` rather than `validate`, because this refusal comes from a
-                            // member that COULD have acted — which is what the case is about. A
-                            // VALIDATION member is a check and has no undo to leave unused.
+                            // A STEP rather than a check, because this refusal comes from a member
+                            // that COULD have acted — which is what the case is about. Since B-39
+                            // that means EXECUTION: the phases before it take checks, which have no
+                            // undo to leave unused.
                             petich<OrderPayload>("order") {
-                                authorize("validate", Step("validate", log, rejectWith = "malformed"))
+                                step("validate", Step("validate", log, rejectWith = "malformed"))
                                 step("reserve", Step("reserve", log))
                             },
                         ),

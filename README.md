@@ -172,11 +172,20 @@ A saga is a **definition**: the members it runs, in the order they run.
 ```kotlin
 val order = petich<OrderPayload>("order") {
     validate("in-stock", InStock(stock))
-    authorize("hold-funds", HoldFunds(payments))
+    authorize("within-limits", WithinLimits(limits))
+    step("hold-funds", HoldFunds(payments))
     step("reserve", ReserveStock(stock))
     announce("confirmed", AnnounceOrder(events))
 }
 ```
+
+**`validate` and `authorize` take checks; `step` and `announce` take members that act.** That is the
+whole meaning of a phase here, and it is the type rather than a convention: a member declared above
+`step` cannot have an effect to undo, so a reader can stop at the first `step` and know that
+everything above it only decided. `hold-funds` takes money, so it is a step — in payments
+*authorization* is the hold itself, but in these phases AUTHORIZATION asks whether it is allowed.
+Putting it in `step` also gives the rollback the order it should have: the reservation is released
+before the hold is.
 
 A member that acts is a `PetichStep`: what to do, and how to undo it.
 

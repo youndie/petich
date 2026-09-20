@@ -156,6 +156,26 @@ Why:
 - the builder forbids `validate` after `step`, and that ordering rule — not the verb — is what keeps
   a check from sitting after an effect. **Without it the trap of 1.2 returns through the back door.**
 
+**Correction — D3 was decided on the wrong axis, and the README's own example is what showed it
+(B-39).** A reviewer asked whether `authorize("hold-funds", HoldFunds(payments))` compiles. It did.
+So a phase whose meaning is "before effects" accepted members that have them, and that meaning became
+a sentence the author remembers rather than a property the type carries — which is the defect this
+model removed from an empty `compensate`, arriving at the phases instead.
+
+**The term collides, and that is the cause.** In payments, *authorization* IS the hold. In these
+phases, AUTHORIZATION asks whether it is allowed and whether the human agreed. D3 heard konekt say
+"our authorisation holds money and waits" and concluded the verb had to take both kinds; what konekt
+was saying is that its hold is not an authorisation in this sense at all.
+
+**What was NOT the problem, and the review's own premise had it the other way:** a refusal from a
+later member does not leave the hold standing. B-20 made `Reject` roll back what ran, and
+`RejectRollsBackTest` holds it. The cost was never money; it was that a reader could not use a phase.
+
+`authorize` takes a check only. A member that acts goes in `step`, above what depends on it — which
+also gives the rollback the order it should have had: released before unheld. **Both consumers'
+holds moved with it and both still suspend from `step`**, so waiting was never the property this
+phase guarded. D9's argument is untouched: a global is still a check, for its own reason.
+
 ### D4. What a step did is recorded per step, not in the shared payload
 
 Decision: `ctx.record(value)` / `ctx.recorded<T>()`, persisted beside the step's key and readable

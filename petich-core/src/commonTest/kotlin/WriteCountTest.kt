@@ -91,15 +91,15 @@ class WriteCountTest {
     /**
      * The same six members, one per phase but for EXECUTION, which carries two.
      *
-     * `enrich` and `validate` are steps under `authorize` rather than checks in their own phases:
-     * what this test counts is WRITES per member, and a check costs the same write a step does. Two
-     * of them in AUTHORIZATION keeps the count at six with no member losing its undo.
+     * All six are steps, so all six are in EXECUTION: what this test counts is WRITES per member,
+     * and a check costs the same write a step does. Keeping them steps keeps the count at six with
+     * no member losing its undo — and since B-39 a member that can act has one phase to be in.
      */
     private fun sixSteps(suspendAt: String? = null) =
         petich<OrderPayload>("order") {
-            authorize("enrich", Step("enrich"))
-            authorize("validate", Step("validate"))
-            authorize("authorise", Step("authorise", suspendHere = suspendAt == "authorise"))
+            step("enrich", Step("enrich"))
+            step("validate", Step("validate"))
+            step("authorise", Step("authorise", suspendHere = suspendAt == "authorise"))
             step("reserve", Step("reserve", events = 1))
             step("charge", Step("charge", events = 1))
             announce("notify", Step("notify", events = 1))

@@ -159,7 +159,7 @@ class PetichRoutingTest {
 
                                         is PetichStep<*> -> {
                                             @Suppress("UNCHECKED_CAST")
-                                            authorize(key, member as PetichStep<TestPayload>)
+                                            step(key, member as PetichStep<TestPayload>)
                                         }
 
                                         else -> {

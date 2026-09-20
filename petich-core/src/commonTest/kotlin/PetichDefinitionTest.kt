@@ -41,7 +41,7 @@ class PetichDefinitionTest {
         val definition =
             petich<OrderPayload>("order") {
                 validate("limits", Decides())
-                authorize("confirm", Acts())
+                authorize("confirm", Decides())
                 step("reserve-stock", Acts())
                 step("charge", Acts())
                 announce("notify", Acts())
@@ -89,24 +89,25 @@ class PetichDefinitionTest {
     }
 
     /**
-     * The same rule reached through the verb that takes both kinds. `authorize` accepting a step is
-     * D3 — konekt holds money and suspends in one member — and a check after that step is still a
-     * refusal that could keep what the step did.
+     * The rule used to be stated "through the verb that takes either kind", and there is no such
+     * verb since B-39: `authorize` takes a check, so a member that acts can only be a `step`. What
+     * the rule guards is unchanged — a check placed after something has acted would refuse while
+     * keeping what ran — and it is now the only way the mistake can still be written.
      */
     @Test
-    fun `the rule holds through the verb that takes either kind`() {
+    fun `a check after a member that acted is refused whichever phase it names`() {
         assertFailsWith<IllegalArgumentException> {
             petich<OrderPayload>("order") {
-                authorize("hold-funds", Acts())
+                step("hold-funds", Acts())
                 validate("too-late", Decides())
             }
         }
 
-        // And the legitimate order is accepted: a check, then a step that acts, in one phase.
+        // And the legitimate order is accepted: every check first, then the members that act.
         val fine =
             petich<OrderPayload>("order") {
                 authorize("policy", Decides())
-                authorize("hold-funds", Acts())
+                step("hold-funds", Acts())
             }
         assertEquals(listOf("policy", "hold-funds"), fine.members.map { it.key })
     }

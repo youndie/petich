@@ -116,7 +116,7 @@ class TerminalReplayTest {
                     definitions =
                         listOf(
                             petich<ReplayPayload>("replay") {
-                                authorize("refuses", ReplayInterceptor { it.reject("no") })
+                                step("refuses", ReplayInterceptor { it.reject("no") })
                             },
                         ),
                 )
