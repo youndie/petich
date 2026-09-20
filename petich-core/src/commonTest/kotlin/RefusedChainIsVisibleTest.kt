@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * B-44: a saga refused for a changed chain is left exactly as it was, so nothing about the row says
@@ -132,6 +133,80 @@ class RefusedChainIsVisibleTest {
 
             assertEquals(emptyList(), metrics.refusals, "a normal deploy must not raise this")
         }
+
+    @Test
+    fun `an expiry over a changed chain is refused and rolls nothing back`() =
+        runBlocking {
+            // THE THIRD PATH, and the one that had no test at all (B-56). `process` is covered
+            // above; `sweepStuck` is covered in SweeperReportsWhatHappenedTest; the expiry queue
+            // reaches `chainMismatch` through `expireSuspended` and nothing asserted on it — on the
+            // path whose own comment says the refusal matters MOST, because an expiry rolls back
+            // without anyone watching and a rollback over a changed chain compensates steps that
+            // never ran.
+            var now = 0L
+            val clock = PetichClock { now }
+            val repository = RowRepository()
+            val metrics = CountingMetrics()
+
+            val parked =
+                timed(
+                    repository,
+                    PetichEngineMetrics.NoOp,
+                    clock,
+                    "reserve",
+                    "confirm",
+                    "ship",
+                ).process(order())
+            check(parked is PetichResult.ActionRequired) { "expected a suspension: $parked" }
+            val asStored = checkNotNull(repository.row)
+
+            // The deadline passes, and the deploy that moves the saga's index has happened.
+            now += 10.minutes.inWholeMilliseconds
+            val afterDeploy = timed(repository, metrics, clock, "audit", "reserve", "confirm", "ship")
+
+            val first = afterDeploy.expireSuspended("p-1")
+
+            assertTrue(first is ExpireResult.ChainChanged, "expected a refusal: $first")
+            assertEquals(listOf("order/EXECUTION"), metrics.refusals)
+            // Untouched, which is what makes the rate below possible and what keeps the deploy the
+            // remedy: roll back and this saga expires normally.
+            assertEquals(asStored, repository.row)
+
+            // AND THE RATE, which is the sentence D14 and the README make. Nothing was written, so
+            // the row still matches the query that found it and the next poll refuses it again. A
+            // claim taken before the check would hide it for as long as the deadline is re-read.
+            val second = afterDeploy.expireSuspended("p-1")
+            assertTrue(second is ExpireResult.ChainChanged, "expected a second refusal: $second")
+            assertEquals(2, metrics.refusals.size)
+        }
+
+    private fun order() =
+        Petich(
+            id = "p-1",
+            type = "order",
+            currentPhase = PetichPhase.EXECUTION,
+            status = PetichStatus.PROCESSING,
+            payload = OrderPayload("sku-1"),
+        )
+
+    /** The same engine with a clock and a deadline, so a suspension can actually expire. */
+    private fun timed(
+        repository: PetichRepository,
+        metrics: PetichEngineMetrics,
+        clock: PetichClock,
+        vararg keys: String,
+    ) = PetichEngine(
+        repository = repository,
+        config = PetichEngineConfig(defaultSuspendTtl = 5.minutes),
+        clock = clock,
+        metrics = metrics,
+        definitions =
+            listOf(
+                petichDefinition<OrderPayload>("order") {
+                    keys.forEach { key -> step(key, Step(key, suspendHere = key == "confirm")) }
+                },
+            ),
+    )
 
     private fun engine(
         repository: PetichRepository,

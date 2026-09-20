@@ -697,6 +697,40 @@ default.
 the only implementation in the portfolio — shashki's `RefusingMetrics` — overrides one unrelated
 method.
 
+**"Every pass" is three different clocks, and the bullet above never said which (B-56).** A saga in
+this state is reached from three places, and each gives the counter a different rate:
+
+| path | what "a pass" is | how often |
+|---|---|---|
+| `process` | a request, or a resume | whenever the application calls it |
+| `sweep` → `expireSuspended` | one poll of the expiry queue | once per `pollInterval` |
+| `sweepStuck` | one poll of the stranded queue | once per `pollInterval` |
+
+So the rate an operator reads is dominated by the two polls, and the number it settles at is
+`refused sagas × passes per poll interval` rather than anything about the sagas alone. That is worth
+knowing before choosing an alert threshold, and none of it was written down.
+
+**And on the stranded queue it was once per `stuckAfter`, not once per poll — until B-55.**
+`sweepStuck` took its claim before asking, and the claim is a write: it bumps the version, the store
+re-stamps `updated_at`, and the row stops matching the "not touched since" predicate that found it.
+The refusal reappeared only when the row went stale again. B-55 moved the question in front of the
+claim for an unrelated reason — a refusal was being counted as a rescue — and made this decision's
+sentence true on the third path as a side effect. It was accurate about two paths out of three from
+the day it was written.
+
+**Which is why the rate is now held by tests rather than by this paragraph.** It is a property of an
+ORDER — ask before you claim — and an order is exactly what a later edit reverses without noticing:
+
+| path | what holds it |
+|---|---|
+| `process` | `RefusedChainIsVisibleTest`, "it is counted again on every pass while the condition holds" |
+| `expireSuspended` | `RefusedChainIsVisibleTest`, "an expiry over a changed chain is refused and rolls nothing back" |
+| `sweepStuck` | `SweeperReportsWhatHappenedTest`, "a refused saga is reported again on the next poll" |
+
+The middle one did not exist before B-56 — on the path the engine's own comment calls the one where
+this matters most, because an expiry rolls a saga back with nobody watching and a rollback walking a
+chain that has changed compensates steps that never ran.
+
 ### D15. A failed announcement leaves the database, in the write the member was making anyway
 
 Decision: `AnnouncementFailureHandler.failed(petich, stepKey, reason)` returns outbox events, and

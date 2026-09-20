@@ -178,6 +178,35 @@ class SweeperReportsWhatHappenedTest {
         }
 
     @Test
+    fun `a refused saga is reported again on the next poll`() =
+        runBlocking {
+            // THE RATE, which is what D14 and the README's runbook actually promise (B-56): the
+            // mismatch is not an event that happened once, it holds while two deployed versions
+            // disagree, so a signal that went quiet after the first poll would read as "resolved".
+            //
+            // It is a property of an ORDER, not of the refusal: the claim re-stamps `updated_at`,
+            // so a claim taken before the check would hide the row from its own query for a whole
+            // `stuckAfter` and report this once per lease instead. That is what it did until B-55.
+            val now = 10.minutes.inWholeMilliseconds
+            val clock = PetichClock { now }
+            val repository = Rows(clock)
+            val log = mutableListOf<String>()
+            val revived = mutableListOf<String>()
+            val failures = mutableListOf<Pair<String, String>>()
+
+            repository.seed(stranded("p-refused", fingerprint = "from-another-deploy"), stampedAt = 0L)
+            val sweeper = sweeperOver(repository, clock, log, revived, failures)
+
+            sweeper.sweepStuck()
+            sweeper.sweepStuck()
+            sweeper.sweepStuck()
+
+            assertEquals(listOf("stuck:p-refused", "stuck:p-refused", "stuck:p-refused"), failures.map { it.first })
+            assertEquals(0L, repository.row("p-refused")?.version, "the row was written and hid itself")
+            assertTrue(revived.isEmpty(), "$revived")
+        }
+
+    @Test
     fun `a failing expiry queue does not stop the stranded one`() =
         runTest {
             val now = 10.minutes.inWholeMilliseconds

@@ -451,6 +451,13 @@ saga, deliberately, because the mismatch is not an event that happened once and 
 quiet after the first sweep would read as "resolved". Read the rate: non-zero means sagas are being
 refused right now.
 
+**A "pass" is three different things, which matters if you are putting a threshold on that rate.**
+Such a saga is reached by `process` whenever the application calls it, by the expiry queue once per
+`pollInterval`, and by the stranded queue once per `pollInterval` — so with both sweeps on, one
+refused saga contributes roughly two events per poll interval and the reading settles at `refused
+sagas × 2 / pollInterval` rather than at anything about the sagas. Alert on the rate being non-zero
+for longer than a deploy takes, not on its height.
+
 The remedy is a deploy, not a repair:
 
 1. **Roll the deploy back.** The old chain reproduces the recorded fingerprint and every refused saga
