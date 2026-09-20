@@ -266,9 +266,18 @@ builder should refuse a key that is not a valid identifier, to discourage prose.
 B-24 exists because three columns arrived and were named nowhere. Mitigation: the upgrade notes and
 `tools/schema-notes-audit.py` are already in place and will fail if this lands unnamed.
 
-**Open question 1. Does a suspension's re-ask survive?** `InterceptorResult.Resuspend` exists for a
-wizard re-asking a question — the step is re-entered rather than passed. Hypothesis: it becomes
-`ctx.suspend(again = true)` or a distinct return, and the wizard in konekt is where it is settled.
+**Open question 1 — settled by shashki, not by konekt, and as a distinct verb (B-37).**
+`InterceptorResult.Resuspend` exists for a member re-entered rather than passed, and the definition
+model had no way to ask for it. The guess was that a wizard in konekt would decide it; what decided
+it was shashki's order saga, where `OfferStep` offers a ride to the nearest driver, waits, and on a
+decline offers it to the next — **the member is the cascade**, so the next answer has to come back to
+it. Expressed with `suspendFor`, which stores the position one past the member, the second answer
+belongs to whatever comes after and the saga assigns a ride nobody accepted.
+
+`ctx.resuspendFor(action, ttl)` beside `ctx.suspendFor`, and **not** the `again = true` flag the
+hypothesis proposed. What differs is not a detail of the waiting: it is whether this member runs
+again, which is the difference between a hold taken once and a hold taken per answer. A boolean
+argument hides that at the call site, where it is the only thing worth seeing.
 
 **Open question 2 — settled while writing konekt's announcing member (B-32), and not the way the
 hypothesis guessed.** The guess was that such a member wants a `PetichCheck` or a verb of its own.

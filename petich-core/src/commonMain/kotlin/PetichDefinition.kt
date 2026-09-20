@@ -195,6 +195,27 @@ public interface PetichMemberContext {
     )
 
     /**
+     * Wait for another answer **at this member**, rather than for the one that moves past it.
+     *
+     * [suspendFor] stores the position one past this member, so a resume runs whatever comes next
+     * and the money it moved is moved exactly once. This stores the position unchanged, so the next
+     * resume re-enters *here*.
+     *
+     * **The case is a cascade, and shashki is where it was settled** (B-37). Its order saga offers a
+     * ride to the nearest driver and waits; a decline releases that driver, offers the ride to the
+     * next one, and waits again — and the next answer has to land in the same member, because the
+     * member is the cascade. A wizard re-asking a question is the same shape.
+     *
+     * Two verbs rather than a flag on one, because what differs is not a detail of the waiting: it
+     * is whether this member runs again, which is the difference between a hold taken once and a
+     * hold taken per answer.
+     */
+    public fun resuspendFor(
+        action: String,
+        ttl: Duration? = null,
+    )
+
+    /**
      * Refuse the saga on business grounds. Whatever ran is rolled back, and the saga ends
      * `REJECTED` rather than `FAILED`.
      *
