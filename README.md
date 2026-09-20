@@ -219,6 +219,19 @@ scales, and the member knows that, not the engine.
 than for the one that moves past it — a cascade offering a ride to one driver after another, where
 the member *is* the cascade.
 
+To test a member on its own — ask it the question the engine is about to ask, with no saga, no engine
+and no database — hand it a `PetichMemberProbe` and read back what it asked for:
+
+```kotlin
+val probe = PetichMemberProbe(saga, stepKey = "capture")
+CaptureStep(payments).compensate(probe, payload)
+
+assertEquals(emptyList(), payments.refunded)   // nothing was recorded, so nothing is given back
+```
+
+It is the context the engine itself runs members through, not a double of it, so a test asserting
+against it is asserting against what production does.
+
 ### ⚠️ What it asks of a member
 
 Four rules. They are the engine's side of the bargain stated from the other end, and a member that
