@@ -380,6 +380,32 @@ interceptor model keeps what it had.
 every definition there is. Two members under one key would overwrite each other's record and make
 the fingerprint ambiguous, so the engine refuses the collision by name.
 
+### D10. A member reads its key and nothing else about where it sits
+
+Settled while closing B-36, which shashki's migration produced.
+
+**The key is exposed; the phase is not.** `PetichMemberContext.stepKey` gives a member the string its
+definition declares it under, the same value on the forward pass and inside its own compensation. The
+engine had it all along — it builds the context with the key, and uses it to find that member's
+record and to build the fingerprint — so this was a private field, not a new fact.
+
+**Why the phase stays out, when it was the thing shashki actually used.** Its settlement steps name a
+span `saga.settlement.$phase.${this::class.simpleName}`, so the obvious repair is to hand back the
+phase. But the phase was never the member's address; it was its *bucket*, and the class name was
+doing the identifying. The key is the address, it is unique within the definition by construction
+(the builder refuses a duplicate), and `saga.settlement.${ctx.stepKey}` is both shorter and more
+precise than what it replaces. Re-exposing `phase` would put half the definition back inside the
+member, which is D1 undone for the convenience of one string.
+
+**And `petich.currentPhase` is not the same fact, which is the trap.** It is the *saga's* position. On
+the forward pass it happens to equal the member's declared phase; during a rollback it is where the
+rollback has reached. A compensation naming a span from it would name the wrong thing, in the one
+direction where the name matters most — and would look right in every test that only walks forward.
+
+**What this leaves a consumer:** a member can say *which* member it is. It cannot say what phase it
+was declared in, and the answer to "why do you need to?" has so far been observability, which the key
+serves better.
+
 **Open question 3. Is the phase list still five?** The phases came from a banking pipeline
 (`ENRICHMENT → VALIDATION → AUTHORIZATION → EXECUTION → POST_PROCESSING`). With order given by the
 definition, a phase is only an insertion point for globals and a timeout table. Hypothesis: they
