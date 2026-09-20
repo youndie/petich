@@ -189,3 +189,45 @@ that answers `owns` for itself, and renamed `onUnowned` to `onUnknownType`. kone
 this item's iterations, so the change waits here rather than being made from B-31's branch. It is
 also where konekt's two engines over one saga table — the workaround its own composition root
 describes — stop being necessary.
+
+## Iteration 5 — 2026-09-20
+
+**shashki's tree was cleared by a person and the item moved again.** Four iterations had reported it
+blocked by another session's uncommitted work; that work was two lines bumping sborka, discarded on
+request, and its intent survives in the branch name it was on.
+
+**konekt collapsed from three engines to one, which is B-31's payoff arriving.** It kept
+`single(named(PURCHASE_SAGA_TYPE))`, `…(TOP_UP…)` and `…(TARIFF_CHANGE…)` over one saga table, with
+the sweeper dispatching `get(named(saga.type))` — the workaround its own composition root described.
+One engine now holds all three definitions and answers which owns a row; the qualifiers, two
+bindings and the lambda all went. Full build green from clean with every task re-run.
+
+**A consequence worth naming rather than discovering later: petich's phase timeouts are per engine,
+not per definition.** konekt's purchase engine had a raised `EXECUTION` bound for a slow provider;
+one engine means all three sagas take it. Right way round here — the top-up settles through the same
+gateway and had been on the 10-second default, which is a rollback waiting for a slow provider, and
+the tariff change only writes a row. But a consumer whose two saga types genuinely need different
+bounds still needs two engines, and then only one of them can have the sweeper. Not filed: it is a
+real limit, not a defect, and nobody has hit it.
+
+**shashki jumped three minors in one commit — 0.1.0 from Central to 0.4.0.75.** Far cheaper than
+feared: three compile errors, not a rewrite, because the interceptor model is still there until
+B-33. `engineFor` became `engine`, `COMPENSATION_FAILED` joined the statuses that mean CANCELLED to a
+rider, and V5 added the four columns. Its 30 test classes are green.
+
+**V5 spells the new column `JSON`, not the `TEXT` the upgrade notes print** — B-34's answer in use by
+the consumer that needed it: the notes are the native store's spelling and shashki is on the Exposed
+one, whose `payload` has been `JSON` since its V1.
+
+**Stopped at the saga rewrite, on something the model cannot express — filed as B-36.** shashki wraps
+every settlement step in a tracing span named `saga.settlement.$phase.${this::class.simpleName}`,
+asserted by a test because an earlier version shipped the unexpanded template to the collector. An
+interceptor knew its own phase; a `PetichStep` does not, and `PetichMemberContext` exposes no key
+either — though the engine constructs the context *with* the key and uses it for `recordedValue()`
+and the fingerprint. A member cannot name itself. Migrating the ten members before that is answered
+would mean spelling each one's address a second time, in the class, next to the definition that
+already declares it.
+
+**Next:** B-36, then shashki's two sagas — settlement first, since `CaptureStep` is the named site
+where a ledger lookup becomes `ctx.recorded() ?: return`. The order saga has two EXECUTION members
+ordered by priority 10 and 0, which is the pair that becomes declaration order.
