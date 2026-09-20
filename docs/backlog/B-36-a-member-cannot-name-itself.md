@@ -1,7 +1,7 @@
 ---
 id: B-36
 title: "A member cannot name itself, and observability was hanging off the name"
-status: open
+status: done
 priority: P1
 size: S
 stage: stage-9-definition
@@ -39,3 +39,27 @@ member's ability to say where it is.
   named — `ctx.petich.currentPhase` is not that answer.
 - A test that fails if a compensation's context reports a different key than the forward pass did.
 - shashki's span names survive the migration without the phase being spelled twice (B-32).
+
+## Findings — 2026-09-20
+
+**`PetichMemberContext.stepKey`, and it was a private field rather than a new fact.** The engine
+constructs the context with the key and uses it for `recordedValue()` and the fingerprint; exposing
+it changed one modifier.
+
+**The phase is deliberately not exposed** (research D10). It was the thing shashki used, so the
+obvious repair is to hand it back — but the phase was the member's *bucket* and the class name was
+doing the identifying. The key is the address: unique within the definition by construction, and
+`saga.settlement.${ctx.stepKey}` is shorter and more precise than the phase-plus-class-name it
+replaces. Re-exposing `phase` would put half the definition back inside the member, which is D1
+undone for one string.
+
+**`petich.currentPhase` is not that answer, and the way it fails is the reason this needed a
+decision.** It is the saga's position: equal to the member's declared phase on the forward pass, and
+during a rollback wherever the rollback has reached. A compensation naming a span from it names the
+wrong thing in the one direction where the name matters — and looks right in every test that only
+walks forward.
+
+**Two cases, and the second is the one that matters.** *every kind of member reads the key its
+definition declares* covers a check and a step; *a compensation reads the same key its forward pass
+did* runs two members, fails the second, and asserts the undo names `reserve-stock` — not the member
+that failed, which reported its outcome and so is not compensated, and not the saga's position.
