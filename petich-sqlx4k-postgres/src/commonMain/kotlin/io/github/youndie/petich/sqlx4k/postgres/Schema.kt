@@ -18,6 +18,15 @@ package io.github.youndie.petich.sqlx4k.postgres
  * to Kotlin/Native — or running both while it moves — points the two stores at one database, and a
  * saga written by either is read by the other. A schema that differed by a column name would make
  * that migration a data migration.
+ *
+ * **The types do not match, and that sentence was careful to say *names*.** Every JSON-shaped column
+ * is `TEXT` here and `json()` in `PetichTable`, which Postgres creates as `json`. The promise above
+ * is about behaviour rather than spelling, and it now has a test rather than an argument:
+ * `NativeSchemaCompatibilityTest` runs the Exposed store's whole conformance corpus against a
+ * database these statements built, step records included, and it is green. The divergence stays
+ * because changing a shipped column's type rewrites a consumer's busiest table for tidiness; it is
+ * stated in the README's upgrade notes so a consumer on the Exposed store writes `json` instead, and
+ * `tools/schema-notes-audit.py` fails if a JSON column ever acquires a third spelling (B-34).
  */
 public fun petichPostgresSchema(
     petiches: String = DEFAULT_PETICHES_TABLE,
