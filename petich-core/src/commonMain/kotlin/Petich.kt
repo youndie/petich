@@ -771,6 +771,24 @@ public class PetichEngine(
      */
     public fun owns(petich: Petich): Boolean = definitions.isEmpty() || definitionFor(petich.type) != null
 
+    /**
+     * Why this engine would refuse to carry [petich] on, or `null` when it would not (B-55).
+     *
+     * **A question asked before anything is claimed, and it is [owns]'s neighbour** — the other
+     * thing the sweeper has to know about a saga before it touches it. `expireSuspended` already
+     * hands the sweeper `ExpireResult.ChainChanged`; the stuck queue's engine call is `process`,
+     * whose result cannot say this apart from any other `SystemFailure`, so the same fact is asked
+     * for directly.
+     *
+     * It matters because this refusal is the one outcome that **repeats for ever**. Nothing is
+     * written, deliberately (B-44), so the row keeps matching the query that found it and comes back
+     * on every pass until the deploy that changed the chain is undone. A sweeper that called that a
+     * rescue reported one saga per poll, indefinitely, as an instance dying mid-saga.
+     *
+     * Counts through `onChainRefused` exactly as the engine's own check does — it is the same check.
+     */
+    public fun chainRefusal(petich: Petich): String? = (chainMismatch(petich) as? PetichResult.SystemFailure)?.details
+
     private fun definitionFor(type: String?): PetichDefinition<*>? =
         type?.let { wanted -> definitions.firstOrNull { it.type == wanted } }
 

@@ -139,20 +139,52 @@ public class SuspendedPetichSweeper(
     public fun start(scope: CoroutineScope): Job =
         scope.launch {
             while (isActive) {
-                try {
-                    sweep()
-                    sweepStuck()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // A transient storage failure is no reason to stop the worker; the next pass
-                    // will try again — and somebody is told, because a sweeper that has failed
-                    // every pass looks exactly like one with nothing to sweep.
-                    onWorkerFailure("sweep", e)
-                }
+                // ONE TRY EACH (B-55). The two queues answer different questions of different
+                // tables and share nothing but this loop, and they used to share a `try`: while
+                // `findExpired` was failing — a query the database cannot serve, an index being
+                // rebuilt — the stranded queue was not swept at all, for as long as that lasted.
+                // The half that still worked was stopped by the half that did not, and nothing
+                // said so: `onWorkerFailure("sweep", …)` named the pass, not the queue.
+                pass("sweep") { sweep() }
+                pass("stuck") { sweepStuck() }
                 delay(pollInterval)
             }
         }
+
+    private suspend fun pass(
+        stage: String,
+        body: suspend () -> Unit,
+    ) {
+        try {
+            body()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A transient storage failure is no reason to stop the worker; the next pass
+            // will try again — and somebody is told, because a sweeper that has failed
+            // every pass looks exactly like one with nothing to sweep.
+            report(stage, e)
+        }
+    }
+
+    /**
+     * The reporter, guarded, and it is the one callback that had to be (B-55).
+     *
+     * Every other callback here is called from inside a `try` whose `catch` reports it, so an
+     * application whose handler throws costs one item its pass and no more. This one **is** that
+     * `catch`: a throw from it left the `while` loop and ended the worker for the life of the
+     * process, silently, and the sagas it was sweeping simply stopped being swept. Same rule as
+     * every application callback the engine makes (B-52), for the same reason.
+     *
+     * **Its own failure goes nowhere**, exactly as `GuardedMetrics`: this is the reporting channel,
+     * and a second one for when it fails would have the same problem.
+     */
+    private fun report(
+        stage: String,
+        cause: Throwable,
+    ) {
+        guarding(onFailure = { }) { onWorkerFailure(stage, cause) }
+    }
 
     /**
      * Re-drive sagas a process died in the middle of. The engine already resumes both an
@@ -174,6 +206,24 @@ public class SuspendedPetichSweeper(
                 try {
                     if (!engine.owns(petich)) {
                         onUnknownType(petich)
+                        return@forEach
+                    }
+
+                    // A REFUSAL IS NOT A RESCUE (B-55), and the question is asked before the claim
+                    // rather than read off what `process` returned. A chain that changed under a
+                    // saga makes the engine run nothing and write nothing, so the row keeps
+                    // matching the query that found it and comes back on EVERY pass — and this
+                    // counted each of those as an instance dying mid-saga, for ever, beside the
+                    // counter B-44 added to say the opposite.
+                    //
+                    // `process` cannot be asked afterwards: its refusal is a `SystemFailure` like
+                    // any other, and a rollback that succeeded is one too. The engine answers the
+                    // narrow question directly, next to `owns`.
+                    //
+                    // Reported through the same channel as the expiry queue's `ChainChanged`, which
+                    // is the same condition one table over.
+                    engine.chainRefusal(petich)?.let { details ->
+                        report("stuck:${petich.id}", IllegalStateException(details))
                         return@forEach
                     }
 
@@ -204,7 +254,7 @@ public class SuspendedPetichSweeper(
                     // Same rule as the batch above: one saga that cannot be carried on must not
                     // cost the rest of the batch its sweep, and a saga that fails this way on every
                     // pass must not do it in silence.
-                    onWorkerFailure("stuck:${petich.id}", e)
+                    report("stuck:${petich.id}", e)
                 }
             }
         }
@@ -242,7 +292,7 @@ public class SuspendedPetichSweeper(
                     }
 
                     is ExpireResult.ChainChanged -> {
-                        onWorkerFailure("expire:${petich.id}", IllegalStateException(outcome.details))
+                        report("expire:${petich.id}", IllegalStateException(outcome.details))
                     }
 
                     // NotFound, NotSuspended and NotExpiredYet: the query's answer was stale by
@@ -258,7 +308,7 @@ public class SuspendedPetichSweeper(
                 // One petich failing to roll back must not deprive the rest of the batch of
                 // their sweep — but a petich that can never be rolled back would otherwise fail
                 // silently on every pass for ever.
-                onWorkerFailure("expire:${petich.id}", e)
+                report("expire:${petich.id}", e)
             }
         }
         return expired
