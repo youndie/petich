@@ -243,7 +243,7 @@ against it is asserting against what production does.
 
 ### ⚠️ What it asks of a member
 
-Four rules. They are the engine's side of the bargain stated from the other end, and a member that
+Five rules. They are the engine's side of the bargain stated from the other end, and a member that
 breaks them fails in ways that look like storage faults.
 
 **`execute()` must be idempotent.** The engine calls it, and only then writes the new position —
@@ -261,13 +261,48 @@ on.
 out, the engine cannot tell an effect that reached the far side from a call that never landed — it
 only ever learns that the step did not report success — so it rolls that step back as well.
 `release` therefore has to tolerate arriving without its `reserve`, and a compensation that instead
-assumes its own step committed will undo something that was never done. The guard is usually the
-evidence the step leaves: undo what the record says happened, and return quietly when there is no
-record.
+assumes its own step committed will undo something that was never done.
+
+**What that guard cannot be is the step's own record.** "Undo what the record says happened, return
+quietly when there is none" is the advice this page used to give, and it is blind in exactly the case
+the rule above describes. The step calls the far side, the far side commits, the answer is lost, the
+timeout fires — and the member never reached `ctx.record(...)`, because the identifier it would have
+written comes back *in* the answer that was lost. The record is absent, the rollback does nothing,
+and the reservation is held for ever. No write ordering fixes it: at the moment of the timeout there
+is nothing to write.
+
+`ctx.record` is for what a rollback **needs** — the reservation id, the hold id — and it is exactly
+right for that. It cannot be evidence that the effect happened, because that is a fact only the far
+side has.
 
 Two outcomes are NOT this case, and both keep the old starting point: a member that calls `ctx.fail`
 reported its outcome and is not undone by the engine, and an expired suspension rolls back from the
 member that suspended, which committed.
+
+**A member whose effect is remote must name that effect before making the call.** `ctx.idempotencyKey`
+is that name — `"<saga id>:<member key>"`, the same string on the forward pass, on a re-run after a
+version conflict, and inside the compensation:
+
+```kotlin
+override suspend fun execute(ctx: PetichStepContext, payload: OrderPayload) {
+    stock.reserve(ctx.idempotencyKey, payload.sku, payload.quantity)
+}
+
+override suspend fun compensate(ctx: PetichStepContext, payload: OrderPayload) {
+    stock.releaseByKey(ctx.idempotencyKey)   // a no-op when there is nothing under that name
+}
+```
+
+It answers both of the first two rules at once — a re-run reserves under a name the far side has
+already seen, and a rollback cancels by a name it chose itself rather than by evidence it may never
+have received. The engine hands it over rather than leaving you to build it, because the two sides
+have to spell it **identically**, and a string spelled twice is a string spelled differently once. It
+is derived from values the row already carries, so it costs no storage and the write budget below is
+unchanged.
+
+The far side has to honour it; where it will not, an effect that cannot be named cannot be reliably
+undone, and that is a property of the integration rather than of this engine. Not to be confused with
+`petich-idempotency`, which is about an inbound request key arriving twice with different parameters.
 
 **A saga remembers which steps it has run, and refuses to resume against a different chain.** Its
 position is an index into the chain its definition declares — reassembled on every pass — so a deploy

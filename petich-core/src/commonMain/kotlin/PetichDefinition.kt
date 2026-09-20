@@ -202,6 +202,45 @@ public interface PetichMemberContext {
      */
     public val stepKey: String
 
+    /**
+     * A name for this member's effect that is the same every time it is asked for — on the forward
+     * pass, on a re-run after a version conflict, and inside the compensation.
+     *
+     * **It exists because a record cannot answer "did the effect land"** (B-43). `compensate` may be
+     * called for a member that did not happen, and the guard that suggests itself — undo what
+     * [recordedValue] says happened, return when there is nothing — is blind in exactly the case the
+     * rule is for. A step calls the far side, the far side commits, the answer is lost, the timeout
+     * fires. The member never reached [record], and could not have: the identifier it would have
+     * written comes back *in* the answer that was lost. The record is absent, and so the rollback
+     * does nothing, and the reservation is held for ever.
+     *
+     * No write ordering fixes that, because at the moment of the timeout there is nothing to write.
+     * What does fix it is asking the far side by a name chosen BEFORE the call:
+     *
+     * ```kotlin
+     * override suspend fun execute(ctx: PetichStepContext, payload: OrderPayload) {
+     *     stock.reserve(ctx.idempotencyKey, payload.sku, payload.quantity)
+     * }
+     *
+     * override suspend fun compensate(ctx: PetichStepContext, payload: OrderPayload) {
+     *     stock.releaseByKey(ctx.idempotencyKey)   // a no-op when there is nothing under it
+     * }
+     * ```
+     *
+     * A member can of course build this string itself, and that is the reason it is here rather than
+     * in a document: the two sides have to spell it **identically**, and a string spelled twice is a
+     * string spelled differently once. It is derived from the saga's id and this member's key, both
+     * of which the engine already has, and it costs no storage — the write budget is what it was.
+     *
+     * The shape is `"<saga id>:<member key>"`. Member keys are unique within a definition and a saga
+     * id identifies one saga, so two members cannot collide — unless a saga id itself contains a
+     * colon arranged to alias another id and key, which is worth knowing if ids are user-supplied.
+     *
+     * Not to be confused with `petich-idempotency`, which is about an INBOUND request key arriving
+     * twice with different parameters. This is about one member's outbound effect.
+     */
+    public val idempotencyKey: String get() = "${petich.id}:$stepKey"
+
     /** Merge into the payload the saga carries forward. */
     public fun enrich(payload: EnrichedPayload)
 }
