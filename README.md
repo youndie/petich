@@ -25,8 +25,9 @@ transaction but actions already performed, in reverse order, and only those that
 The engine takes on exactly that:
 
 - **order and phases** — `ENRICHMENT → VALIDATION → AUTHORIZATION → EXECUTION → POST_PROCESSING`,
-  with steps inside a phase ordered by priority, and ties by name rather than by whatever order a
-  dependency container assembled them in;
+  with the members of one phase running in the order the definition declares them, rather than in
+  whatever order a dependency container assembled them in — a member carries no `priority` and no
+  phase of its own, the definition places it;
 - **compensation** — a failure at step N calls `compensate()` on steps N … 1, in reverse, step N
   included: the engine never learned whether that one's effect landed, so it undoes it too — see
   **What it asks of a member**;
@@ -91,6 +92,11 @@ Releases are on Maven Central. Snapshots keep going to
 `https://reposilite.kotlin.website/snapshots` as `<version>.<build>` — add that repository beside
 `mavenCentral()` to take one.
 
+**This page describes `main`, and `0.2.0` is the last release.** Everything below the module table —
+`petichDefinition`, the three member types, `step_records`, `ctx.idempotencyKey` — arrived after it
+and is on snapshots only. Copying the coordinates above and the examples below together will not
+compile: take a snapshot to follow the page, or read the README at the tag you are pinning to.
+
 **On Kotlin/Native** the coordinates are the same; take `petich-sqlx4k-postgres` instead of
 `petich-postgres`, and bring your own sqlx4k driver:
 
@@ -118,16 +124,15 @@ that difference is stated here, column by column, so it can be copied into your 
 | --- | --- | --- |
 | `id`, `type`, `current_phase`, `current_interceptor_index`, `status`, `payload`, `enriched_payload`, `version` | 0.2.0 or earlier | part of the original table |
 | `suspended_until` | 0.2.0 or earlier | part of the original table |
+| `compensation_attempts` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS compensation_attempts INT NOT NULL DEFAULT 0;` |
+| `updated_at` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0;` |
+| `chain_fingerprint` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS chain_fingerprint VARCHAR(64);` |
+| `step_records` | 0.4.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS step_records TEXT NOT NULL DEFAULT '{}';` |
 
 `current_interceptor_index` still says *interceptor*, and the model it was named for is gone. The
 column keeps the name on purpose: renaming it is a migration every consumer has to run, and a table
 rewrite on the busiest table in the system, to buy a word. It is the saga's position in the chain its
 definition declares.
-
-| `compensation_attempts` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS compensation_attempts INT NOT NULL DEFAULT 0;` |
-| `updated_at` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0;` |
-| `chain_fingerprint` | 0.3.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS chain_fingerprint VARCHAR(64);` |
-| `step_records` | 0.4.0 | `ALTER TABLE petiches ADD COLUMN IF NOT EXISTS step_records TEXT NOT NULL DEFAULT '{}';` |
 
 **These statements are `petichPostgresSchema()`'s spelling, and the two stores differ on one point.**
 The native store spells every JSON-shaped column `TEXT`; `PetichTable` declares the same ones with
@@ -179,10 +184,13 @@ val order = petichDefinition<OrderPayload>("order") {
 }
 ```
 
-**`validate` and `authorize` take checks; `step` and `announce` take members that act.** That is the
-whole meaning of a phase here, and it is the type rather than a convention: a member declared above
-`step` cannot have an effect to undo, so a reader can stop at the first `step` and know that
-everything above it only decided. `hold-funds` takes money, so it is a step — in payments
+**Three kinds of member, and the verb is the type.** `validate` and `authorize` take checks, which
+decide and have nothing to undo. `step` takes a member that acts and can be undone. `announce` takes
+a member that says what happened and **cannot take it back** — no `compensate`, no way to refuse or
+fail the saga, and an exception it throws is counted rather than rolled back. That is the whole
+meaning of a phase here, and it is the type rather than a convention: a reader can stop at the first
+`step` and know that everything above it only decided, and read the last line knowing it cannot undo
+the rest. `hold-funds` takes money, so it is a step — in payments
 *authorization* is the hold itself, but in these phases AUTHORIZATION asks whether it is allowed.
 Putting it in `step` also gives the rollback the order it should have: the reservation is released
 before the hold is.
@@ -213,6 +221,23 @@ class InStock(private val stock: StockRepository) : PetichCheck<OrderPayload> {
     }
 }
 ```
+
+A member that announces is a `PetichAnnouncement`. By the time it runs the stock is reserved and the
+money is captured, so it is given no way to undo any of that:
+
+```kotlin
+class AnnounceOrder(private val events: OrderEvents) : PetichAnnouncement<OrderPayload> {
+    override suspend fun announce(ctx: PetichAnnouncementContext, payload: OrderPayload) {
+        ctx.emit(events.confirmed(ctx.petich.id, payload))
+    }
+}
+```
+
+There is no `compensate` to write and no `ctx.fail` to call. If the body throws — a relay that is
+down, an encoder that chokes — the saga still completes and the failure is counted through
+`PetichEngineMetrics.onAnnouncementFailed`; rolling a completed order back because a notification did
+not go is the answer this type exists to refuse. What the member asked to have committed before it
+threw still rides with the saga.
 
 A member that needs confirmation suspends — the saga stops and waits for a separate `resume` call:
 
@@ -352,15 +377,20 @@ not reset them; at the bound the saga becomes `COMPENSATION_FAILED`, which is te
 events to commit in that same transaction, so the announcement cannot be lost separately from the
 status, and `PetichEngineConfig(requireCompensationHandler = true)` refuses at construction to build
 an engine whose compensation failures go nowhere. This is the one state the engine cannot leave on
-its own; nothing yet re-drives an abandoned saga into it (see the Cost section).
+its own, and `SuspendedPetichSweeper` re-drives a saga abandoned mid-rollback (see the Cost
+section).
 
 **Both ways of refusing a saga undo what ran.** They differ in the name the saga ends under, not in
 whether the work comes back:
 
-| result | what the engine does | the saga ends as |
-| --- | --- | --- |
-| `Reject(reason)` | steps N−1 … 1 are compensated in reverse | `REJECTED` — a business refusal |
-| `Compensate(reason)` | the same | `FAILED` — a fault |
+| the member calls | who may call it | what the engine does | the saga ends as |
+| --- | --- | --- | --- |
+| `ctx.reject(reason)` | a check or a step | members N−1 … 1 are compensated in reverse | `REJECTED` — a business refusal |
+| `ctx.fail(reason)` | a step only | the same | `FAILED` — a fault |
+
+`reject` is on the context a check and a step share, because refusing is what a check is for and a
+step may refuse too. `fail` is the step's alone: a fault in something that has nothing to undo is an
+exception, and the engine already turns one of those into a rollback. An announcement has neither.
 
 Pick by what the client should be told, which is the question a member can answer about itself. A
 refusal used to compensate nothing, which was right for a validation refusing before anything had
@@ -407,7 +437,8 @@ and could not be reproduced.
 This is the price of recoverability: state is written at every step boundary precisely so that a
 process dying between steps never leaves a saga in an unknown position. Each of those writes is
 narrower than it was: the payload is written once by the insert and never sent again, so the largest
-column in the row is not rewritten — and re-TOASTed — eleven times for a value that never changes.
+column in the row is not rewritten — and re-TOASTed — on all eight writes for a value that never
+changes.
 
 **And something reads it.** A process that dies mid-pass leaves its saga in `PROCESSING`, one that
 dies mid-rollback leaves it in `COMPENSATING`, and `SuspendedPetichSweeper` now re-drives both
@@ -430,7 +461,7 @@ does not retry, which is the difference between an arbiter and a race — and re
 `onContended`. No lease table, no second query, and nothing for an application to implement.
 
 The stores stamp each row on every write to answer that query, and that stamp is deliberately in no
-index: it changes on all eleven writes, so indexing it would make every one of them a non-HOT update
+index: it changes on all eight writes, so indexing it would make every one of them a non-HOT update
 on the busiest table here to serve a query that runs once per poll.
 
 ### 📊 Observability

@@ -226,9 +226,9 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-45](docs/backlog/B-45-the-readme-describes-the-model-before-the-last-four-items.md) `[~]` | The README describes the model as it was before stage-10 | P2 | S | - |
+| [B-46](docs/backlog/B-46-nothing-compiles-the-readme.md) `[ ]` | Nothing compiles the README, so its examples rot silently | P2 | M | - |
 
-## Closed (44)
+## Closed (45)
 
 **The gate and the negative control**
 
@@ -306,5 +306,6 @@ Two things worth knowing before reading the items:
 - [B-42](docs/backlog/B-42-the-builder-shares-a-name-with-the-instance.md) `[x]` - petichDefinition<T>() returns a definition and Petich is an instance
 - [B-43](docs/backlog/B-43-absence-of-a-record-is-not-evidence-of-absence.md) `[x]` - The guard the README recommends is blind in the case it exists for
 - [B-44](docs/backlog/B-44-a-refused-chain-has-no-way-out.md) `[x]` - A saga whose chain changed is refused for ever and has no status for it
+- [B-45](docs/backlog/B-45-the-readme-describes-the-model-before-the-last-four-items.md) `[x]` - The README describes the model as it was before stage-10
 
 <!-- END INDEX -->
