@@ -65,6 +65,18 @@ class ReaskAtTheSameMemberTest {
         ) = Unit
     }
 
+    /** Counted rather than merely run: a resume that re-entered its phase would run it twice. */
+    private class Counts(
+        private val log: MutableList<String>,
+    ) : PetichCheck<OrderPayload> {
+        override suspend fun check(
+            ctx: PetichCheckContext,
+            payload: OrderPayload,
+        ) {
+            log.add("check")
+        }
+    }
+
     private class After(
         private val log: MutableList<String>,
     ) : PetichStep<OrderPayload> {
@@ -116,6 +128,13 @@ class ReaskAtTheSameMemberTest {
                     definitions =
                         listOf(
                             petichDefinition<OrderPayload>("order") {
+                                // A MEMBER IN FRONT, so this stops being green by coincidence
+                                // (B-53). With the cascade as the definition's only member, a row
+                                // that named the wrong phase still resumed at the right place —
+                                // `index = 0` of the previous phase and `index = 0` of this one are
+                                // the same member when there is only one. The check in front is what
+                                // makes the two different, and it is the shape a real saga has.
+                                validate("limits", Counts(log))
                                 step("offer", Cascade(log, mutableListOf("declined", "accepted")))
                                 step("assign", After(log))
                             },
@@ -128,9 +147,9 @@ class ReaskAtTheSameMemberTest {
             engine.process(repository.row!!)
 
             assertEquals(
-                listOf("ask:declined", "ask:accepted", "after"),
+                listOf("check", "ask:declined", "ask:accepted", "after"),
                 log,
-                "the second answer landed in the member that asked, and only then did the saga move on",
+                "the second answer landed in the member that asked, and only then did the saga move on — and the check in front ran ONCE, which is the other half of B-53",
             )
         }
 
