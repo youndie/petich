@@ -1,7 +1,7 @@
 ---
 id: B-48
 title: "The rule assumes the far side can cancel by the caller's name, and often it cannot"
-status: wip
+status: done
 priority: P1
 size: M
 stage: stage-10-review
@@ -45,3 +45,43 @@ belongs beside it.
   the integration.
 - shashki B-91, which is the live instance of this on `PaymentGateway`, points at whichever form is
   chosen.
+
+## Findings
+
+**The rule now names two far sides and gives code for each.** One cancels by the caller's name and
+the compensation says the name. One only deduplicates, and the compensation replays `execute`'s
+request under the same key and cancels by the id that comes back — answered by the first call if it
+landed, creating and removing the effect if it did not. Net zero in both, which is what the missing
+record could not tell us, at the price of one extra call on the rollback path.
+
+**The retention inequality is written as arithmetic and placed beside the one it belongs with.**
+`keyRetention > maxCompensationAttempts × stuckAfter`, because each compensation attempt waits a full
+sweep before the next, and the ambiguous case only arises on the pass that ran `execute`. The
+`stuckAfter` formula further down now points back at it, since raising `stuckAfter` lengthens what
+you are asking of **somebody else's** system as well as of this one — which is not obvious from
+either place alone.
+
+**The inequality is a live case rather than a warning.** `a key the far side has forgotten turns the
+replay into a second effect` closes the window between `execute` and `compensate` and asserts what is
+left: a second hold taken and released, the first still standing. A warning about an inequality is
+the kind of thing a reader believes and never checks; this one fails if the arithmetic stops being
+true.
+
+**What petich does when the far side offers neither is said out loud** — `compensate` is still
+called, and what it can do is bounded by the integration rather than by the engine. That is the one
+place in these five rules where the honest answer is "this is not ours", and saying so is better than
+a rule nobody can satisfy.
+
+**shashki B-91 now points at the form its port actually needs.** `PaymentGateway.hold()` returns a
+generated `HoldId` and `release()` takes it, so the caller's name buys a replay and not a handle: the
+second form. Its acceptance also gained the part that is shashki's rather than petich's — name the
+gateway's real key-retention window and check it against `maxCompensationAttempts × stuckAfter` for
+that configuration, instead of assuming one.
+
+**Checked by mutation after the implementation was committed:** removing the replay from the
+compensation fails all three cases. Restored, tree clean.
+
+**Verification.** Full `build --rerun-tasks` on the Linux box: 445 tests across `jvmTest`,
+`linuxX64Test` and `test`, result-file freshness checked. No engine change — the rule and its
+counter-example are the deliverable, which is why the mutation targets the pattern the tests hold
+rather than a line in the engine.

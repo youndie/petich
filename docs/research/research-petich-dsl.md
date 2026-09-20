@@ -615,6 +615,28 @@ discriminators it used is its own knowledge. The discriminator must therefore be
 inside the compensation — the candidate's id, the attempt number already kept in the record or the
 enriched payload — which is what makes it a discriminator rather than a counter.
 
+**Second correction, from B-48 — the decision said "name the effect" and never asked whether a name
+is an address.** It is not, on a large and ordinary class of far side: there the key is a
+deduplication token with a lifetime, a replay inside the window returns the original answer, and
+cancellation is by an id the far side generated. shashki's `PaymentGateway` is that shape and was
+already sitting in this decision's own findings, named and not read.
+
+So the rule now has two forms. Where the far side cancels by the caller's name, the compensation says
+the name. Where it only deduplicates, the compensation **replays** `execute`'s request under the same
+key and cancels by the id that comes back: if the first call landed the replay is answered by it, and
+if it never landed the replay creates the effect and the cancel removes it — net zero in both, which
+is precisely what the missing record could not tell us. One extra call on the rollback path.
+
+**And the second form is arithmetic, not a principle.** It holds only while the far side still
+recognises the key, so `keyRetention > maxCompensationAttempts × stuckAfter` — each compensation
+attempt waits a full sweep before the next. Past that window the replay is a second effect, released,
+with the first standing. That is a live case in `ReplayThenCancelTest` rather than a warning, because
+a warning about an inequality is the kind of thing a reader believes and does not check.
+
+**What petich does when the far side offers neither is stated rather than left open**: `compensate` is
+still called, and what it can do is bounded by the integration. The engine does not pretend a
+guarantee it cannot make.
+
 **A correction to the correction, found by reading the consumer instead of assuming it.** The item
 was filed saying shashki's cascade survives "by accident of the port's shape", because
 `board.post(Offer(rideId, driverId, …))` already carries the driver. That is true and is not what
