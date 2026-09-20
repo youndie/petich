@@ -151,3 +151,33 @@ what konekt does, not a rewrite of how it says it.
 
 **Left:** konekt's tariff-change saga, then shashki. konekt's petich pin is still `0.4.0.70`, which
 predates #78 — its green run does not exercise the unknown-type refusal, and nothing here needs it to.
+
+## Iteration 4 — 2026-09-20
+
+**konekt is done, and holds no reference to the interceptor model at all.** The tariff-change saga was
+the last of its three; two test doubles moved with it, so `PetichInterceptor` and `InterceptorResult`
+now appear nowhere in the repository. `./gradlew build --rerun-tasks` green — 47 test classes on
+`:server`, 7 on purchases, every task genuinely executed rather than replayed.
+
+**The model does not ask every acting member for a record, and the tariff saga is the proof.** The
+purchase releases money and the top-up reverses a credit, and both are wrong when they run against
+work that never happened — so both record. Both tariff compensations are `changes.cancel(id)` against
+a row keyed by the saga's own id: no row, no update, no harm. A record there would have been ceremony,
+and writing one because the other two have one is how a model's vocabulary turns into a ritual. The
+question a record answers is *can this undo tell?* — not *did this member act?*
+
+**A comment corrected, not a behaviour.** The applying member's undo read "back to pending rather
+than to nothing … the step before this one owns the withdrawal", while the code called `cancel` —
+and `TariffChanges` has no operation that returns a row to pending. The sentence described a design
+nobody had built. Behaviour left exactly as it was, because it is right; the prose now says what runs.
+Found only because migrating forces every comment to be re-read beside its code.
+
+**Verified through the real path:** mutation on `RecordTariffChange.compensate` — blanked, and *an
+unconfirmed change past its deadline leaves the current tariff untouched* failed, which is the
+suspend→expire→compensate path and B-21's own acceptance criterion. Restored, tree clean.
+
+**shashki has been blocked by the same thing for four iterations:** its tree carries another session's
+uncommitted work on `build/take-sborka-0.4.0.84` (`gradle/libs.versions.toml`, `settings.gradle.kts`).
+This is not a shortage of time and a fifth attempt will not change it — **it needs a person to land or
+drop that work.** Everything else in this item is finished, so what remains of B-32 is shashki and
+nothing else.
