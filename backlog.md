@@ -226,7 +226,7 @@ Two things worth knowing before reading the items:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-44](docs/backlog/B-44-a-refused-chain-has-no-way-out.md) `[ ]` | A saga whose chain changed is refused for ever and has no status for it | P1 | S | - |
+| [B-44](docs/backlog/B-44-a-refused-chain-has-no-way-out.md) `[~]` | A saga whose chain changed is refused for ever and has no status for it | P1 | S | - |
 | [B-45](docs/backlog/B-45-the-readme-describes-the-model-before-the-last-four-items.md) `[ ]` | The README describes the model as it was before stage-10 | P2 | S | - |
 
 ## Closed (43)

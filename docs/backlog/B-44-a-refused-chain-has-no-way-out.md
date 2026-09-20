@@ -1,7 +1,7 @@
 ---
 id: B-44
 title: "A saga whose chain changed is refused for ever and has no status for it"
-status: open
+status: wip
 priority: P1
 size: S
 stage: stage-10-review
