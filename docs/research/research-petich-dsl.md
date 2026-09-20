@@ -568,6 +568,40 @@ freed the driver — a ride un-assigned because the sentence announcing it could
 member came out of the list and got a case of its own with the opposite assertion. The settlement
 suite had the identical pair.
 
+### D13. A member names its remote effect before the call, because a record cannot say it happened
+
+Decision: `PetichMemberContext.idempotencyKey` — a deterministic `"<saga id>:<member key>"`, the same
+string on the forward pass, on a re-run after a version conflict, and inside the compensation. It is a
+rule in the README's **What it asks of a member**, not advice.
+
+Why:
+
+- **the guard the page used to recommend is blind in the case the rule above it describes.** "Undo
+  what the record says happened, return quietly when there is none" reads *it never landed* out of no
+  evidence at all. The step calls the far side, the far side commits, the answer is lost, the timeout
+  fires — and the member never reached `record`, because the identifier it would have written comes
+  back *in* the answer that was lost;
+- **no write ordering fixes it**, which is the part worth keeping: `step_records` are folded in from a
+  `finally` and on both `catch` arms, so a member that records and then dies does carry its record
+  into its own undo (B-29). The hole is not when the record is written. It is that at the moment of
+  the timeout there is nothing to write;
+- **rejected: write the intent before the effect.** It works, and it costs a write per acting member,
+  which breaks the eight-write budget the README publishes. Naming the effect costs nothing: both
+  halves of the string are already on the row;
+- **rejected: leave it to the member.** A member can build the string, and two members will build it
+  two ways — and the two sides have to spell it identically or the rollback cancels nothing. Same
+  argument as B-36 for `stepKey`.
+
+**Corroboration rather than invention, found by looking at the consumers.** konekt's `HoldFunds`
+already passes `ctx.petich.id` into `balances.hold(...)`: the shape was arrived at by hand, one
+consumer at a time, keyed by the saga instead of the member because that saga holds money in one
+place. shashki did not, and its hold is open to exactly this — filed there as B-91 rather than fixed
+here, because its `PaymentGateway` port cannot express a caller-chosen name yet.
+
+**What `record` is still for is unchanged**: the reservation id, the hold id — what a rollback
+*needs*. What it cannot be is evidence that the effect happened, because that is a fact only the far
+side has. D4 stands; this is the other half of it.
+
 ---
 
 ## 4. What happens next
