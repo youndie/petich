@@ -1,7 +1,7 @@
 ---
 id: B-66
 title: "A resume that dies in its first member is later expired without that member"
-status: open
+status: wip
 priority: P2
 size: S
 stage: stage-12-tracer
