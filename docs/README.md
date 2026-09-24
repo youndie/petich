@@ -86,7 +86,7 @@ the machine guards only the membership.
 - [x] [petich-sqlx4k-postgres](services/petich-sqlx4k-postgres.md) — the store a Kotlin/Native
   service can take: the four contracts over sqlx4k, no driver, no schema, no clock of its own
 
-### Research (2)
+### Research (3)
 
 - [x] [research-native-port](research/research-native-port.md) — what it costs to take petich to
   Kotlin/Native: nine verified facts with addresses, seven decisions, five risks and two open
@@ -94,4 +94,7 @@ the machine guards only the membership.
 - [x] [research-petich-dsl](research/research-petich-dsl.md) — what the interceptor model asks an
   author to know and what a definition would replace it with: five counted facts, seven decisions,
   three risks and three open questions
+- [x] [research-petich-tracer](research/research-petich-tracer.md) — what a tracer for one saga would
+  read and which surface earns its cost: facts re-read at `f47828e`, four research questions with
+  red and green declared first, five kill criteria and five hypotheses
 
