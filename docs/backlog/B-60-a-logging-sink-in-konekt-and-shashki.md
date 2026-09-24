@@ -1,7 +1,7 @@
 ---
 id: B-60
 title: "Nobody reads a trace yet: a logging sink in the two consumers starts the two-week clock"
-status: open
+status: wip
 priority: P2
 size: S
 stage: stage-12-tracer
