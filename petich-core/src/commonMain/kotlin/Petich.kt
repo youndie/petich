@@ -442,14 +442,33 @@ public class PetichEngine(
     //
     // So: a number, a duration, a flag or a map goes in the config; anything the engine calls into
     // or wraps in a guard goes here. The next parameter has a rule rather than a precedent.
+    //
+    // AND THE FIRST ONE IT PLACED (B-58): what one saga did, event by event — see PetichTracer. The
+    // engine calls into it and wraps it in a guard, so it is here and not in the config.
+    tracer: PetichTracer = PetichTracer.NoOp,
 ) {
     // WRAPPED ONCE, SO NO CALL SITE HAS TO REMEMBER (B-52). Everything below this line calls the
     // guarded copies; the constructor parameters are the application's and are not used directly.
     private val metrics: PetichEngineMetrics = GuardedMetrics(metrics)
+    internal val tracer: PetichTracer = GuardedTracer(tracer, this.metrics)
     private val compensationFailureHandler: CompensationFailureHandler =
         GuardedCompensationFailureHandler(compensationFailureHandler, this.metrics)
     private val announcementFailureHandler: AnnouncementFailureHandler =
         GuardedAnnouncementFailureHandler(announcementFailureHandler, this.metrics)
+
+    // Read from the constructor parameter, like the two `require`s below: the guarded property is
+    // never the no-op, so a check against it could not fire.
+    internal val tracing: Boolean = tracer !== PetichTracer.NoOp
+
+    /**
+     * The one door every event goes through, including the sweeper's: it holds this engine, and a
+     * second tracer handed to the sweeper separately would be a second thing to wire the same way.
+     *
+     * Skipped outright for [PetichTracer.NoOp], so an engine nobody traces builds no events at all.
+     */
+    internal inline fun trace(event: () -> PetichTraceEvent) {
+        if (tracing) tracer.onEvent(event())
+    }
 
     init {
         // Deliberately a construction failure and not a warning. A warning about events that will
@@ -582,6 +601,13 @@ public class PetichEngine(
          */
         val boundsItsOwnTime: Boolean get() = false
 
+        /**
+         * Whether [undo] can do anything. Only a step has a compensation; a rollback walks checks
+         * and announcements too, and a trace that said they were undone would be describing work
+         * that does not exist (B-58).
+         */
+        val undoes: Boolean get() = false
+
         suspend fun run(
             petich: Petich,
             payload: PetichPayload,
@@ -653,8 +679,12 @@ public class PetichEngine(
         private val onAnnouncementFailure: AnnouncementFailureHandler,
         /** This member's phase deadline, which an announcement applies to itself (B-52). */
         private val timeoutMs: Long,
+        /** Where an announcement that could not be made is said, per saga (B-58). */
+        private val trace: (PetichTraceEvent) -> Unit,
     ) : PetichMemberRun {
         override val boundsItsOwnTime: Boolean get() = member.announcement != null
+
+        override val undoes: Boolean get() = member.step != null
 
         private var recorded: PetichStepRecord? = null
         private var discarded = 0
@@ -766,6 +796,7 @@ public class PetichEngine(
                     e.message ?: e::class.simpleName ?: "unknown"
                 }
             metrics.onAnnouncementFailed(petichType, member.key, reason)
+            trace(PetichTraceEvent.AnnouncementFailed(context.petich.id, petichType, member.key, reason.forTrace()))
             // AND THE FACT LEAVES THE DATABASE, if the application says what it should say
             // (B-49). Emitted through the same context the member itself used, so it rides with
             // this member's own commit rather than a write of its own: one transaction, no extra
@@ -856,6 +887,7 @@ public class PetichEngine(
                             metrics,
                             announcementFailureHandler,
                             config.timeoutMs(phase),
+                            { event -> trace { event } },
                         )
                     }
         }
@@ -962,6 +994,9 @@ public class PetichEngine(
         // written here on purpose: the condition ends when the deploy does, and a row marked
         // terminal could not be un-marked when it did (B-44).
         metrics.onChainRefused(petich.type, petich.currentPhase)
+        trace {
+            PetichTraceEvent.ChainRefused(petich.id, petich.type, petich.currentPhase, petich.currentInterceptorIndex)
+        }
         return PetichResult.SystemFailure(
             "the interceptor chain changed under saga ${petich.id}: it recorded $recorded for the steps " +
                 "it had run and this process computes $current, so ${petich.currentPhase} index " +
@@ -1061,6 +1096,18 @@ public class PetichEngine(
             }
         }
 
+        // AFTER the mark, so a trace never says a rollback began that the row does not show.
+        trace {
+            PetichTraceEvent.RollbackStarted(
+                sagaId = petich.id,
+                type = petich.type,
+                phase = currentPetich.currentPhase,
+                fromIndex = compensateFromIdx,
+                towards = terminalStatus,
+                reason = reason.forTrace(),
+            )
+        }
+
         var compensationFailed = false
         var failedOn: String? = null
 
@@ -1111,6 +1158,17 @@ public class PetichEngine(
                                 { it.copy(compensatingFromIndex = rollbackIndex + 1, currentPhase = phase) },
                                 outboxEvents = compensationEvents,
                             )
+                        if (interceptor.undoes) {
+                            trace {
+                                PetichTraceEvent.StepUndone(
+                                    petich.id,
+                                    petich.type,
+                                    phase,
+                                    rollbackIndex + 1,
+                                    interceptor.stepKey,
+                                )
+                            }
+                        }
                     } catch (e: Exception) {
                         compensationFailureHandler.handle(e, currentPetich, interceptor.stepKey)
                         compensationFailed = true
@@ -1156,6 +1214,7 @@ public class PetichEngine(
         val attempt = petich.compensationAttempts + 1
         val exhausted = attempt >= config.maxCompensationAttempts
         metrics.onCompensationFailure(petich.type, attempt, exhausted)
+        trace { PetichTraceEvent.RollbackGaveUp(petich.id, petich.type, failedOn, attempt, exhausted) }
 
         // Asked before the write, and only at the bound: an application that announces this is
         // announcing something final, and the event has to be committed with the status rather
@@ -1284,7 +1343,11 @@ public class PetichEngine(
                 suspendedUntilEpochMs = null,
                 version = petich.version + 1,
             )
-        if (!repository.update(claimed)) return ExpireResult.Contended(petichId)
+        if (!repository.update(claimed)) {
+            trace { PetichTraceEvent.ClaimLost(petich.id, petich.type, SweepQueue.EXPIRED) }
+            return ExpireResult.Contended(petichId)
+        }
+        trace { PetichTraceEvent.ClaimWon(petich.id, petich.type, SweepQueue.EXPIRED) }
 
         triggerCompensation(claimed, EXPIRED_REASON)
         return ExpireResult.Expired(petichId)
@@ -1313,10 +1376,13 @@ public class PetichEngine(
         while (currentAttempt < config.maxProcessAttempts) {
             try {
                 metrics.onProcessAttempt(petich.type)
-                return doProcess(petich)
+                return doProcess(petich, attempt = currentAttempt + 1)
             } catch (e: OptimisticLockException) {
                 currentAttempt++
                 metrics.onOptimisticRetry(petich.type, currentAttempt)
+                // Sent for the last attempt too, before the exception leaves: that pass is the one
+                // whose effects happened without a position to show for them.
+                trace { PetichTraceEvent.PassRetried(petich.id, petich.type, currentAttempt) }
                 if (currentAttempt >= config.maxProcessAttempts) throw e
 
                 val backoff =
@@ -1386,7 +1452,12 @@ public class PetichEngine(
                     ),
                 )
             val stamped = updated.copy(chainFingerprint = prefixFingerprint(updated))
-            if (updatePetich(stamped, outboxEvents, sideEffects)) return stamped
+            if (updatePetich(stamped, outboxEvents, sideEffects)) {
+                // Every terminal status but COMPLETED is written here, so this is where a trace
+                // learns how a saga ended.
+                if (status.isTerminal()) trace { PetichTraceEvent.Finished(petich.id, petich.type, status) }
+                return stamped
+            }
         }
         throw OptimisticLockException()
     }
@@ -1454,12 +1525,27 @@ public class PetichEngine(
             PetichResult.SystemFailure("$details (could not persist FAILED status: version conflict)")
         }
 
-    private suspend fun doProcess(petich: Petich): PetichResult {
+    private suspend fun doProcess(
+        petich: Petich,
+        attempt: Int,
+    ): PetichResult {
         var currentPetich =
             repository
                 .saveOrGet(petich)
                 .copy(resumePayload = petich.resumePayload)
         var currentEnrichedPayload = currentPetich.enrichedPayload
+        // The row as this pass read it, not as the caller handed it: a resume and a re-drive are
+        // told apart by what is stored.
+        trace {
+            PetichTraceEvent.PassStarted(
+                sagaId = currentPetich.id,
+                type = currentPetich.type,
+                attempt = attempt,
+                status = currentPetich.status,
+                phase = currentPetich.currentPhase,
+                index = currentPetich.currentInterceptorIndex,
+            )
+        }
 
         chainMismatch(currentPetich)?.let { return it }
 
@@ -1555,6 +1641,16 @@ public class PetichEngine(
                         for ((index, interceptor) in phaseInterceptors.withIndex()) {
                             if (index < startingInterceptorIndex) continue
 
+                            trace {
+                                PetichTraceEvent.MemberEntered(
+                                    currentPetich.id,
+                                    currentPetich.type,
+                                    phase,
+                                    index,
+                                    interceptor.stepKey,
+                                )
+                            }
+
                             val interceptorResult =
                                 try {
                                     if (interceptor.boundsItsOwnTime) {
@@ -1574,6 +1670,16 @@ public class PetichEngine(
                                     }
                                 } catch (e: TimeoutCancellationException) {
                                     currentPetich = withRecordOf(interceptor, currentPetich)
+                                    trace {
+                                        PetichTraceEvent.MemberTimedOut(
+                                            currentPetich.id,
+                                            currentPetich.type,
+                                            phase,
+                                            index,
+                                            interceptor.stepKey,
+                                            (e.message ?: "Timeout").forTrace(),
+                                        )
+                                    }
                                     result =
                                         triggerCompensation(
                                             currentPetich,
@@ -1586,6 +1692,17 @@ public class PetichEngine(
                                     throw e
                                 } catch (e: Exception) {
                                     currentPetich = withRecordOf(interceptor, currentPetich)
+                                    trace {
+                                        PetichTraceEvent.MemberFailed(
+                                            currentPetich.id,
+                                            currentPetich.type,
+                                            phase,
+                                            index,
+                                            interceptor.stepKey,
+                                            (e.message ?: "System Error").forTrace(),
+                                            thrown = true,
+                                        )
+                                    }
                                     result =
                                         triggerCompensation(
                                             currentPetich,
@@ -1644,6 +1761,16 @@ public class PetichEngine(
                                     // The rejecting step itself is not undone: unlike a step that
                                     // threw, it reported its outcome, and what it reports is that
                                     // it declined to act.
+                                    trace {
+                                        PetichTraceEvent.MemberRejected(
+                                            currentPetich.id,
+                                            currentPetich.type,
+                                            phase,
+                                            index,
+                                            interceptor.stepKey,
+                                            interceptorResult.reason.forTrace(),
+                                        )
+                                    }
                                     result =
                                         triggerCompensation(
                                             currentPetich,
@@ -1654,6 +1781,17 @@ public class PetichEngine(
                                 }
 
                                 is MemberOutcome.Compensate -> {
+                                    trace {
+                                        PetichTraceEvent.MemberFailed(
+                                            currentPetich.id,
+                                            currentPetich.type,
+                                            phase,
+                                            index,
+                                            interceptor.stepKey,
+                                            interceptorResult.reason.forTrace(),
+                                            thrown = false,
+                                        )
+                                    }
                                     result =
                                         triggerCompensation(
                                             currentPetich,
@@ -1692,6 +1830,16 @@ public class PetichEngine(
                                             sideEffects = interceptorResult.sideEffects,
                                             outboxEvents = interceptorResult.outboxEvents,
                                         )
+                                    trace {
+                                        PetichTraceEvent.MemberSuspended(
+                                            currentPetich.id,
+                                            currentPetich.type,
+                                            phase,
+                                            index,
+                                            interceptor.stepKey,
+                                            interceptorResult.requiredAction,
+                                        )
+                                    }
                                     result =
                                         PetichResult.ActionRequired(
                                             interceptorResult.requiredAction,
@@ -1743,6 +1891,16 @@ public class PetichEngine(
                                             },
                                             sideEffects = interceptorResult.sideEffects,
                                         )
+                                    trace {
+                                        PetichTraceEvent.MemberResuspended(
+                                            currentPetich.id,
+                                            currentPetich.type,
+                                            phase,
+                                            index,
+                                            interceptor.stepKey,
+                                            interceptorResult.requiredAction,
+                                        )
+                                    }
                                     result =
                                         PetichResult.ActionRequired(
                                             interceptorResult.requiredAction,
@@ -1778,6 +1936,15 @@ public class PetichEngine(
                                         throw OptimisticLockException()
                                     }
                                     currentPetich = updated
+                                    trace {
+                                        PetichTraceEvent.MemberProceeded(
+                                            currentPetich.id,
+                                            currentPetich.type,
+                                            phase,
+                                            index,
+                                            interceptor.stepKey,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1805,6 +1972,7 @@ public class PetichEngine(
                 )
             val completed = finished.copy(chainFingerprint = prefixFingerprint(finished))
             if (!repository.update(completed)) throw OptimisticLockException()
+            trace { PetichTraceEvent.Finished(completed.id, completed.type, PetichStatus.COMPLETED) }
             return PetichResult.Success(completed)
         } catch (e: TimeoutCancellationException) {
             return unwind(currentPetich, "Timeout")

@@ -47,3 +47,9 @@ unknown outcome is compensated); for an announcement it is not.
 
 - Anchors: `petich-core/src/commonMain/kotlin/Petich.kt`,
   `petich-core/src/commonTest/kotlin/ForeignCodeCannotDecideTest.kt`
+
+## Findings
+
+**Reproduced by B-58**, before this item was taken: `TracerTest` "pair b" runs an announcement whose
+body is `withTimeout(10) { delay(10_000) }` and the saga ends `FAILED` with `reserve` undone. That
+assertion is the one this item flips; the test that item left is the reproduction.

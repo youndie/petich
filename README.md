@@ -599,6 +599,24 @@ event never runs. Nothing else in the system is different, which is why a counte
 that can say it happened. A flat non-zero line here is a plain `PetichRepository` that reached a
 place needing an outbox-aware one; `requireOutbox` refuses that at construction instead.
 
+**The counters say how many; `PetichTracer` says which saga, and what it did.** Every counter is keyed by
+saga type and nothing finer, and the row keeps only the latest position. A tracer handed to
+`PetichEngine(tracer = …)` is told, per saga and in order, each pass, each member entered and how it
+left, each rollback with what it will end as, each undone step, and each claim the sweeper makes —
+keys, phases, indices and outcomes, never a payload, and free-text reasons cut to 160 characters:
+
+```kotlin
+val sagaTracer =
+    PetichTracer { event ->
+        println("${event.sagaId} ${event::class.simpleName}: $event")
+    }
+```
+
+It is called synchronously, outside every transaction, and must return at once; one that throws is
+counted through `onHandlerFailed` and changes nothing about the saga. It writes nothing, so the
+write count under Cost is the same with it on. The events carry no timestamp and no replica name — the
+engine has neither to give — so a sink stamps its own.
+
 Read the counters in the right order. Optimistic retries are the contention signal — zero of them
 means sagas are not fighting over rows, whatever else is slow. Saga passes per operation is NOT
 that signal: a saga that suspends for a confirmation goes through the engine at least twice with no
