@@ -245,8 +245,8 @@ so rather than the item left open.
   exactly the events of the dying pass, and the sweeper's revival is the event that says a pass died.
   Settled in RQ1 by the fixture "kill inside a member": the trace must read as *entered, [nothing],
   claimed and revived by the sweeper* rather than as a member that never ran. **Confirmed by B-58**,
-  line by line — on a row seeded `PROCESSING`, because the engine never writes that status itself
-  ([B-65](../backlog/B-65-the-engine-never-writes-processing.md)).
+  line by line — on a row seeded `PROCESSING`, because at the time the engine never wrote that status
+  itself; [B-65](../backlog/B-65-the-engine-never-writes-processing.md) made it.
 - **H2. `petich-core` needs no new dependency.** The event types are plain Kotlin; the OTel mapping is
   in its own module. Settled by `petich-core/build.gradle.kts` still naming two main dependencies
   after RQ1. **Confirmed by B-58**: the file is untouched.

@@ -554,8 +554,10 @@ narrower than it was: the payload is written once by the insert and never sent a
 column in the row is not rewritten — and re-TOASTed — on all eight writes for a value that never
 changes.
 
-**And something reads it.** A process that dies mid-pass leaves its saga in `PROCESSING`, one that
-dies mid-rollback leaves it in `COMPENSATING`, and `SuspendedPetichSweeper` now re-drives both
+**And something reads it.** A process that dies mid-pass leaves its saga in `PROCESSING` — the
+engine writes that status itself: a saga handed in as `DRAFT` is inserted as `PROCESSING`, and every
+step that commits writes it, a resumed saga included — one that dies mid-rollback leaves it in
+`COMPENSATING`, and `SuspendedPetichSweeper` now re-drives both
 through the engine, which resumes from the written position. It is off until you choose
 `stuckAfter`, and that number is a formula rather than a taste: there is no lease, so nothing
 distinguishes a dead process from a slow one, and it must exceed the longest a healthy pass can
