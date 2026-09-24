@@ -1,7 +1,7 @@
 ---
 id: B-65
 title: "The engine never writes PROCESSING, so a saga that dies mid-pass is found by neither queue"
-status: open
+status: wip
 priority: P1
 size: M
 stage: stage-12-tracer
