@@ -48,8 +48,7 @@ run in the dead resume. **The same stale start is reached without any crash**: a
 first after a resume took the parking's `compensatingFromIndex` instead of B-18's "the member that
 threw is undone too", and lost its compensation the same way. That second test failed identically
 before the fix. It is the ordinary path of any saga whose member after a confirmation calls out and
-can fail — the shape the README's own hold-then-confirm example has — so it was the larger of the
-two, and it needed no crash to happen.
+can fail, so it was the larger of the two, and it needed no crash to happen.
 
 **One cause: the parking's rollback start outlived the resume.** `suspendFor` writes
 `compensatingFromIndex = index + 1` so an expiry undoes the member that parked; nothing replaced it
