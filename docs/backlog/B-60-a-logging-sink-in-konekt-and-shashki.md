@@ -58,3 +58,25 @@ B-54, so its bump also needs the two `compensating_*` columns in a migration of 
 step shashki took as its B-96. That is konekt's item to file, and it is filed there with the wiring.
 
 The item stays `wip`: it closes at the consumers' merge + 14 days.
+
+### Iteration 2 — 2026-09-24: the wiring, and the clock
+
+- **shashki** — youndie/shashki#32 (its B-98), merged **2026-09-24T19:43:48Z**: `petich = 0.4.0.112`,
+  a `LinePetichTracer` on logger `shashki.saga`, replica `HOSTNAME`. No column; its `ApplicationTest`
+  log shows the server writing a settlement saga event by event through the real Koin graph.
+- **konekt** — youndie/konekt#53 (its B-128), merged **2026-09-24T19:43:53Z**: `0.4.0.88 →
+  0.4.0.112`, V14 for B-54's two columns (positive control: `KonektSchemaTest` names both without
+  it), a `LinePetichTracer` on logger `io.konekt.saga` with kore's instance name. **The PR's e2e
+  stand logged 202 `petich.trace` lines** from the server container — the real path, not a test.
+
+**The clock of kill criterion 2 runs to 2026-10-08.** On that date this item records, per consumer,
+the number of distinct sagas its log carries (H5), and whether any defect or question was answered
+by reading them that a counting double had not. Two cautions written now so they are not argued
+then: *merged is not deployed* — the count is taken from whatever actually runs these images, and a
+consumer that ran nothing in the fortnight measured nothing; and a stand run by CI is not "ordinary
+use", so its 202 lines prove the wiring and count for nothing in H5.
+
+**Found on the way, in shashki:** `RefusingMetrics.onDroppedEvents` throws on purpose, and petich
+B-52's `GuardedMetrics` swallows that throw silently — so the loud failure that consumer relies on has
+been quiet since `0.4.0.106`. Filed there as shashki B-99; it is petich's guard behaving as documented,
+and a consumer's comment describing behaviour the engine no longer has.
