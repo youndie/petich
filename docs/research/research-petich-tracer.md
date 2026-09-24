@@ -97,7 +97,7 @@ pair the same way has failed the fixture, whatever it renders.
 
 | Fixture | The pair | Where it runs today |
 |---|---|---|
-| **(a) six sends** | an unnamed announcement re-sent on every retried pass, **against** a named one sent once | `AnnouncementRunsAgainTest.kt` — "an unnamed announcement sends the receipt twice…", kept failing on purpose (B-50 is a rule, not a fix), and "a named announcement sends it once" |
+| **(a) six sends** | a pass whose commits were refused, re-running the announcement on every retry, **against** one that committed first time. *Corrected by B-58:* the draft paired unnamed against named, and to the engine those are the same run — the far side's dedup is where no engine event can see | `AnnouncementRunsAgainTest.kt` — "an unnamed announcement sends the receipt twice…", kept failing on purpose (B-50 is a rule, not a fix); `TracerTest.kt` "pair a" |
 | **(b) the hung announcement** | an announcement that hangs past its own deadline and ends `COMPLETED` with the handler called, **against** one whose body's own `withTimeout` escapes and still rolls the saga back | `ForeignCodeCannotDecideTest.kt` "an announcement that hangs past its deadline…" for the first half; the second half is **reasoned, not tested** — `withTimeoutOrNull` rethrows a timeout that is not its own, `announce` rethrows `CancellationException`, and the phase loop's `TimeoutCancellationException` branch calls `triggerCompensation`. Filed as [B-59](../backlog/B-59-an-announcement-s-own-timeout-still-rolls-back.md) |
 | **(c) the lost `REJECTED`** | an interrupted refusal resumed from a row with `compensatingTowards = REJECTED`, ending `REJECTED`, **against** the same row with the field `null` — a row written before the column, or by an older build in a rolling deploy — ending `FAILED` through the `?: FAILED` fallback | `RollbackKnowsItsEndingTest.kt` "a refusal whose rollback was interrupted is finished as a refusal"; the `null` half is one `copy` away |
 
@@ -134,6 +134,15 @@ and it is wrapped once by a `GuardedTracer` next to `GuardedMetrics`.
 **No replica label in the event.** Nothing in the engine knows which replica it is, and adding that
 knowledge to trace one field is backwards: a tracer instance is per process, so the sink stamps its
 own label. The sweeper takes the same tracer, since claims happen there and not in the engine.
+
+**Settled by B-58, and three details moved.** *No timestamp either:* the engine's clock is optional
+and its default throws, and delivery is synchronous, so the sink's clock at the call is the event's
+time — the same argument as the label. *The sweeper reports through the engine's tracer* rather than
+taking its own. *No `chain unavailable` event:* its only cause died with the interceptor model
+([B-64](../backlog/B-64-chain-unavailable-cannot-happen-any-more.md)). RQ1 is **green**: every other
+event is sent, `WriteCountTest` is not edited, and `TracerTest` holds the pairs, the enumeration and
+the contract. Building its H1 fixture found
+[B-65](../backlog/B-65-the-engine-never-writes-processing.md).
 
 - **Green.** Every event below is emitted with no change to `PetichRepository`, the conformance
   corpus, or the counts in `WriteCountTest`: pass started / retried; member entered / proceeded /
@@ -235,10 +244,12 @@ so rather than the item left open.
 - **H1. Best-effort delivery is sufficient.** A tracer that misses events when a process dies loses
   exactly the events of the dying pass, and the sweeper's revival is the event that says a pass died.
   Settled in RQ1 by the fixture "kill inside a member": the trace must read as *entered, [nothing],
-  claimed and revived by the sweeper* rather than as a member that never ran.
+  claimed and revived by the sweeper* rather than as a member that never ran. **Confirmed by B-58**,
+  line by line — on a row seeded `PROCESSING`, because the engine never writes that status itself
+  ([B-65](../backlog/B-65-the-engine-never-writes-processing.md)).
 - **H2. `petich-core` needs no new dependency.** The event types are plain Kotlin; the OTel mapping is
   in its own module. Settled by `petich-core/build.gradle.kts` still naming two main dependencies
-  after RQ1.
+  after RQ1. **Confirmed by B-58**: the file is untouched.
 - **H3. The overlay is one SVG.** `describeChain` gives the lanes; the RQ1 events give the path; the
   recorded fingerprint versus the current one gives the diff. Settled in RQ3 by line count and by
   the absence of a script tag.

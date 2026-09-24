@@ -1,7 +1,7 @@
 ---
 id: B-58
 title: "Nothing reports what one saga did, only how many of a type did it"
-status: wip
+status: done
 priority: P1
 size: L
 stage: stage-12-tracer
@@ -68,3 +68,60 @@ fixtures and the kill criteria are in
   `petich-core/src/commonTest/kotlin/AnnouncementRunsAgainTest.kt`,
   `petich-core/src/commonTest/kotlin/ForeignCodeCannotDecideTest.kt`,
   `petich-core/src/commonTest/kotlin/RollbackKnowsItsEndingTest.kt`
+
+## Findings
+
+**Three things the brief assumed and the code did not have**, each settled here rather than
+worked around:
+
+- **No timestamp in the event.** The brief put a `PetichClock` timestamp on every event. The engine's
+  clock is optional and its default throws — it is consulted only when a TTL is configured — so an
+  engine with no TTL could not stamp anything without a new requirement on every consumer. Delivery
+  is synchronous, so the sink's own clock at the moment of the call is the event's time; the sink
+  stamps it, exactly as it stamps the replica label nothing in the engine knows either.
+- **The sweeper reports through the engine's tracer**, not a second parameter. It already holds the
+  engine; a tracer handed to it separately would be a second thing to wire the same way, and the
+  pair could disagree.
+- **No `chain unavailable` event.** Its only cause was a `supports()` that throws, and `chainFor` in
+  the definition model has nothing that can throw, so the variant would be one the enumeration test
+  can never see sent. Filed as [B-64](B-64-chain-unavailable-cannot-happen-any-more.md): the metric
+  and the branch behind it outlived their cause.
+
+**Pair (a) was wrong in the brief, and the test says how.** Named and unnamed announcements are the
+same run to the engine — both are entered on every pass; whether the far side drops the second send
+happens where no engine event can see. The pair the trace tells apart is a pass that committed first
+time against one whose commits were refused, and it answers the fixture's question: the receipt was
+entered N times, and every entry but the last is followed by `PassRetried`. Corrected in the research
+document §1.4.
+
+**Pair (b)'s second half is B-59, reproduced.** The research reasoned that an announcement whose own
+`withTimeout` fires still rolls the saga back; `TracerTest` runs it, and the trace reads `timeout
+POST_PROCESSING#0 notify`, `rollback … towards FAILED`, `undo EXECUTION#0 reserve`, `finished FAILED`.
+When B-59 lands that assertion is the one that flips.
+
+**Building H1 found [B-65](B-65-the-engine-never-writes-processing.md), which is worse than anything
+this item was for.** The engine never writes `PROCESSING`. A saga dies mid-pass in whatever status
+its caller created it with — `DRAFT` in konekt's tariff saga and in both of shashki's — or, after a
+resume, in `PENDING_SIGNATURE` with the deadline cleared. The stuck queue asks for `PROCESSING` and
+`COMPENSATING`, the expiry queue for a deadline, so neither finds it. H1 is seeded `PROCESSING`, as
+`petich-ktor`'s create route writes it, because the claim here is about the trace; the defect is its
+own item.
+
+**H1 and H2 settled.** The killed pass reads `pass 1 from PROCESSING`, `enter EXECUTION#0 hold`, then
+`claimed STUCK` and the pass that carried it on — asserted line by line. `petich-core/build.gradle.kts`
+is untouched: two main dependencies.
+
+**Risk 1 is held by the enumeration, not by a shared helper.** The metric sites and the trace sites
+overlap without matching: a counter is per type and fires where a type-level fact is known (a
+dropped event count), an event fires where a saga-level fact is (a member entered). One helper for
+both would have meant events for dropped side effects and counters for member entry. `kind()` is an
+exhaustive `when`, so a variant added to the type does not compile until it is listed, and one
+listed and sent by nothing fails the test.
+
+**Checked by four mutations**, each reverted with the tree read back clean: the guard removed → the
+throwing-tracer test fails; `PassRetried` removed → pair (a) and the enumeration fail; the terminal
+`Finished` removed → pairs (b) and (c) fail; the stuck queue's `ClaimWon` removed → H1 fails.
+
+**Verification.** On the Linux box: `:petich-core:jvmTest` and `:petich-core:linuxX64Test` green,
+`TracerTest` 9 of 9 on each target (result files read, not the log); `WriteCountTest` not edited and
+green; the README example compiled by `tools/readme-examples.py` against a local publication.

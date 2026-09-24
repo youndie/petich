@@ -72,3 +72,8 @@ override suspend fun compensate(ctx: PetichStepContext, payload: OrderPayload) {
 }
 }
 
+val sagaTracer =
+    PetichTracer { event ->
+        println("${event.sagaId} ${event::class.simpleName}: $event")
+    }
+
