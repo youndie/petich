@@ -618,7 +618,8 @@ val sagaTracer =
 It is called synchronously, outside every transaction, and must return at once; one that throws is
 counted through `onHandlerFailed` and changes nothing about the saga. It writes nothing, so the
 write count under Cost is the same with it on. The events carry no timestamp and no replica name — the
-engine has neither to give — so a sink stamps its own.
+engine has neither to give — so a sink stamps its own. `LinePetichTracer(replica, clock, write)` is
+that sink for a log: one `petich.trace key=value …` line per event, handed to whatever `write` is.
 
 Read the counters in the right order. Optimistic retries are the contention signal — zero of them
 means sagas are not fighting over rows, whatever else is slow. Saga passes per operation is NOT
