@@ -1610,6 +1610,31 @@ public class PetichEngine(
             }
         }
 
+        if (currentPetich.status == PetichStatus.PENDING_SIGNATURE) {
+            // A RESUME WRITES ITS START (B-66), before the member it resumes into runs. The row a
+            // suspension left carries the rollback start of the member that PARKED, and nothing
+            // replaced it until the next commit — so the member the resume ran first was outside its
+            // own rollback twice over: a throw from it took the parking's start instead of B-18's
+            // "the member that threw is undone too", and a process dying inside it left the row
+            // exactly as the suspension wrote it, for an expiry that then undid everything but it.
+            //
+            // One write per resume, and the one thing a resume could not do without. After it the
+            // row says PROCESSING with no deadline, so a pass that dies from here on is the stuck
+            // queue's, carried forward like any other (B-65), and a rollback starts where B-18 says.
+            // It is also a claim: a second resume of the same saga loses the version and re-reads a
+            // row that is no longer waiting.
+            val started =
+                currentPetich.copy(
+                    status = PetichStatus.PROCESSING,
+                    suspendedUntilEpochMs = null,
+                    compensatingFromIndex = null,
+                    version = currentPetich.version + 1,
+                )
+            val stamped = started.copy(chainFingerprint = prefixFingerprint(started))
+            if (!repository.update(stamped)) throw OptimisticLockException()
+            currentPetich = stamped
+        }
+
         try {
             // A SAGA THAT MATCHES NOTHING IS NOT A COMPLETED SAGA.
             //
