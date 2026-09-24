@@ -241,9 +241,13 @@ public class SuspendedPetichSweeper(
                     // the engine's own retries exist to win against a live handler, and a sweeper
                     // that borrowed them would be two rollbacks of one saga.
                     if (!repository.update(petich.copy(version = petich.version + 1))) {
+                        engine.trace { PetichTraceEvent.ClaimLost(petich.id, petich.type, SweepQueue.STUCK) }
                         onContended(petich.id)
                         return@forEach
                     }
+                    // Through the engine's tracer: the event that says a pass died is this one,
+                    // and the engine's own events for the pass that carries it on follow it (B-58).
+                    engine.trace { PetichTraceEvent.ClaimWon(petich.id, petich.type, SweepQueue.STUCK) }
 
                     engine.process(petich)
                     revived++

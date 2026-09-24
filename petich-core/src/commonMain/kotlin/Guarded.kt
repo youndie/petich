@@ -178,4 +178,21 @@ internal class GuardedAnnouncementFailureHandler(
         } ?: emptyList()
 }
 
+/**
+ * A tracer that cannot decide a saga's fate either (B-58).
+ *
+ * Unlike [GuardedMetrics] its failures are counted, through [PetichEngineMetrics.onHandlerFailed]:
+ * the tracer is not the reporting channel of last resort, so there is somewhere left to say it.
+ */
+internal class GuardedTracer(
+    private val delegate: PetichTracer,
+    private val metrics: PetichEngineMetrics,
+) : PetichTracer {
+    override fun onEvent(event: PetichTraceEvent) {
+        guarding(onFailure = { metrics.onHandlerFailed(event.type, "tracer.onEvent", it.reason()) }) {
+            delegate.onEvent(event)
+        }
+    }
+}
+
 internal fun Throwable.reason(): String = message ?: this::class.simpleName ?: "unknown"
