@@ -245,7 +245,8 @@ class AnnounceOrder(private val events: OrderEvents) : PetichAnnouncement<OrderP
 ```
 
 There is no `compensate` to write and no `ctx.fail` to call. If the body throws — a relay that is
-down, an encoder that chokes — the saga still completes and the failure is counted through
+down, an encoder that chokes — or outruns a deadline, the phase's or one of its own, the saga still
+completes and the failure is counted through
 `PetichEngineMetrics.onAnnouncementFailed`; rolling a completed order back because a notification did
 not go is the answer this type exists to refuse. What the member asked to have committed before it
 threw still rides with the saga.

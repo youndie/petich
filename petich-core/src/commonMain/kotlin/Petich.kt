@@ -2,7 +2,9 @@ package io.github.youndie.petich
 
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -773,8 +775,10 @@ public class PetichEngine(
          * is no rollback here, so there is nothing to protect by dropping the announcement — and
          * dropping it would lose the one write the outbox exists to make certain.
          *
-         * `CancellationException` is not an announcement failing. It is the caller going away, and
-         * swallowing it would turn a cancelled process into one that keeps writing.
+         * `CancellationException` is not an announcement failing **when it is the caller going
+         * away**, and swallowing that would turn a cancelled process into one that keeps writing.
+         * One thrown while the caller is still active came from a deadline inside the body, and is
+         * (B-59).
          */
         private suspend fun announce(
             announcement: PetichAnnouncement<P>,
@@ -791,7 +795,15 @@ public class PetichEngine(
                     val finished = withTimeoutOrNull(timeoutMs) { announcement.announce(context, typed) }
                     if (finished == null) "timed out after ${timeoutMs}ms" else return
                 } catch (e: CancellationException) {
-                    throw e
+                    // WHOSE CANCELLATION, and the caller is the only one who can say (B-59). The
+                    // process going away cancels THIS coroutine, and then it must leave. A deadline
+                    // the body set for itself — an HTTP client's, a mail transport's — throws a
+                    // TimeoutCancellationException that is not ours: `withTimeoutOrNull` passes a
+                    // foreign one straight through, and rethrowing it here handed the phase loop a
+                    // timeout that rolled a finished saga back. While we are still active, it came
+                    // from inside the body, and it is the body failing like any other exception.
+                    if (!currentCoroutineContext().isActive) throw e
+                    e.message ?: e::class.simpleName ?: "cancelled"
                 } catch (e: Exception) {
                     e.message ?: e::class.simpleName ?: "unknown"
                 }

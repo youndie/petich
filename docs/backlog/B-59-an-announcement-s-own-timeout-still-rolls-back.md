@@ -1,7 +1,7 @@
 ---
 id: B-59
 title: "An announcement whose own withTimeout fires still rolls a finished saga back"
-status: open
+status: done
 priority: P1
 size: S
 stage: stage-12-tracer
@@ -53,3 +53,27 @@ unknown outcome is compensated); for an announcement it is not.
 **Reproduced by B-58**, before this item was taken: `TracerTest` "pair b" runs an announcement whose
 body is `withTimeout(10) { delay(10_000) }` and the saga ends `FAILED` with `reserve` undone. That
 assertion is the one this item flips; the test that item left is the reproduction.
+
+**Fixed as the item decided**, in `announce`: a `CancellationException` caught while the engine's
+own coroutine is still active came from inside the body and is handled as the body failing — counted,
+handed to `AnnouncementFailureHandler`, the saga carried on. One caught while the caller is cancelled
+is rethrown as before. The check is the caller's state rather than the exception's type, so any
+foreign cancellation from inside the body — a cancelled child scope, not only a deadline — lands in
+the same place.
+
+**Reproduced before the fix through the real path**: `AnnouncementOwnTimeoutTest` "an announcement
+whose own deadline fires does not roll the saga back" failed with `SystemFailure(Timed out waiting
+for 10 ms)`; the cancellation control beside it was green before and after. No such control existed
+— the item said "the existing test stays green", and there was none — so it was written here, first.
+
+**`TracerTest` pair b flipped, as B-58 said it would.** Its second half now ends `COMPLETED` and the
+trace tells the two runs apart by whose deadline it names (`timed out after 30ms` is the engine's,
+`Timed out waiting for 10 ms` the body's). The rollback it used to show is what the mutation below
+brings back.
+
+**Checked by mutation**: the new branch reduced to `throw e` → the reproduction and pair b fail
+(2 of 11); restored, tree read back clean.
+
+**Verification.** On the Linux box: `:petich-core:jvmTest` and `:petich-core:linuxX64Test` green,
+result files read — `AnnouncementOwnTimeoutTest` 2/2, `TracerTest` 9/9, `ForeignCodeCannotDecideTest`
+3/3 on each target. The README's announcement paragraph now names the body's own deadline.

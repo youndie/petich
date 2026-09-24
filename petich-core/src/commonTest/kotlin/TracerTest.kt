@@ -237,13 +237,15 @@ class TracerTest {
 
     /**
      * (b) THE HUNG ANNOUNCEMENT. One that outran the deadline B-52 gave it, against one whose body's
-     * OWN `withTimeout` fired — the route B-52 did not close (B-59). The first ends `COMPLETED` with
-     * the failure named; the second is rolled back, and the trace says what started it.
+     * OWN `withTimeout` fired. Both end `COMPLETED` with nothing undone, and the trace names whose
+     * deadline it was.
      *
-     * When B-59 lands its second half stops rolling back, and this test is where that shows first.
+     * The second half used to be rolled back — the route B-52 did not close — and this test said so
+     * until B-59 closed it. The rollback it showed is now reproduced by reverting B-59, which is how
+     * that item was checked.
      */
     @Test
-    fun `pair b - the trace says what started the rollback and what did not`() =
+    fun `pair b - the trace says whose deadline an announcement outran`() =
         runBlocking {
             val hung = Recorder()
             engine(Rows(), hung, timeoutMs = 30) {
@@ -261,9 +263,13 @@ class TracerTest {
             assertTrue(hung.events.none { it is RollbackStarted }, hung.dump())
             assertEquals(Finished("o-1", "order", PetichStatus.COMPLETED), hung.events.last(), hung.dump())
 
-            assertTrue(escaped.events.any { it is MemberTimedOut && it.key == "notify" }, escaped.dump())
-            assertTrue(escaped.events.any { it is StepUndone && it.key == "reserve" }, escaped.dump())
-            assertEquals(Finished("o-1", "order", PetichStatus.FAILED), escaped.events.last(), escaped.dump())
+            val own = escaped.events.filterIsInstance<AnnouncementFailed>().single()
+            assertTrue(
+                !own.reason.startsWith("timed out after"),
+                "the body's deadline, not the engine's: ${escaped.dump()}",
+            )
+            assertTrue(escaped.events.none { it is RollbackStarted }, escaped.dump())
+            assertEquals(Finished("o-1", "order", PetichStatus.COMPLETED), escaped.events.last(), escaped.dump())
         }
 
     /**
