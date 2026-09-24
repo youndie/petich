@@ -1,7 +1,7 @@
 ---
 id: B-59
 title: "An announcement whose own withTimeout fires still rolls a finished saga back"
-status: open
+status: wip
 priority: P1
 size: S
 stage: stage-12-tracer

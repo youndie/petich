@@ -250,7 +250,7 @@ Two things about this stage that the items alone do not say:
 
 | Task | | Priority | Size | Blocked by |
 |---|---|---|---|---|
-| [B-59](docs/backlog/B-59-an-announcement-s-own-timeout-still-rolls-back.md) `[ ]` | An announcement whose own withTimeout fires still rolls a finished saga back | P1 | S | - |
+| [B-59](docs/backlog/B-59-an-announcement-s-own-timeout-still-rolls-back.md) `[~]` | An announcement whose own withTimeout fires still rolls a finished saga back | P1 | S | - |
 | [B-65](docs/backlog/B-65-the-engine-never-writes-processing.md) `[ ]` | The engine never writes PROCESSING, so a saga that dies mid-pass is found by neither queue | P1 | M | - |
 | [B-60](docs/backlog/B-60-a-logging-sink-in-konekt-and-shashki.md) `[ ]` | Nobody reads a trace yet: a logging sink in the two consumers starts the two-week clock | P2 | S | B-58 |
 | [B-61](docs/backlog/B-61-petich-trace-otel.md) `[?]` | Do plain OpenTelemetry spans show the three fixture pairs without a surface of our own? | P2 | M | B-60 |
