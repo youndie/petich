@@ -1,7 +1,7 @@
 ---
 id: B-58
 title: "Nothing reports what one saga did, only how many of a type did it"
-status: open
+status: wip
 priority: P1
 size: L
 stage: stage-12-tracer
