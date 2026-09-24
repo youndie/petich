@@ -442,18 +442,23 @@ public class PetichEngine(
     //
     // So: a number, a duration, a flag or a map goes in the config; anything the engine calls into
     // or wraps in a guard goes here. The next parameter has a rule rather than a precedent.
-    /**
-     * What one saga did, event by event — see [PetichTracer] (B-58).
-     *
-     * Here and not in the config by the rule above: the engine calls into it and wraps it in a
-     * guard. The first parameter that rule placed rather than a precedent.
-     */
+    //
+    // AND THE FIRST ONE IT PLACED (B-58): what one saga did, event by event — see PetichTracer. The
+    // engine calls into it and wraps it in a guard, so it is here and not in the config.
     tracer: PetichTracer = PetichTracer.NoOp,
 ) {
     // WRAPPED ONCE, SO NO CALL SITE HAS TO REMEMBER (B-52). Everything below this line calls the
     // guarded copies; the constructor parameters are the application's and are not used directly.
     private val metrics: PetichEngineMetrics = GuardedMetrics(metrics)
     internal val tracer: PetichTracer = GuardedTracer(tracer, this.metrics)
+    private val compensationFailureHandler: CompensationFailureHandler =
+        GuardedCompensationFailureHandler(compensationFailureHandler, this.metrics)
+    private val announcementFailureHandler: AnnouncementFailureHandler =
+        GuardedAnnouncementFailureHandler(announcementFailureHandler, this.metrics)
+
+    // Read from the constructor parameter, like the two `require`s below: the guarded property is
+    // never the no-op, so a check against it could not fire.
+    internal val tracing: Boolean = tracer !== PetichTracer.NoOp
 
     /**
      * The one door every event goes through, including the sweeper's: it holds this engine, and a
@@ -461,15 +466,9 @@ public class PetichEngine(
      *
      * Skipped outright for [PetichTracer.NoOp], so an engine nobody traces builds no events at all.
      */
-    internal val tracing: Boolean = tracer !== PetichTracer.NoOp
-
     internal inline fun trace(event: () -> PetichTraceEvent) {
         if (tracing) tracer.onEvent(event())
     }
-    private val compensationFailureHandler: CompensationFailureHandler =
-        GuardedCompensationFailureHandler(compensationFailureHandler, this.metrics)
-    private val announcementFailureHandler: AnnouncementFailureHandler =
-        GuardedAnnouncementFailureHandler(announcementFailureHandler, this.metrics)
 
     init {
         // Deliberately a construction failure and not a warning. A warning about events that will

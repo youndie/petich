@@ -51,6 +51,8 @@ class TracerTest {
         }
 
         fun lines(): List<String> = events.map(::line)
+
+        fun dump(): String = lines().joinToString("\n")
     }
 
     private class Does(
@@ -146,7 +148,8 @@ class TracerTest {
             limit: Int,
         ): List<Petich> =
             rows.values.filter {
-                it.status == PetichStatus.PENDING_SIGNATURE && (it.suspendedUntilEpochMs ?: Long.MAX_VALUE) <= nowEpochMs
+                it.status == PetichStatus.PENDING_SIGNATURE &&
+                    (it.suspendedUntilEpochMs ?: Long.MAX_VALUE) <= nowEpochMs
             }
 
         override suspend fun findStuck(
@@ -172,6 +175,20 @@ class TracerTest {
         definitions = listOf(petichDefinition("order", body)),
         tracer = tracer,
     )
+
+    /**
+     * The one failure a scenario is built to end in — a pass that cannot commit, a process killed
+     * mid-member. Anything else, cancellation included, is not caught.
+     */
+    private inline fun <reified E : Throwable> expecting(block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Throwable) {
+            if (e !is E) throw e
+            return
+        }
+        throw AssertionError("the scenario was supposed to end in ${E::class.simpleName}")
+    }
 
     private fun order(
         id: String = "o-1",
@@ -204,18 +221,18 @@ class TracerTest {
 
             val again = Recorder()
             val dying = Rows().apply { refuseUpdates = true }
-            runCatching { receiptEngine(dying, again).process(order()) }
+            expecting<OptimisticLockException> { receiptEngine(dying, again).process(order()) }
             dying.refuseUpdates = false
             receiptEngine(dying, again).process(checkNotNull(dying.rows["o-1"]))
 
-            assertEquals(1, once.events.count { it is MemberEntered && it.key == "receipt" }, once.lines().joinToString("\n"))
+            assertEquals(1, once.events.count { it is MemberEntered && it.key == "receipt" }, once.dump())
             val entries = again.events.count { it is MemberEntered && it.key == "receipt" }
             val retries = again.events.count { it is PassRetried }
-            assertTrue(entries > 1, again.lines().joinToString("\n"))
+            assertTrue(entries > 1, again.dump())
             // WHY, and not only how many: every entry but the last is followed by a pass that lost
             // its commit. That sentence is the whole of B-50's finding, readable without the code.
-            assertEquals(entries - 1, retries, again.lines().joinToString("\n"))
-            assertTrue(again.events.last() is Finished, again.lines().joinToString("\n"))
+            assertEquals(entries - 1, retries, again.dump())
+            assertTrue(again.events.last() is Finished, again.dump())
         }
 
     /**
@@ -240,13 +257,13 @@ class TracerTest {
                 announce("notify", Announces { withTimeout(10) { delay(10_000) } })
             }.process(order())
 
-            assertTrue(hung.events.any { it is AnnouncementFailed && it.reason.contains("timed out") }, hung.lines().joinToString("\n"))
-            assertTrue(hung.events.none { it is RollbackStarted }, hung.lines().joinToString("\n"))
-            assertEquals(Finished("o-1", "order", PetichStatus.COMPLETED), hung.events.last(), hung.lines().joinToString("\n"))
+            assertTrue(hung.events.any { it is AnnouncementFailed && it.reason.contains("timed out") }, hung.dump())
+            assertTrue(hung.events.none { it is RollbackStarted }, hung.dump())
+            assertEquals(Finished("o-1", "order", PetichStatus.COMPLETED), hung.events.last(), hung.dump())
 
-            assertTrue(escaped.events.any { it is MemberTimedOut && it.key == "notify" }, escaped.lines().joinToString("\n"))
-            assertTrue(escaped.events.any { it is StepUndone && it.key == "reserve" }, escaped.lines().joinToString("\n"))
-            assertEquals(Finished("o-1", "order", PetichStatus.FAILED), escaped.events.last(), escaped.lines().joinToString("\n"))
+            assertTrue(escaped.events.any { it is MemberTimedOut && it.key == "notify" }, escaped.dump())
+            assertTrue(escaped.events.any { it is StepUndone && it.key == "reserve" }, escaped.dump())
+            assertEquals(Finished("o-1", "order", PetichStatus.FAILED), escaped.events.last(), escaped.dump())
         }
 
     /**
@@ -276,9 +293,12 @@ class TracerTest {
             val remembered = resume(PetichStatus.REJECTED)
             val legacy = resume(null)
 
-            assertTrue(remembered.events.any { it is RollbackStarted && it.towards == PetichStatus.REJECTED }, remembered.lines().joinToString("\n"))
+            assertTrue(
+                remembered.events.any { it is RollbackStarted && it.towards == PetichStatus.REJECTED },
+                remembered.dump(),
+            )
             assertEquals(Finished("o-1", "order", PetichStatus.REJECTED), remembered.events.last())
-            assertTrue(legacy.events.any { it is RollbackStarted && it.towards == PetichStatus.FAILED }, legacy.lines().joinToString("\n"))
+            assertTrue(legacy.events.any { it is RollbackStarted && it.towards == PetichStatus.FAILED }, legacy.dump())
             assertEquals(Finished("o-1", "order", PetichStatus.FAILED), legacy.events.last())
         }
 
@@ -307,7 +327,7 @@ class TracerTest {
                         }),
                     )
                 }
-            runCatching { saga.process(order(status = PetichStatus.PROCESSING)) }
+            expecting<Killed> { saga.process(order(status = PetichStatus.PROCESSING)) }
             rows.now = 10.minutes.inWholeMilliseconds
             SuspendedPetichSweeper(rows, saga, PetichClock { rows.now }, stuckAfter = 1.minutes).sweepStuck()
 
@@ -363,13 +383,22 @@ class TracerTest {
             }
             val parked = saga { step("a", Does(act = { it.suspendFor("CONFIRM", 1.minutes) })) }
             rows.now = 5.minutes.inWholeMilliseconds
-            parked.expireSuspended("s-${n}")
+            parked.expireSuspended("s-$n")
 
-            rows.seed(order("refused").copy(currentPhase = PetichPhase.EXECUTION, currentInterceptorIndex = 1, chainFingerprint = "0"))
+            rows.seed(
+                order(
+                    "refused",
+                ).copy(currentPhase = PetichPhase.EXECUTION, currentInterceptorIndex = 1, chainFingerprint = "0"),
+            )
             engine(rows, recorder) { step("a", Does()) }.process(checkNotNull(rows.rows["refused"]))
 
             rows.refuseUpdates = true
-            runCatching { engine(rows, recorder) { step("a", Does()) }.process(order("conflict")) }
+            expecting<OptimisticLockException> {
+                engine(
+                    rows,
+                    recorder,
+                ) { step("a", Does()) }.process(order("conflict"))
+            }
             rows.refuseUpdates = false
 
             rows.seed(order("stuck", PetichStatus.PROCESSING))
@@ -406,7 +435,10 @@ class TracerTest {
             assertEquals(PetichStatus.REJECTED, rows.rows["o-1"]?.status)
             // `b` refused, so only `a` is undone (B-35).
             assertEquals(listOf("do", "do", "undo"), log)
-            assertTrue(metrics.callbacks.isNotEmpty() && metrics.callbacks.all { it == "tracer.onEvent" }, "${metrics.callbacks}")
+            assertTrue(
+                metrics.callbacks.isNotEmpty() && metrics.callbacks.all { it == "tracer.onEvent" },
+                "${metrics.callbacks}",
+            )
         }
 
     /**
@@ -458,10 +490,23 @@ class TracerTest {
     private companion object {
         val ALL_KINDS: Set<String> =
             setOf(
-                "PassStarted", "PassRetried", "MemberEntered", "MemberProceeded", "MemberRejected",
-                "MemberFailed", "MemberTimedOut", "MemberSuspended", "MemberResuspended",
-                "AnnouncementFailed", "ClaimWon", "ClaimLost", "RollbackStarted", "StepUndone",
-                "RollbackGaveUp", "ChainRefused", "Finished",
+                "PassStarted",
+                "PassRetried",
+                "MemberEntered",
+                "MemberProceeded",
+                "MemberRejected",
+                "MemberFailed",
+                "MemberTimedOut",
+                "MemberSuspended",
+                "MemberResuspended",
+                "AnnouncementFailed",
+                "ClaimWon",
+                "ClaimLost",
+                "RollbackStarted",
+                "StepUndone",
+                "RollbackGaveUp",
+                "ChainRefused",
+                "Finished",
             )
 
         fun kind(event: PetichTraceEvent): String =
@@ -486,25 +531,87 @@ class TracerTest {
             }
 
         fun line(event: PetichTraceEvent): String {
+            val at =
+                when (event) {
+                    is MemberEntered -> "${event.phase}#${event.index} ${event.key}"
+                    is MemberProceeded -> "${event.phase}#${event.index} ${event.key}"
+                    is MemberRejected -> "${event.phase}#${event.index} ${event.key}"
+                    is MemberFailed -> "${event.phase}#${event.index} ${event.key}"
+                    is MemberTimedOut -> "${event.phase}#${event.index} ${event.key}"
+                    is MemberSuspended -> "${event.phase}#${event.index} ${event.key}"
+                    is MemberResuspended -> "${event.phase}#${event.index} ${event.key}"
+                    is StepUndone -> "${event.phase}#${event.index} ${event.key}"
+                    else -> ""
+                }
             val body =
                 when (event) {
-                    is PassStarted -> "pass ${event.attempt} from ${event.status} ${event.phase}#${event.index}"
-                    is PassRetried -> "retry ${event.attempt}"
-                    is MemberEntered -> "enter ${event.phase}#${event.index} ${event.key}"
-                    is MemberProceeded -> "proceed ${event.phase}#${event.index} ${event.key}"
-                    is MemberRejected -> "reject ${event.phase}#${event.index} ${event.key}: ${event.reason}"
-                    is MemberFailed -> "fail ${event.phase}#${event.index} ${event.key} thrown=${event.thrown}: ${event.reason}"
-                    is MemberTimedOut -> "timeout ${event.phase}#${event.index} ${event.key}"
-                    is MemberSuspended -> "suspend ${event.phase}#${event.index} ${event.key} ${event.requiredAction}"
-                    is MemberResuspended -> "resuspend ${event.phase}#${event.index} ${event.key} ${event.requiredAction}"
-                    is AnnouncementFailed -> "announcement failed ${event.key}: ${event.reason}"
-                    is ClaimWon -> "claimed ${event.queue}"
-                    is ClaimLost -> "lost claim ${event.queue}"
-                    is RollbackStarted -> "rollback from ${event.phase}#${event.fromIndex} towards ${event.towards}: ${event.reason}"
-                    is StepUndone -> "undo ${event.phase}#${event.index} ${event.key}"
-                    is RollbackGaveUp -> "gave up at ${event.key} attempt ${event.attempt} exhausted=${event.exhausted}"
-                    is ChainRefused -> "chain refused at ${event.phase}#${event.index}"
-                    is Finished -> "finished ${event.status}"
+                    is PassStarted -> {
+                        "pass ${event.attempt} from ${event.status} ${event.phase}#${event.index}"
+                    }
+
+                    is PassRetried -> {
+                        "retry ${event.attempt}"
+                    }
+
+                    is MemberEntered -> {
+                        "enter $at"
+                    }
+
+                    is MemberProceeded -> {
+                        "proceed $at"
+                    }
+
+                    is MemberRejected -> {
+                        "reject $at: ${event.reason}"
+                    }
+
+                    is MemberFailed -> {
+                        "fail $at thrown=${event.thrown}: ${event.reason}"
+                    }
+
+                    is MemberTimedOut -> {
+                        "timeout $at"
+                    }
+
+                    is MemberSuspended -> {
+                        "suspend $at ${event.requiredAction}"
+                    }
+
+                    is MemberResuspended -> {
+                        "resuspend $at ${event.requiredAction}"
+                    }
+
+                    is AnnouncementFailed -> {
+                        "announcement failed ${event.key}: ${event.reason}"
+                    }
+
+                    is ClaimWon -> {
+                        "claimed ${event.queue}"
+                    }
+
+                    is ClaimLost -> {
+                        "lost claim ${event.queue}"
+                    }
+
+                    is RollbackStarted -> {
+                        "rollback ${event.phase}#${event.fromIndex} to ${event.towards}: ${event.reason}"
+                    }
+
+                    is StepUndone -> {
+                        "undo $at"
+                    }
+
+                    is RollbackGaveUp -> {
+                        "gave up at ${event.key} attempt ${event.attempt} exhausted=${event.exhausted}"
+                    }
+
+                    is ChainRefused -> {
+                        "chain refused at ${event.phase}#${event.index}"
+                    }
+
+                    is Finished -> {
+                        "finished ${event.status}"
+                    }
                 }
             return "${event.sagaId} $body"
         }

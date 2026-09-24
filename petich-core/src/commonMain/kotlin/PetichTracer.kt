@@ -240,4 +240,9 @@ public sealed interface PetichTraceEvent {
 /** How much of a free-text reason reaches a trace. */
 public const val TRACE_REASON_LIMIT: Int = 160
 
-internal fun String.forTrace(): String = if (length <= TRACE_REASON_LIMIT) this else take(TRACE_REASON_LIMIT) + "… [truncated]"
+internal fun String.forTrace(): String =
+    if (length <= TRACE_REASON_LIMIT) {
+        this
+    } else {
+        take(TRACE_REASON_LIMIT) + "… [truncated]"
+    }
