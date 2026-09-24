@@ -536,12 +536,15 @@ and one that completes it. Events a member hands over ride along inside those wr
 adding any — three members emitting one event each make three rows in the outbox and no extra write
 to the saga.
 
-**A suspension does not add a write; it moves one.** The step that suspends writes
+**A suspension adds one write, and it is the resume's start.** The step that suspends writes
 `PENDING_SIGNATURE` instead of the `Proceed` it would have written, and it is deliberately not
-re-executed on resume, so the same six steps cost the same eight writes whether the saga waits for a
-human in the middle or not. What the resume does add is a `saveOrGet` at the head of its pass, which
-changes no row here and is an `INSERT … ON CONFLICT DO NOTHING` in the sqlx4k store — so a count of
-*statements* is one higher than this count of *row changes*.
+re-executed on resume. The resume then writes `PROCESSING` before it runs anything, clearing the
+deadline and the rollback start the parked member left — without that write, the member a resume runs
+first was outside its own rollback, whether it threw or its process died. So the same six steps cost
+nine writes when the saga waits for a human in the middle, against eight when it does not. The resume
+also issues a `saveOrGet` at the head of its pass, which changes no row here and is an
+`INSERT … ON CONFLICT DO NOTHING` in the sqlx4k store — so a count of *statements* is one higher than
+this count of *row changes*.
 
 Both numbers are asserted by `WriteCountTest`, against that exact scenario, so a change that adds a
 write fails a test rather than aging a sentence. The figure this paragraph used to carry — "about 17
@@ -555,8 +558,8 @@ column in the row is not rewritten — and re-TOASTed — on all eight writes fo
 changes.
 
 **And something reads it.** A process that dies mid-pass leaves its saga in `PROCESSING` — the
-engine writes that status itself: a saga handed in as `DRAFT` is inserted as `PROCESSING`, and every
-step that commits writes it, a resumed saga included — one that dies mid-rollback leaves it in
+engine writes that status itself: a saga handed in as `DRAFT` is inserted as `PROCESSING`, a resume
+writes it before it runs a member, and every step that commits writes it — one that dies mid-rollback leaves it in
 `COMPENSATING`, and `SuspendedPetichSweeper` now re-drives both
 through the engine, which resumes from the written position. It is off until you choose
 `stuckAfter`, and that number is a formula rather than a taste: there is no lease, so nothing

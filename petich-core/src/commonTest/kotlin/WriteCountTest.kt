@@ -147,19 +147,25 @@ class WriteCountTest {
         }
 
     /**
-     * The surprise this test was written to find, and did: **a suspension adds no write to the saga
-     * table, it moves one.** The step that suspends writes PENDING_SIGNATURE instead of the Proceed
-     * it would have written, and it is deliberately not re-executed on resume — so the same six
-     * steps cost the same eight writes whether the saga waits for a human in the middle or not.
+     * The surprise this test was written to find, and did: **a suspension added no write to the saga
+     * table, it moved one.** The step that suspends writes PENDING_SIGNATURE instead of the Proceed
+     * it would have written, and it is deliberately not re-executed on resume.
      *
-     * What a suspension does cost is a `saveOrGet` at the head of the resuming pass. It changes no
-     * tuple here, which is why this counter does not see it; in the sqlx4k store it is an
+     * **Since B-66 it adds exactly one: the resume's start.** The row a suspension leaves carries the
+     * rollback start of the member that parked, and until the next commit nothing replaced it — so
+     * the member the resume ran first was outside its own rollback, whether it threw or its process
+     * died. The resume now writes PROCESSING, clears the deadline and that start before it runs
+     * anything. Nine, then, where the straight-through saga costs eight — and that difference is the
+     * price of a resumed member being undone like any other.
+     *
+     * What the resume also costs is a `saveOrGet` at the head of its pass. It changes no tuple here,
+     * which is why this counter does not see it; in the sqlx4k store it is an
      * `INSERT … ON CONFLICT DO NOTHING`, so a consumer counting STATEMENTS rather than tuple changes
-     * will see one more than this test does. That difference is the reason the README now says which
-     * of the two it means.
+     * will see one more than this test does. That difference is the reason the README says which of
+     * the two it means.
      */
     @Test
-    fun `a suspension moves a write rather than adding one`() =
+    fun `a suspension costs one write and it is the resume's start`() =
         runBlocking {
             val repository = CountingRepository()
             val engine = PetichEngine(repository = repository, definitions = listOf(sixSteps(suspendAt = "authorise")))
@@ -177,10 +183,10 @@ class WriteCountTest {
 
             assertEquals(4, untilHere, "1 INSERT + 2 steps + the write that records the wait")
             assertEquals(
-                8,
+                9,
                 repository.sagaTableWrites,
-                "the same as the straight-through saga: the suspending step is not re-executed, so " +
-                    "its PENDING_SIGNATURE write stands in for the Proceed it never made",
+                "one more than the straight-through saga: the suspending step's PENDING_SIGNATURE " +
+                    "stands in for the Proceed it never made, and the resume writes its start (B-66)",
             )
             assertEquals(
                 3,
