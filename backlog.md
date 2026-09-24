@@ -254,7 +254,7 @@ Two things about this stage that the items alone do not say:
 | [B-61](docs/backlog/B-61-petich-trace-otel.md) `[?]` | Do plain OpenTelemetry spans show the three fixture pairs without a surface of our own? | P2 | M | B-60 |
 | [B-62](docs/backlog/B-62-the-petich-ktor-trace-page.md) `[?]` | Is the definition with one saga's path drawn over it worth a page, and no more than a page? | P3 | M | B-61 |
 | [B-63](docs/backlog/B-63-the-in-process-window.md) `[?]` | Does a Compose window that a test opens show a fault-injection scenario a headless run cannot? | P3 | M | B-62 |
-| [B-64](docs/backlog/B-64-chain-unavailable-cannot-happen-any-more.md) `[ ]` | onChainUnavailable counts a failure the definition model cannot produce | P3 | XS | - |
+| [B-64](docs/backlog/B-64-chain-unavailable-cannot-happen-any-more.md) `[~]` | onChainUnavailable counts a failure the definition model cannot produce | P3 | XS | - |
 
 ## Closed (61)
 

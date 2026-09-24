@@ -1,7 +1,7 @@
 ---
 id: B-64
 title: "onChainUnavailable counts a failure the definition model cannot produce"
-status: open
+status: wip
 priority: P3
 size: XS
 stage: stage-12-tracer
