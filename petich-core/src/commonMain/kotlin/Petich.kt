@@ -948,29 +948,20 @@ public class PetichEngine(
      * and compared by another, possibly on a different target, and a hash whose algorithm is not
      * promised across those is a comparison that fails for a reason nobody can see. FNV-1a is four
      * lines and the same everywhere.
+     *
+     * **Nothing here can fail, and it used to be able to** (B-64). A `supports()` that threw and a
+     * priority tie refused by configuration were the two ways a chain could not be assembled, and both
+     * went with the interceptor model: a definition's chain is two lists filtered by phase. The
+     * `catch` that wrote the saga without a fingerprint and counted `onChainUnavailable` guarded a
+     * failure nothing could produce, so it went too — a counter no path can move reads as a quiet
+     * system, which is the one thing it was there to rule out.
      */
-    private fun prefixFingerprint(petich: Petich): String? {
+    private fun prefixFingerprint(petich: Petich): String {
         val names = mutableListOf<String>()
-        try {
-            for (phase in PetichPhase.entries) {
-                if (phase.ordinal > petich.currentPhase.ordinal) break
-                val steps = chainFor(phase, petich.payload, petich.type).map { it.stepKey }
-                names += if (phase == petich.currentPhase) steps.take(petich.currentInterceptorIndex) else steps
-            }
-        } catch (e: Exception) {
-            // The chain could not be assembled — a supports() that throws, or a tie refused by
-            // configuration. NO FINGERPRINT, rather than a failure: this is a guard, and a guard
-            // must never be the reason a write does not happen. Every write path goes through here,
-            // including the emergency transition to FAILED that exists precisely for an interceptor
-            // that misbehaves; throwing from here turned that path into an exception escaping
-            // process() (caught by EngineDefectsTest, which is what it is for).
-            //
-            // Nothing is hidden by this: the counter says it happened, and a non-zero rate means
-            // sagas are being persisted with the guard off. A saga left without a fingerprint is
-            // one that will not be refused later — the same position as every saga written before
-            // this existed.
-            metrics.onChainUnavailable(petich.type, e.message ?: e::class.simpleName ?: "unknown")
-            return null
+        for (phase in PetichPhase.entries) {
+            if (phase.ordinal > petich.currentPhase.ordinal) break
+            val steps = chainFor(phase, petich.payload, petich.type).map { it.stepKey }
+            names += if (phase == petich.currentPhase) steps.take(petich.currentInterceptorIndex) else steps
         }
 
         var hash = 2166136261u
@@ -995,14 +986,11 @@ public class PetichEngine(
      */
     private fun chainMismatch(petich: Petich): PetichResult? {
         val recorded = petich.chainFingerprint ?: return null
-        // Null means the chain could not be assembled at all, which is not the same as "it changed"
-        // and must not be reported as it: refusing here would turn a broken supports() into a saga
-        // nobody can touch, on top of the failure it already causes.
-        val current = prefixFingerprint(petich) ?: return null
+        val current = prefixFingerprint(petich)
         if (recorded == current) return null
-        // COUNTED ON EVERY PASS, and the saga is left exactly as it is. Its neighbour two methods
-        // down — a chain that could not be assembled at all — has had a counter since it existed,
-        // and this one had none, so the more specific failure was the invisible one. Nothing is
+        // COUNTED ON EVERY PASS, and the saga is left exactly as it is. A chain that could not be
+        // assembled at all had a counter from the start and this one had none, so the more specific
+        // failure was the invisible one; the other is gone with its cause (B-64). Nothing is
         // written here on purpose: the condition ends when the deploy does, and a row marked
         // terminal could not be un-marked when it did (B-44).
         metrics.onChainRefused(petich.type, petich.currentPhase)

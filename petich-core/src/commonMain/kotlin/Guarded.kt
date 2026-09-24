@@ -86,11 +86,6 @@ internal class GuardedMetrics(
         phase: PetichPhase,
     ): Unit = quietly { delegate.onChainRefused(type, phase) }
 
-    override fun onChainUnavailable(
-        type: String,
-        reason: String,
-    ): Unit = quietly { delegate.onChainUnavailable(type, reason) }
-
     override fun onSuspend(type: String): Unit = quietly { delegate.onSuspend(type) }
 
     override fun onDroppedEvents(
