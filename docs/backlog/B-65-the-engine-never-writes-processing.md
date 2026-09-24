@@ -1,7 +1,7 @@
 ---
 id: B-65
 title: "The engine never writes PROCESSING, so a saga that dies mid-pass is found by neither queue"
-status: open
+status: done
 priority: P1
 size: M
 stage: stage-12-tracer
@@ -47,3 +47,41 @@ saga in `PROCESSING`". **The engine never writes `PROCESSING`.** Found while bui
   `petich-core/src/commonMain/kotlin/SuspendedPetichSweeper.kt`,
   `petich-core/src/commonTest/kotlin/StuckSweepTest.kt`,
   `petich-core/src/commonTest/kotlin/WriteCountTest.kt`
+
+## Findings
+
+**Reproduced through the real path before the fix**, three ways, in `StrandedMidPassTest`: a saga
+created `DRAFT` killed after its first step (row left `DRAFT`, index 1), the same killed inside its
+first step (row left `DRAFT`, index 0), and a saga suspended, resumed, moved on and killed (row left
+`PENDING_SIGNATURE`, index 2, no deadline). The sweeper, running both queues after `stuckAfter`,
+picked up none of them.
+
+**Decided: the engine writes `PROCESSING`, on writes it already makes** — the rejected alternative
+(widening the stuck query to `DRAFT` and deadline-less `PENDING_SIGNATURE`) would have needed a new
+predicate in both stores and the corpus, and would have left `PENDING_SIGNATURE` meaning two things.
+
+- A saga handed in as `DRAFT` is **inserted** as `PROCESSING`. The insert happens anyway; a row that
+  already exists is returned as it is, so a replay under the same id changes nothing.
+- Every committed `Proceed` writes `PROCESSING`, whatever the row said. That is the write that clears
+  the deadline, so the two now move together.
+- `WriteCountTest` is not edited and green: no write was added.
+
+**What a consumer sees change.** A saga read mid-pass now says `PROCESSING` where it said `DRAFT`, or
+`PENDING_SIGNATURE` after a resume. shashki maps `DRAFT` and `PROCESSING` to the same thing already
+(`PetichRideRepository.kt`). konekt refuses a resume unless the row is `PENDING_SIGNATURE`
+(`TariffUseCases.kt`), so a second resume arriving while the first is carrying the saga on is now
+refused rather than accepted into a race — the behaviour its guard was written for.
+
+**Checked by two mutations, one per write**: the insert reverted → "dies inside its first step"
+fails alone; the `Proceed` status removed → "resumed … dies after moving on" fails alone. Each
+reverted, tree read back clean.
+
+**Not closed, and filed:** a resume whose FIRST member dies before its commit leaves the row exactly
+as the suspension wrote it — `PENDING_SIGNATURE`, deadline intact. Without a TTL the client's retried
+resume re-runs that member, which is the at-least-once the member already owes. With one, the expiry
+rolls back from the suspended member down and, by reading, leaves out the member that died in the
+resume. [B-66](B-66-an-expiry-forgets-the-member-a-resume-died-in.md) is to reproduce that and decide.
+
+**Verification.** `./gradlew build` on the Linux box green, conformance against a real Postgres
+included; `StrandedMidPassTest` 3/3, `WriteCountTest` 2/2 and `StuckSweepTest` 4/4 on both targets,
+result files read.

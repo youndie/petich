@@ -1541,9 +1541,16 @@ public class PetichEngine(
         petich: Petich,
         attempt: Int,
     ): PetichResult {
+        // A DRAFT IS STORED AS PROCESSING (B-65). The stuck queue asks for PROCESSING, and nothing
+        // in the engine wrote it: both consumers create their sagas DRAFT, so a process dying inside
+        // the first member left a row no query would ever return, holding whatever that member had
+        // done. The insert is a write this pass makes anyway, so this costs nothing — and a row
+        // that already exists is returned as it is, whatever the caller handed in.
+        val draft = petich.status == PetichStatus.DRAFT
+        val inserted = if (draft) petich.copy(status = PetichStatus.PROCESSING) else petich
         var currentPetich =
             repository
-                .saveOrGet(petich)
+                .saveOrGet(inserted)
                 .copy(resumePayload = petich.resumePayload)
         var currentEnrichedPayload = currentPetich.enrichedPayload
         // The row as this pass read it, not as the caller handed it: a resume and a re-drive are
@@ -1924,6 +1931,14 @@ public class PetichEngine(
                                 is MemberOutcome.Proceed -> {
                                     val moved =
                                         currentPetich.copy(
+                                            // MOVING IS PROCESSING (B-65), whatever the row said
+                                            // before. A resumed saga used to carry on as
+                                            // PENDING_SIGNATURE with its deadline cleared just
+                                            // below, which is the one combination neither of the
+                                            // sweeper's queries returns: dying there stranded it.
+                                            // It also stops a second resume being accepted for a
+                                            // saga that is already moving.
+                                            status = PetichStatus.PROCESSING,
                                             currentInterceptorIndex = index + 1,
                                             // CLEARED BY MOVING (B-53). Parking writes the point a
                                             // rollback would start from; going forward makes that

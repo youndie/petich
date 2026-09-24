@@ -312,8 +312,8 @@ class TracerTest {
      * H1: best-effort is enough, because the pass that died is followed by the event that says so.
      * The first pass stops mid-member with nothing after it; the sweeper's claim opens the next.
      *
-     * Seeded `PROCESSING`, as `petich-ktor`'s create route writes it. The engine itself never writes
-     * that status, which is B-65 and not this test's claim.
+     * Seeded `PROCESSING`, as `petich-ktor`'s create route writes it. Written before B-65 made the
+     * engine write that status itself; `StrandedMidPassTest` covers a saga created `DRAFT`.
      */
     @Test
     fun `H1 - a pass that died reads as entered then nothing then claimed and carried on`() =
