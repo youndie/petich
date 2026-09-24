@@ -1546,17 +1546,12 @@ public class PetichEngine(
         // the first member left a row no query would ever return, holding whatever that member had
         // done. The insert is a write this pass makes anyway, so this costs nothing — and a row
         // that already exists is returned as it is, whatever the caller handed in.
+        val draft = petich.status == PetichStatus.DRAFT
+        val inserted = if (draft) petich.copy(status = PetichStatus.PROCESSING) else petich
         var currentPetich =
             repository
-                .saveOrGet(
-                    if (petich.status ==
-                        PetichStatus.DRAFT
-                    ) {
-                        petich.copy(status = PetichStatus.PROCESSING)
-                    } else {
-                        petich
-                    },
-                ).copy(resumePayload = petich.resumePayload)
+                .saveOrGet(inserted)
+                .copy(resumePayload = petich.resumePayload)
         var currentEnrichedPayload = currentPetich.enrichedPayload
         // The row as this pass read it, not as the caller handed it: a resume and a re-drive are
         // told apart by what is stored.
