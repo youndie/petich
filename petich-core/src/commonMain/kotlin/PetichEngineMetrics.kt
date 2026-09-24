@@ -82,25 +82,6 @@ public interface PetichEngineMetrics {
     ): Unit = Unit
 
     /**
-     * The chain for a saga could not be assembled — a member whose construction threw, most
-     * plainly — so the saga is written WITHOUT a chain fingerprint and the guard that would refuse
-     * a moved member is off for it from then on.
-     *
-     * **Much harder to reach than it was**, and worth keeping for what is left. The two ways in
-     * were a `supports()` that threw and a priority tie refused by configuration; both went with the
-     * interceptor model, and a definition's chain is a list that cannot decline to be one.
-     *
-     * Deliberately not a failure: computing the fingerprint happens on every write, including the
-     * emergency transition to FAILED that exists for exactly the kind of member that causes this,
-     * and a guard must never be the reason a write does not happen. A counter is what is left, and a
-     * non-zero one means sagas are being persisted unguarded.
-     */
-    public fun onChainUnavailable(
-        type: String,
-        reason: String,
-    ): Unit = Unit
-
-    /**
      * The saga is waiting on client action. A repeated wait (Resuspend) counts too: from outside
      * it is indistinguishable from the first, and it costs the engine the same.
      */
