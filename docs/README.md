@@ -55,19 +55,18 @@ Sections marked `<!-- optional -->` can be deleted.
 ## Checks
 
 ```bash
-make check
-```
-
-The same thing separately:
-
-```bash
 pip install pyyaml
-python3 scripts/backlog_index.py --check
-python3 scripts/docs_check.py
-python3 scripts/coverage_map.py --check
-python3 scripts/bdd_report.py
-python3 scripts/code_anchors.py --repos ..
+make check     # the gate (with petich's own audits under it) and the reports, exactly what CI runs
+make gate      # the blocking half alone
+make report    # the two reports: BDD coverage, code anchors
+make fix       # regenerate the backlog index, append missing coverage-map lines
 ```
+
+The checks are docs-bootstrap's, at the version the `uses: youndie/docs-bootstrap@<tag>` line in
+`.github/workflows/check.yaml` pins; the Makefile reads that line and fetches the same tag into
+`.docs-bootstrap/`, so a local run checks with what CI checks with, and Renovate bumps the line.
+petich's own audits — `tools/module-table-audit.py` and `tools/schema-notes-audit.py` — are lines
+under `gate` in the Makefile.
 
 `code_anchors.py` resolves the research document's references into sibling repositories — `chronik/`,
 `kore/`, `sborka/`, `konekt/`, `shashki/` — so they are only checkable where those checkouts sit next
