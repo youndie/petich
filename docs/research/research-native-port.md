@@ -73,8 +73,8 @@ the common API of kotlinx-coroutines, so the question is whether a source set sh
 
 | Fact | Where verified |
 |---|---|
-| `kore-core` calls `runBlocking` from `commonMain` with targets jvm, linuxX64, linuxArm64, macosArm64 | `kore/kore-core/src/commonMain/kotlin/io/github/youndie/kore/lifecycle/RunUntilSignal.kt` |
-| `chronik-core` calls it from `commonTest` with targets jvm and linuxX64 **and the same `applyDefaultHierarchyTemplate=false`** | `chronik/chronik-core/src/commonTest/kotlin/DeliveryRetryTest.kt`, `chronik/gradle.properties:6` |
+| `kore-core` calls `runBlocking` from `commonMain` with targets jvm, linuxX64, linuxArm64, macosArm64 | `youndie/kore@9a7baac!/kore-core/src/commonMain/kotlin/io/github/youndie/kore/lifecycle/RunUntilSignal.kt` |
+| `chronik-core` calls it from `commonTest` with targets jvm and linuxX64 **and the same `applyDefaultHierarchyTemplate=false`** | `youndie/chronik@36db439!/chronik-core/src/commonTest/kotlin/DeliveryRetryTest.kt`, `youndie/chronik@36db439!/gradle.properties:6` |
 
 **Consequence.** The existing test suites do not have to be rewritten to gain a target. This is the
 one plausible blocker that turned out not to be one, and it is written down so nobody re-derives it.
@@ -85,12 +85,12 @@ one plausible blocker that turned out not to be one, and it is written down so n
 |---|---|
 | All five Ktor entries name `-jvm` coordinates: `io.ktor:ktor-server-core-jvm`, `-content-negotiation-jvm`, `-status-pages-jvm`, `-test-host-jvm`, `io.ktor:ktor-serialization-kotlinx-json-jvm` | `gradle/libs.versions.toml` |
 | The platform-agnostic coordinates publish `linuxx64` klibs at the pinned version 3.5.2: server-core, content-negotiation, status-pages, test-host, serialization-kotlinx-json | HTTP 200 on `repo1.maven.org/maven2/io/ktor/ktor-server-core-linuxx64/3.5.2/ktor-server-core-linuxx64-3.5.2.klib` and the four siblings |
-| A Ktor server library in this portfolio already runs `testApplication` from `commonTest` on native targets | `kore/kore-ktor/build.gradle.kts`, `kore/kore-ktor/src/commonTest/kotlin/io/github/youndie/kore/ktor/ProbeRoutesTest.kt` |
+| A Ktor server library in this portfolio already runs `testApplication` from `commonTest` on native targets | `youndie/kore@9a7baac!/kore-ktor/build.gradle.kts`, `youndie/kore@9a7baac!/kore-ktor/src/commonTest/kotlin/io/github/youndie/kore/ktor/ProbeRoutesTest.kt` |
 | `petich-ktor`'s own code touches only `ktor-server-core`, `-content-negotiation`, `-status-pages` and the JSON serialization bridge | `petich-ktor/src/commonMain/kotlin/PetichRouting.kt`, `PetichFeatureConfiguration.kt` |
 
 **Consequence.** `petich-ktor` can gain the target and keep its tests — including the routing test,
 which today sits in `jvmTest` only because of a `java.util.concurrent.ConcurrentHashMap` in its fake
-repository (`petich-ktor/src/jvmTest/kotlin/io/github/youndie/petich/ktor/PetichRoutingTest.kt:33`).
+repository (`youndie/petich@d7fb603!/petich-ktor/src/jvmTest/kotlin/io/github/youndie/petich/ktor/PetichRoutingTest.kt:33`).
 A `-jvm` coordinate left in the catalogue does not merely fail to help: in a multiplatform source
 set it is the thing that makes the native compilation unresolvable.
 
@@ -113,14 +113,14 @@ be measured against. Written after the fact, a comparison between two stores des
 intersection — including whatever both get wrong. The corpus has to come first, while there is one
 implementation; that is what the neighbouring repository's conformance kit bought, where it caught
 three violated rules in a store that had passed everything else
-(`chronik/chronik-conformance/src/commonMain/kotlin/ConformanceKit.kt`).
+(`youndie/chronik@36db439!/chronik-conformance/src/commonMain/kotlin/ConformanceKit.kt`).
 
 ### 1.6 The bridge module is blocked outside this repository
 
 | Fact | Where verified |
 |---|---|
 | `chronik-core-linuxx64` 0.1.0 does not exist on Central (HTTP 404); `chronik-core` 0.1.0 publishes the same five JVM-only variants petich does | `repo1.maven.org/maven2/io/github/youndie/chronik/chronik-core-linuxx64/0.1.0/…` (404), `…/chronik-core/0.1.0/chronik-core-0.1.0.module` |
-| chronik's own repository already declares `linuxX64()` on core and conformance, closed as its B-16 on 2026-09-15 — merged, not released | `chronik/chronik-core/build.gradle.kts:23`, `chronik/docs/backlog/B-16-linux-native-target.md` |
+| chronik's own repository already declares `linuxX64()` on core and conformance, closed as its B-16 on 2026-09-15 — merged, not released | `youndie/chronik@36db439!/chronik-core/build.gradle.kts:23`, `youndie/chronik@36db439!/docs/backlog/B-16-linux-native-target.md` |
 
 **Consequence.** `petich-chronik` cannot declare a native target against a JVM-only dependency, so
 the release order is fixed: chronik publishes a native variant, then petich. Merged is not released,
@@ -130,7 +130,7 @@ and the 404 above is the only form of that statement worth trusting.
 
 | Fact | Where verified |
 |---|---|
-| `sborka.kmp` deliberately declares no targets — "this plugin gives what every KMP library here agrees on and leaves the target list where it was argued" | `sborka/build-logic/conventions/src/main/kotlin/io/github/youndie/sborka/kmp.gradle.kts` |
+| `sborka.kmp` deliberately declares no targets — "this plugin gives what every KMP library here agrees on and leaves the target list where it was argued" | `youndie/sborka@539c4c4!/build-logic/conventions/src/main/kotlin/io/github/youndie/sborka/kmp.gradle.kts` |
 | The same convention sets `explicitApi()` and `allWarningsAsErrors = true` by default | same file |
 | It adds `-Wl,--as-needed` to Linux native executables and stamps `org.gradle.jvm.version` on JVM variants only | same file |
 
@@ -163,8 +163,8 @@ jvm half.
 
 | Fact | Where verified |
 |---|---|
-| konekt pins `petich = "0.1.0"` and consumes it from a JVM build | `konekt/gradle/libs.versions.toml:92` |
-| shashki's server takes `petich-core`, `petich-postgres` and `petich-outbox-core` as plain JVM dependencies | `shashki/server/build.gradle.kts:83-85` |
+| konekt pins `petich = "0.1.0"` and consumes it from a JVM build | `youndie/konekt@cf52271!/gradle/libs.versions.toml:92` |
+| shashki's server takes `petich-core`, `petich-postgres` and `petich-outbox-core` as plain JVM dependencies | `youndie/shashki@d7e830f!/server/build.gradle.kts:83-85` |
 | No other repository in the portfolio names an `io.github.youndie.petich` coordinate | grep over `gradle/libs.versions.toml` in `~/Documents/GitHub` and `~/IdeaProjects` |
 
 **Consequence, and it shapes the order of the backlog.** Nothing today fails because petich is
@@ -233,7 +233,7 @@ Why:
 - evidence rather than principle: in the neighbouring repository the corpus named three violated
   rules in a store that had passed every hand-written test, and an atomicity case caught a claim
   rewritten into two statements that the corpus itself could not see
-  (`chronik/docs/backlog/B-17-sqlx4k-sqlite-store.md`).
+  (`youndie/chronik@36db439!/docs/backlog/B-17-sqlx4k-sqlite-store.md`).
 
 ### D5. The native store takes a driver from outside and never packs one
 
@@ -245,7 +245,7 @@ Why:
 - a Kotlin/Native binary that links two sqlx4k drivers does not link at all — each carries its own
   Rust runtime and they define the same symbols (`duplicate symbol: std::panicking::EMPTY_PANIC`),
   paid for in a neighbouring repository and written into
-  `chronik/chronik-sqlx4k-sqlite/build.gradle.kts`;
+  `youndie/chronik@36db439!/chronik-sqlx4k-sqlite/build.gradle.kts`;
 - a store that carries no driver cannot cause that collision whichever driver the application
   brings;
 - the price: the application does the wiring. It already does — `petich-postgres` takes an Exposed

@@ -30,22 +30,22 @@ jobs:
       # branch, BEFORE the gate, because that one says which branch took a number and under what
       # name; on a push to the default branch, `status: draft` as an error. The reasons are written
       # next to each step in the action's action.yml.
-      - uses: youndie/docs-bootstrap@v0.3.0
+      - uses: youndie/docs-bootstrap@v0.3.5
 
-  # On a schedule rather than on a pull request, and non-blocking. An anchor rots because somebody
-  # refactored a DIFFERENT repository — half of the research anchors point at chronik, kore and
-  # sborka — so a pull request here is the least likely moment for one to break, and a red build
-  # nobody caused is a build people learn to ignore.
+  # On a schedule rather than on a pull request, and non-blocking: the report cannot tell a live path
+  # from one quoted as obsolete, so a person reads it, and a red build nobody caused is a build
+  # people learn to ignore.
   #
-  # The sibling repositories are not cloned here, so their anchors are reported unresolved every
-  # week. That is the honest result rather than a misconfiguration: this job answers for the paths
-  # into THIS repository, and those are the ones that must stay green.
+  # The sibling repositories are not cloned here, and need not be: the research's paths into
+  # chronik, kore, sborka, konekt and shashki are addresses at the commit each fact was read in
+  # (docs/README.md), listed in their own section and never as rot. This job answers for the paths
+  # into THIS repository.
   anchors:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
-      - uses: youndie/docs-bootstrap@v0.3.0
+      - uses: youndie/docs-bootstrap@v0.3.5
         with:
           target: report
