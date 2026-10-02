@@ -30,11 +30,12 @@ jobs:
       # branch, BEFORE the gate, because that one says which branch took a number and under what
       # name; on a push to the default branch, `status: draft` as an error. The reasons are written
       # next to each step in the action's action.yml.
-      - uses: youndie/docs-bootstrap@v0.3.5
+      - uses: youndie/docs-bootstrap@v0.3.8
 
-  # On a schedule rather than on a pull request, and non-blocking: the report cannot tell a live path
-  # from one quoted as obsolete, so a person reads it, and a red build nobody caused is a build
-  # people learn to ignore.
+  # On a schedule, beside the gate. The report blocks (`ANCHORS_ARGS=--check` in the Makefile), so
+  # `make check` in the job above already fails on a path into this repository that resolves to
+  # nothing, in the pull request that broke it; this runs the same report on the default branch
+  # once a week. A path quoted as obsolete is an address at a commit it existed in, like the rest.
   #
   # The sibling repositories are not cloned here, and need not be: the research's paths into
   # chronik, kore, sborka, konekt and shashki are addresses at the commit each fact was read in
@@ -46,6 +47,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: youndie/docs-bootstrap@v0.3.5
+      - uses: youndie/docs-bootstrap@v0.3.8
         with:
           target: report

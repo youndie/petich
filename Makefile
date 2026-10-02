@@ -57,6 +57,14 @@ BACKLOG_FORM ?= files
 # its siblings too, which a suffix match can mistake for this repository.
 REPOS ?= ..
 PY ?= python3
+# THE CODE-ANCHORS REPORT BLOCKS. `--check` takes the `-` off its line in check.mk, so `make check`
+# - and CI, which runs it - fails on a path in the documents that resolves to nothing. The report
+# reached zero with every path outside this repository written as an address (SPEC 4.1:
+# `<artefact>!/<path>`, `youndie/<repo>@<commit>!/<path>`), which no refactor elsewhere can move, so
+# what can turn it red now is a path of this repository's own, renamed or deleted without its
+# document - caught in the pull request that did it. A path quoted as obsolete is written the same
+# way, at a commit it existed in. `make report ANCHORS_ARGS=` runs it as a report again.
+ANCHORS_ARGS ?= --check
 
 # Where the pin is, and what it names.
 DOCS_BOOTSTRAP_PIN ?= .github/workflows/check.yaml
@@ -80,7 +88,7 @@ help:
 	@echo "                ./gradlew publishToMavenLocal -PVERSION=<v> &&"
 	@echo "                python3 tools/readme-examples.py <v>)"
 	@echo "make gate    - the blocking half alone"
-	@echo "make report  - non-blocking: BDD coverage, code anchors"
+	@echo "make report  - BDD coverage (non-blocking), code anchors (blocking: ANCHORS_ARGS)"
 	@echo "make fix     - regenerate the backlog index, fill in missing coverage-map lines"
 
 check: gate report
@@ -101,9 +109,9 @@ gate: docs-gate
 	# added three columns and named them nowhere; both consumers found out from a saga that failed.
 	$(PY) tools/schema-notes-audit.py
 
-# Non-blocking. code_anchors cannot tell a live path from one quoted as obsolete, so a person reads
-# it. The research's paths into chronik, kore, sborka, konekt and shashki are addresses at a commit
-# (docs/README.md), which no tree is searched for.
+# BDD coverage does not block; code anchors does (ANCHORS_ARGS above). The research's paths into
+# chronik, kore, sborka, konekt and shashki are addresses at a commit (docs/README.md), which no tree
+# is searched for.
 report: docs-report
 
 fix: docs-fix
