@@ -1,5 +1,11 @@
 # The documentation gate. The code gate is build.yaml, and the two are separate on purpose: this one
 # needs python and seconds, that one needs a JDK, a local publication and three audits.
+#
+# The checks are docs-bootstrap's, at the ref in the `uses: youndie/docs-bootstrap@...` lines below
+# (templates/workflow-check.yaml). The version is written here and nowhere else: CI runs the checks
+# at that ref, and the Makefile reads the same line and fetches the same ref for a local
+# `make check`. Renovate bumps it; both lines name the same ref, and the Makefile refuses to guess
+# when they do not.
 name: check
 
 # No path filters. They save seconds and buy red default branches: a generated index diverges from
@@ -19,30 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - run: pip install pyyaml
-
-      # BEFORE `make check`, and that order is the value of this step: both catch a number taken
-      # twice, but this one says which branch took it and under what name, while the gate says
-      # "duplicate ids: B-06". The first failing step is the message the author reads.
-      #
-      # The refspec is explicit because `git fetch origin main` moves FETCH_HEAD and creates no
-      # remote-tracking ref.
-      - if: github.event_name == 'pull_request'
-        run: |
-          git fetch --no-tags origin \
-            "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
-          python3 scripts/backlog_index.py --against "origin/$GITHUB_BASE_REF"
-
-      - run: make check
-
-      # Default branch only: `status: draft` is legal in a pull request, where it means "this branch
-      # will make it true", and a defect the moment it merges.
-      - if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: python3 scripts/docs_check.py --on-main
+      # `make check` - the gate, petich's own audits under it, and the reports - and around it the two
+      # checks that depend on the event: on a pull request, backlog item numbers against the base
+      # branch, BEFORE the gate, because that one says which branch took a number and under what
+      # name; on a push to the default branch, `status: draft` as an error. The reasons are written
+      # next to each step in the action's action.yml.
+      - uses: youndie/docs-bootstrap@v0.3.0
 
   # On a schedule rather than on a pull request, and non-blocking. An anchor rots because somebody
   # refactored a DIFFERENT repository — half of the research anchors point at chronik, kore and
@@ -58,10 +46,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: youndie/docs-bootstrap@v0.3.0
         with:
-          python-version: "3.11"
-
-      - run: pip install pyyaml
-
-      - run: python3 scripts/code_anchors.py --repos ..
+          target: report
