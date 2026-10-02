@@ -68,9 +68,12 @@ The checks are docs-bootstrap's, at the version the `uses: youndie/docs-bootstra
 petich's own audits — `tools/module-table-audit.py` and `tools/schema-notes-audit.py` — are lines
 under `gate` in the Makefile.
 
-`code_anchors.py` resolves the research document's references into sibling repositories — `chronik/`,
-`kore/`, `sborka/`, `konekt/`, `shashki/` — so they are only checkable where those checkouts sit next
-to this one. That is why anchors run on a schedule and do not block.
+The research document's references into chronik, kore, sborka, konekt and shashki are addresses at
+the commit each fact was read in — `youndie/chronik@36db439!/chronik-core/build.gradle.kts:23`
+(docs-bootstrap SPEC §4.1) — and so is a path into this repository's own past. CI checks this clone
+alone, and since docs-bootstrap 0.3.4 a bare `chronik/…` is looked for in chronik only, so a bare
+path would be reported missing every week. `code_anchors.py` lists the addresses in their own
+section; the anchors run on a schedule and do not block.
 
 ## Coverage map
 
