@@ -72,8 +72,9 @@ The research document's references into chronik, kore, sborka, konekt and shashk
 the commit each fact was read in — `youndie/chronik@36db439!/chronik-core/build.gradle.kts:23`
 (docs-bootstrap SPEC §4.1) — and so is a path into this repository's own past. CI checks this clone
 alone, and since docs-bootstrap 0.3.4 a bare `chronik/…` is looked for in chronik only, so a bare
-path would be reported missing every week. `code_anchors.py` lists the addresses in their own
-section; the anchors run on a schedule and do not block.
+path would be reported missing. `code_anchors.py` lists the addresses in their own section, and the
+report blocks (`ANCHORS_ARGS ?= --check` in the Makefile): a path that resolves to nothing fails
+`make check`.
 
 ## Coverage map
 
