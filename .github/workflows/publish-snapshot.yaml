@@ -10,7 +10,7 @@ on:
 
 jobs:
   publish:
-    uses: youndie/sborka/.github/workflows/publish-wip.yaml@main
+    uses: youndie/sborka/.github/workflows/publish-wip.yaml@v0.5.0.130
     with:
       tasks: build publishAllPublicationsToWipRepository
       # Without the version: it does not exist until the job below has run, so it is appended on
