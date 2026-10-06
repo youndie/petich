@@ -1,7 +1,7 @@
 ---
 id: B-63
 title: "Does a Compose window that a test opens show a fault-injection scenario a headless run cannot?"
-status: question
+status: dropped
 priority: P3
 size: M
 stage: stage-12-tracer
@@ -24,3 +24,13 @@ that is installed is out.
   it is a demo, and the item is `dropped`.
 
 - Anchors: `petich-core/src/commonTest/kotlin/SuspendedTtlTest.kt`
+
+## Dropped 2026-10-07 — its gate cannot be reached
+
+[B-60](B-60-a-logging-sink-in-konekt-and-shashki.md) closed as **not measured**: konekt and shashki
+are demonstration services, ran no sagas in the two weeks, and kill criterion 2 neither fired nor
+passed. This item was gated on that verdict, and nothing in this repository can produce it.
+
+**Reopen when** a consumer runs real sagas in production with `LinePetichTracer` (or any
+`PetichTracer`) wired, and B-60's question — did reading a trace answer something a counting double
+had not — has been asked of its logs. Until then the line of work stops at the hook.

@@ -1,7 +1,7 @@
 ---
 id: B-60
 title: "Nobody reads a trace yet: a logging sink in the two consumers starts the two-week clock"
-status: wip
+status: done
 priority: P2
 size: S
 stage: stage-12-tracer
@@ -80,3 +80,23 @@ use", so its 202 lines prove the wiring and count for nothing in H5.
 B-52's `GuardedMetrics` swallows that throw silently — so the loud failure that consumer relies on has
 been quiet since `0.4.0.106`. Filed there as shashki B-99; it is petich's guard behaving as documented,
 and a consumer's comment describing behaviour the engine no longer has.
+
+### Closed 2026-10-07 — not measured: the two consumers ran no sagas
+
+The wiring merged in both consumers on 2026-09-24 (shashki#32 at 19:43:48 UTC, konekt#53 at
+19:43:53 UTC), so the clock would have run out on 2026-10-08. It is closed a day early because the
+remaining day could not change the answer:
+
+- **H5 is zero.** konekt and shashki are demonstration services of this portfolio, not products in
+  use. Neither reports to the production log store at all, and a search for `petich.trace` since 2026-09-24 returns no line. No
+  saga ran through either sink outside the end-to-end stand, whose 202 lines checked the wiring and
+  are not ordinary use.
+- **So kill criterion 2 neither fired nor passed.** A silence over zero sagas is not the silence it
+  means, which is what H5 was written to catch. The verdict is in §3 of
+  [research-petich-tracer](../research/research-petich-tracer.md).
+- **B-61…B-63 are `dropped`, not left `question`.** Their gate is a verdict this pair of consumers
+  cannot produce in two weeks or in ten; a `question` nobody can answer reads as pending work. They
+  reopen when a consumer runs real sagas in production — the condition is written in each item.
+
+What stays: `LinePetichTracer` in `petich-core` with `LinePetichTracerTest`, and the wiring in both
+consumers. It costs one constructor argument and is what a consumer with real traffic would read.

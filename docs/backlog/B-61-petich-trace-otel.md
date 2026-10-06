@@ -1,7 +1,7 @@
 ---
 id: B-61
 title: "Do plain OpenTelemetry spans show the three fixture pairs without a surface of our own?"
-status: question
+status: dropped
 priority: P2
 size: M
 stage: stage-12-tracer
@@ -28,3 +28,13 @@ had not. Until then it is a question, not a task. See RQ2 in
   B-62 becomes `open`.
 
 - Anchors: `gradle/libs.versions.toml`, `settings.gradle.kts`
+
+## Dropped 2026-10-07 — its gate cannot be reached
+
+[B-60](B-60-a-logging-sink-in-konekt-and-shashki.md) closed as **not measured**: konekt and shashki
+are demonstration services, ran no sagas in the two weeks, and kill criterion 2 neither fired nor
+passed. This item was gated on that verdict, and nothing in this repository can produce it.
+
+**Reopen when** a consumer runs real sagas in production with `LinePetichTracer` (or any
+`PetichTracer`) wired, and B-60's question — did reading a trace answer something a counting double
+had not — has been asked of its logs. Until then the line of work stops at the hook.
