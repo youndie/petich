@@ -217,6 +217,19 @@ so rather than the item left open.
    the service or the test suite is out. A Compose window that a test opens is in; a Compose app is
    not.
 
+### Verdict, 2026-10-07: criterion 2 not measured
+
+The sink shipped in both consumers on 2026-09-24
+([B-60](../backlog/B-60-a-logging-sink-in-konekt-and-shashki.md)). In the two weeks after it, neither
+konekt nor shashki ran a saga outside the end-to-end stand: both are demonstration services, neither
+reports to the production log store, and `petich.trace` has no line there. **H5 is zero**, so
+criterion 2 neither fired nor passed — this document cannot say whether the tracer is the wrong tool,
+only that these two consumers cannot tell.
+
+B-61…B-63 are `dropped` with a reopen condition: a consumer running real sagas in production with a
+tracer wired. RQ2–RQ4 stay as written, unasked. What shipped — the hook (RQ1 green, H1 and H2
+confirmed) and `LinePetichTracer` — stays.
+
 ---
 
 ## 4. Non-goals
@@ -261,7 +274,8 @@ so rather than the item left open.
   anything runs sagas through them in two weeks is not verified. Settled at the end of
   [B-60](../backlog/B-60-a-logging-sink-in-konekt-and-shashki.md) by counting the sagas the sink
   logged — a silence over zero sagas is not the silence the criterion means, and says so rather than
-  counting as it.
+  counting as it. **Settled 2026-10-07: zero.** Both consumers are demonstration services and ran no
+  saga outside the end-to-end stand; see the verdict in §3.
 
 ---
 
