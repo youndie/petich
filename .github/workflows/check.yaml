@@ -30,7 +30,7 @@ jobs:
       # branch, BEFORE the gate, because that one says which branch took a number and under what
       # name; on a push to the default branch, `status: draft` as an error. The reasons are written
       # next to each step in the action's action.yml.
-      - uses: youndie/docs-bootstrap@v0.3.8
+      - uses: youndie/docs-bootstrap@v0.3.11
 
   # On a schedule, beside the gate. The report blocks (`ANCHORS_ARGS=--check` in the Makefile), so
   # `make check` in the job above already fails on a path into this repository that resolves to
@@ -47,6 +47,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: youndie/docs-bootstrap@v0.3.8
+      - uses: youndie/docs-bootstrap@v0.3.11
         with:
           target: report
