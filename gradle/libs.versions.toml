@@ -3,13 +3,13 @@
 # The shared build conventions, and the compiler with them: the `wip` catalog this release
 # publishes carries `kotlin`, so there is no Kotlin version in this file to drift from the rest
 # of the portfolio.
-sborka = "0.4.0.111"
+sborka = "0.5.0.135"
 ktor = "3.6.0"
 chronik = "0.2.0"
-exposed = "1.4.0"
+exposed = "1.6.1"
 # Test-only, and only in :petich-chronik: the claim that a timer and a saga state commit together
 # is about a real transaction, and nothing smaller can be asked about it.
-postgres-driver = "42.7.13"
+postgres-driver = "42.7.14"
 testcontainers = "2.0.5"
 kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0"
