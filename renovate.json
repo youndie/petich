@@ -3,9 +3,9 @@
   "description": [
     "The portfolio's shared configuration, extended by name. What it replaces here: the `kotlin toolchain` and `kotlinx` groups (the preset's `kotlin` rule matches the same set — the compiler coordinates and the jvm, multiplatform and serialization plugin ids), the schedule, the limits and the labels. The batch moves from 9am to 6am on Monday with the rest of the portfolio; nothing depended on the hour.",
     "It also brings a guard this repository did not have and is being offered right now: `kotlinx-datetime:0.8.0-0.6.x-compat` is 0.8.0 built against the OLD 0.6.x API, and it is sitting on the dependency dashboard as an update.",
-    "Automerge is a separate preset (`github>youndie/sborka:automerge-harness`) and is not extended: nothing merges itself here today. Its precondition holds — build.yaml runs on `pull_request` — so it can be added as its own change."
+    "sborka's `automerge-harness` is extended second, so `github-actions` and `gradle-wrapper` updates merge themselves on green. Its precondition holds, re-checked 2026-11-25: `build.yaml` and `check.yaml` run on every `pull_request`, and the one workflow no pull request runs, `publish-snapshot.yaml`, runs on every push to `main` — a harness bump that broke it shows up red on the merge itself."
   ],
-  "extends": ["github>youndie/sborka"],
+  "extends": ["github>youndie/sborka", "github>youndie/sborka:automerge-harness"],
   "packageRules": [
     {
       "description": "Ktor server modules share one version.",
